@@ -78,11 +78,17 @@ def convert_annotation_file(annotation_path: Path, images_dir: Path, labels_dir:
         size = image.size
 
     output_lines = []
-    for raw_line in annotation_path.read_text().splitlines():
+    for line_number, raw_line in enumerate(annotation_path.read_text(encoding="utf-8-sig").splitlines(), start=1):
         if not raw_line.strip():
             continue
 
-        x, y, w, h, score, category, truncation, occlusion = raw_line.split(",")
+        parts = [part.strip() for part in raw_line.split(",")]
+        if len(parts) < 6:
+            print(f"WARNING: skipping malformed line {annotation_path}:{line_number}: {raw_line}")
+            continue
+
+        x, y, w, h = parts[:4]
+        score, category = parts[4], parts[5]
         if score == "0":
             continue
 

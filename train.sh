@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 DATASET_ROOT="${DATASET_ROOT:-/mnt/chenziye/datasets/vis_drone}"
-DATA="${DATA:-${ROOT_DIR}/ultralytics/cfg/datasets/visdrone.yaml}"
+DATA="${DATA:-${ROOT_DIR}/ultralytics/cfg/datasets/VisDrone.yaml}"
 MODEL="${MODEL:-${ROOT_DIR}/checkpoints/yolov8n.pt}"
 EPOCHS="${EPOCHS:-100}"
 IMGSZ="${IMGSZ:-960}"

@@ -1,0 +1,44 @@
+*output*/
+*temp*/
+*log*/
+# *.jpg
+# *.png
+
+# compilation and distribution
+__pycache__
+_ext
+*.pyc
+*.so
+build/
+dist/
+wheels/
+*.egg-info/
+
+# pytorch/python/numpy formats
+*.pth
+*.pkl
+*.npy
+
+# ipython/jupyter notebooks
+*.ipynb
+**/.ipynb_checkpoints/
+
+# Editor temporaries
+*.swn
+*.swo
+*.swp
+*~
+
+# pycharm editor settings
+.idea
+
+# vscode editor settings
+.vscode
+
+# macOS
+.DS_Store
+
+mmcv
+mmdetection3d
+checkpoints
+work_dirs

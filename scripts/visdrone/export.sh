@@ -116,31 +116,8 @@ run_export() {
     echo "  WARNING=In this repo, dynamic TensorRT max shape scales with workspace. Large workspace may make engine build much heavier."
   fi
 
-  if command -v yolo >/dev/null 2>&1; then
-    export_args=(
-      export
-      model="${MODEL}"
-      format="${fmt}"
-      imgsz="${imgsz_value}"
-      batch="${batch_value}"
-      device="${export_device}"
-      opset="${OPSET}"
-      half="${half_bool}"
-      dynamic="${dynamic_bool}"
-      simplify="${simplify_bool}"
-    )
-
-    if [[ "${fmt}" == "engine" ]]; then
-      export_args+=(workspace="${workspace_value}")
-      if [[ "${int8_value}" == "1" ]]; then
-        export_args+=(int8=True data="${DATA}")
-      fi
-    fi
-
-    yolo "${export_args[@]}"
-  else
-    echo "'yolo' command not found, falling back to Python API."
-    PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
+  echo "Using local repository export code from ${REPO_ROOT}"
+  PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
 from ultralytics import YOLO
 
 kwargs = {
@@ -163,7 +140,6 @@ model = YOLO(r"${MODEL}")
 path = model.export(**kwargs)
 print(path)
 PY
-  fi
 
   if [[ "${fmt}" == "rknn" ]]; then
     model_dir="$(dirname "${MODEL}")"

@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 DATASET_ROOT="${DATASET_ROOT:-/mnt/chenziye/datasets/vis_drone}"
-DATA="${DATA:-${ROOT_DIR}/ultralytics/cfg/datasets/VisDrone.yaml}"
-MODEL="${MODEL:-${ROOT_DIR}/checkpoints/yolov8n.pt}"
+DATA="${DATA:-${REPO_ROOT}/ultralytics/cfg/datasets/VisDrone.yaml}"
+MODEL="${MODEL:-${REPO_ROOT}/checkpoints/yolov8n.pt}"
 EPOCHS="${EPOCHS:-100}"
 IMGSZ="${IMGSZ:-960}"
 BATCH="${BATCH:-16}"
 DEVICE="${DEVICE:-0}"
 WORKERS="${WORKERS:-8}"
-PROJECT="${PROJECT:-${ROOT_DIR}/runs/visdrone}"
+PROJECT="${PROJECT:-${REPO_ROOT}/runs/visdrone}"
 NAME="${NAME:-yolov8n_visdrone}"
 CONVERT_LABELS="${CONVERT_LABELS:-1}"
 OVERWRITE_LABELS="${OVERWRITE_LABELS:-0}"
 
-CONVERTER="${ROOT_DIR}/ultralytics/data/scripts/convert_visdrone.py"
+CONVERTER="${REPO_ROOT}/ultralytics/data/scripts/convert_visdrone.py"
 TRAIN_SPLIT="${DATASET_ROOT}/VisDrone2019-DET-train"
 VAL_SPLIT="${DATASET_ROOT}/VisDrone2019-DET-val"
 
@@ -82,7 +83,7 @@ if command -v yolo >/dev/null 2>&1; then
     name="${NAME}"
 else
   echo "'yolo' command not found, falling back to Python API."
-  PYTHONPATH="${ROOT_DIR}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
+  PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
 from ultralytics import YOLO
 
 model = YOLO(r"${MODEL}")

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-MODEL="${MODEL:-${ROOT_DIR}/runs/visdrone/yolov8n_visdrone/weights/best.pt}"
-DATA="${DATA:-${ROOT_DIR}/ultralytics/cfg/datasets/visdrone.yaml}"
+MODEL="${MODEL:-${REPO_ROOT}/runs/visdrone/yolov8n_visdrone/weights/best.pt}"
+DATA="${DATA:-${REPO_ROOT}/ultralytics/cfg/datasets/VisDrone.yaml}"
 IMGSZ="${IMGSZ:-960}"
 BATCH="${BATCH:-1}"
 DEVICE="${DEVICE:-0}"
@@ -139,7 +140,7 @@ run_export() {
     yolo "${export_args[@]}"
   else
     echo "'yolo' command not found, falling back to Python API."
-    PYTHONPATH="${ROOT_DIR}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
+    PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
 from ultralytics import YOLO
 
 kwargs = {
@@ -179,7 +180,7 @@ PY
     echo "RKNN note:"
     echo "  This repo exports an RKNN-optimized .onnx for RKNN-Toolkit / RKNN-Toolkit2."
     echo "  Saved as ${rknn_onnx}"
-    echo "  Follow ${ROOT_DIR}/RKOPT_README.zh-CN.md and RKNN_Model_Zoo to generate the final .rknn."
+    echo "  Follow ${REPO_ROOT}/RKOPT_README.zh-CN.md and RKNN_Model_Zoo to generate the final .rknn."
   fi
 
   if [[ "${fmt}" == "engine" ]]; then

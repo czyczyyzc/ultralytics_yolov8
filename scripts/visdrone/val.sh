@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-DATA="${DATA:-${ROOT_DIR}/ultralytics/cfg/datasets/visdrone.yaml}"
-MODEL="${MODEL:-${ROOT_DIR}/runs/visdrone/yolov8n_visdrone/weights/best.pt}"
+DATA="${DATA:-${REPO_ROOT}/ultralytics/cfg/datasets/VisDrone.yaml}"
+MODEL="${MODEL:-${REPO_ROOT}/runs/visdrone/yolov8n_visdrone/weights/best.pt}"
 IMGSZ="${IMGSZ:-960}"
 BATCH="${BATCH:-16}"
 DEVICE="${DEVICE:-0}"
 WORKERS="${WORKERS:-8}"
 SPLIT="${SPLIT:-val}"
-PROJECT="${PROJECT:-${ROOT_DIR}/runs/visdrone_val}"
+PROJECT="${PROJECT:-${REPO_ROOT}/runs/visdrone_val}"
 NAME="${NAME:-yolov8n_visdrone_val}"
 
 if [[ ! -f "${MODEL}" ]]; then
@@ -48,7 +49,7 @@ if command -v yolo >/dev/null 2>&1; then
     name="${NAME}"
 else
   echo "'yolo' command not found, falling back to Python API."
-  PYTHONPATH="${ROOT_DIR}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
+  PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" - <<PY
 from ultralytics import YOLO
 
 model = YOLO(r"${MODEL}")

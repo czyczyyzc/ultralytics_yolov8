@@ -72,10 +72,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
     parser.add_argument("--detect-interval", type=int, default=8, help="Run detector every N frames while tracking.")
     parser.add_argument("--max-lost", type=int, default=30, help="Frames to wait before dropping a lost target.")
+    parser.add_argument(
+        "--tracker-score-thresh",
+        type=float,
+        default=0.2,
+        help="Minimum acceptable tracker score before forcing detector recovery.",
+    )
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.2,
+        help="Minimum detector confidence accepted by the single-target state machine.",
+    )
     parser.add_argument("--tile-size", type=int, default=0, help="Enable tiled detection with square tile size.")
     parser.add_argument("--tile-overlap", type=float, default=0.2, help="Tile overlap ratio.")
     parser.add_argument("--input-mode", default="rgb", choices=("rgb", "gray", "ir"), help="Detector preprocessing mode.")
     parser.add_argument("--clahe", action="store_true", help="Apply CLAHE in gray/IR preprocessing.")
+    parser.add_argument("--area-min-px", type=float, default=9.0, help="Reject detections smaller than this area.")
+    parser.add_argument(
+        "--area-max-ratio",
+        type=float,
+        default=0.25,
+        help="Reject detections covering more than this fraction of the frame.",
+    )
+    parser.add_argument("--aspect-min", type=float, default=0.1, help="Minimum bbox aspect ratio kept by the filter.")
+    parser.add_argument("--aspect-max", type=float, default=10.0, help="Maximum bbox aspect ratio kept by the filter.")
+    parser.add_argument("--border-margin", type=int, default=1, help="Reject detections sitting on the border margin.")
+    parser.add_argument(
+        "--disable-roi-redetect",
+        action="store_true",
+        help="Disable ROI-based re-detection around the tracked target.",
+    )
+    parser.add_argument(
+        "--disable-full-frame-fallback",
+        action="store_true",
+        help="Do not fall back to full-frame detector passes after ROI re-detect misses.",
+    )
     parser.add_argument("--iou-thresh", type=float, default=0.3, help="IoU threshold for frame-level matches.")
     parser.add_argument("--max-frames", type=int, default=0, help="Stop after N frames. 0 means no limit.")
     parser.add_argument("--auto-confirm", action="store_true", help="Auto-confirm pending targets during offline replay.")
@@ -126,7 +158,11 @@ def resolve_anti_uav_sequence(sequence_root: Path, modality: str) -> tuple[Path,
 
 def build_detector(model, args: argparse.Namespace):
     class_names = [name.strip() for name in args.target_classes.split(",") if name.strip()]
-    filters = [solutions.AreaFilter(min_area_px=9), solutions.AspectRatioFilter(), solutions.BorderFilter()]
+    filters = [
+        solutions.AreaFilter(min_area_px=args.area_min_px, max_area_ratio=args.area_max_ratio),
+        solutions.AspectRatioFilter(min_ratio=args.aspect_min, max_ratio=args.aspect_max),
+        solutions.BorderFilter(margin_px=args.border_margin),
+    ]
     return solutions.YOLODetectionAdapter(
         model,
         class_names=class_names or None,
@@ -304,6 +340,10 @@ def main() -> None:
         tracker=args.tracker,
         detect_interval=args.detect_interval,
         max_lost=args.max_lost,
+        tracker_score_thresh=args.tracker_score_thresh,
+        min_confidence=args.min_confidence,
+        roi_redetect=not args.disable_roi_redetect,
+        full_frame_fallback=not args.disable_full_frame_fallback,
         manual_confirmation=not args.auto_confirm,
     )
     recorder = solutions.AlertRecorder(

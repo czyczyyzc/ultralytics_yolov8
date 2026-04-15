@@ -96,6 +96,41 @@ python scripts/anti_uav/replay_eval.py \
   --error-log runs/anti_uav/replay_errors.jsonl
 ```
 
+Useful tuning flags:
+
+- `--conf`
+- `--detect-interval`
+- `--tracker-score-thresh`
+- `--min-confidence`
+- `--area-min-px`
+- `--area-max-ratio`
+- `--aspect-min`
+- `--aspect-max`
+- `--border-margin`
+- `--disable-roi-redetect`
+- `--disable-full-frame-fallback`
+
+## `batch_replay_eval.py`
+
+Runs `replay_eval.py` over an entire Anti-UAV split and aggregates the results.
+
+Example:
+
+```bash
+python scripts/anti_uav/batch_replay_eval.py \
+  --model runs/anti_uav/yolov8n_anti_uav300_rgb_8gpu/weights/best.pt \
+  --dataset-root /mnt/chenziye/datasets/anti_uav/Anti-UAV300 \
+  --split test-dev \
+  --modality rgb \
+  --output-root runs/anti_uav/testdev_rgb_batch \
+  --save-video \
+  --auto-confirm \
+  --conf 0.35 \
+  --detect-interval 4 \
+  --tracker-score-thresh 0.35 \
+  --min-confidence 0.35
+```
+
 ## `build_rknn.py`
 
 Generic ONNX to RKNN export helper for RK3588 deployment.

@@ -39,6 +39,24 @@ Supported `MODALITY` values:
 - `ir`
 - `full`
 
+## `train_rgb_8gpu_a100.sh`
+
+Starts Anti-UAV300 RGB detector training on `8x A100 80G` with a more realistic
+throughput-oriented default than the generic launcher.
+
+Example:
+
+```bash
+bash scripts/anti_uav/train_rgb_8gpu_a100.sh
+```
+
+Useful overrides:
+
+- `BATCH=256` default, increase only after checking the first epoch speed and stability
+- `DEVICE=0,1,2,3,4,5,6,7`
+- `WORKERS=64`
+- `NAME=yolov8n_anti_uav300_rgb_8gpu`
+
 ## `eval_tracker.sh`
 
 Runs the alerting-only tracker stack on one Anti-UAV sequence for replay evaluation.

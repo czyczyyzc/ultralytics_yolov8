@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
     parser.add_argument("--conf", type=float, default=0.25, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
+    parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
     parser.add_argument("--detect-interval", type=int, default=8, help="Run detector every N frames while tracking.")
     parser.add_argument("--max-lost", type=int, default=30, help="Frames to wait before dropping a lost target.")
     parser.add_argument("--input-mode", default="rgb", choices=("rgb", "gray", "ir"), help="Input preprocessing mode.")
@@ -50,6 +51,7 @@ def build_detector(model, args: argparse.Namespace):
         class_names=class_names or None,
         conf=args.conf,
         imgsz=args.imgsz,
+        device=args.device,
         tile_size=args.tile_size if args.tile_size > 0 else None,
         tile_overlap=args.tile_overlap,
         enable_tiling=args.tile_size > 0,

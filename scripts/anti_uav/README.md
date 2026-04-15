@@ -57,6 +57,27 @@ Useful overrides:
 - `WORKERS=64`
 - `NAME=yolov8n_anti_uav300_rgb_8gpu`
 
+## `train_rgb_8gpu_recommended.sh`
+
+Starts the recommended follow-up RGB run for `8x A100 80G` after the earlier
+`batch=512` experiment that peaked very early and then regressed.
+
+Default training arguments:
+
+- `EPOCHS=50`
+- `PATIENCE=12`
+- `IMGSZ=960`
+- `BATCH=128`
+- `NBS=128`
+- `DEVICE=0,1,2,3,4,5,6,7`
+- `WORKERS=64`
+
+Example:
+
+```bash
+bash scripts/anti_uav/train_rgb_8gpu_recommended.sh
+```
+
 ## `eval_tracker.sh`
 
 Runs the alerting-only tracker stack on one Anti-UAV sequence for replay evaluation.

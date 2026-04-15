@@ -1,0 +1,9 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# Local Anti-UAV300 RGB+IR detection dataset configuration for /mnt/chenziye/datasets/anti_uav/anti_uav300_yolo
+
+path: /mnt/chenziye/datasets/anti_uav/anti_uav300_yolo
+train: train_full.txt
+val: val_full.txt
+
+names:
+  0: drone

@@ -18,6 +18,7 @@ Useful overrides:
 - `FRAME_STEP=2`
 - `NEGATIVE_FRAME_STEP=8`
 - `EXPORT_MODALITIES="rgb ir"`
+- `DOWNLOAD_URL=https://huggingface.co/datasets/VoyageWang/antiuav/resolve/main/Anti-UAV300.zip`
 
 ## `train_detect.sh`
 

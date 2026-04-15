@@ -11,7 +11,7 @@ from pathlib import Path
 import cv2
 
 
-DEFAULT_SOURCE_ROOT = Path("/mnt/chenziye/datasets/anti_uav/Anti-UAV-RGBT")
+DEFAULT_SOURCE_ROOT = Path("/mnt/chenziye/datasets/anti_uav/Anti-UAV300")
 DEFAULT_OUTPUT_ROOT = Path("/mnt/chenziye/datasets/anti_uav/anti_uav300_yolo")
 ALLOWED_VIDEO_SUFFIXES = (".mp4", ".avi", ".mov", ".mpg", ".mpeg")
 MODALITIES = ("rgb", "ir")

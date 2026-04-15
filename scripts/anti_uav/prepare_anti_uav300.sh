@@ -6,9 +6,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 DATA_ROOT="${DATA_ROOT:-/mnt/chenziye/datasets/anti_uav}"
-ZIP_NAME="${ZIP_NAME:-Anti-UAV-RGBT.zip}"
-EXTRACTED_ROOT="${EXTRACTED_ROOT:-${DATA_ROOT}/Anti-UAV-RGBT}"
-DOWNLOAD_URL="${DOWNLOAD_URL:-https://drive.google.com/uc?id=1NPYaop35ocVTYWHOYQQHn8YHsM9jmLGr}"
+ZIP_NAME="${ZIP_NAME:-Anti-UAV300.zip}"
+EXTRACTED_ROOT="${EXTRACTED_ROOT:-${DATA_ROOT}/Anti-UAV300}"
+DOWNLOAD_URL="${DOWNLOAD_URL:-https://huggingface.co/datasets/VoyageWang/antiuav/resolve/main/Anti-UAV300.zip}"
 GDOWN_BIN="${GDOWN_BIN:-gdown}"
 FRAME_STEP="${FRAME_STEP:-2}"
 NEGATIVE_FRAME_STEP="${NEGATIVE_FRAME_STEP:-8}"
@@ -33,6 +33,10 @@ fi
 if [[ ! -d "${EXTRACTED_ROOT}" ]]; then
   echo "Extracting ${ZIP_NAME}..."
   unzip -q "${DATA_ROOT}/${ZIP_NAME}" -d "${DATA_ROOT}"
+fi
+
+if [[ ! -d "${EXTRACTED_ROOT}" && -d "${DATA_ROOT}/Anti-UAV-RGBT" ]]; then
+  EXTRACTED_ROOT="${DATA_ROOT}/Anti-UAV-RGBT"
 fi
 
 convert_args=(

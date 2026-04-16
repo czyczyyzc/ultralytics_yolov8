@@ -66,6 +66,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence-root", default="", help="Sequence directory for Anti-UAV style datasets.")
     parser.add_argument("--modality", default="rgb", choices=("rgb", "ir", "auto"), help="Anti-UAV modality selector.")
     parser.add_argument("--tracker", default="template_match", choices=solutions.available_trackers(), help="Tracker backend.")
+    parser.add_argument("--nanotrack-root", default="", help="Optional upstream NanoTrack workspace root.")
+    parser.add_argument("--nanotrack-config", default="", help="Optional NanoTrack config yaml path.")
+    parser.add_argument("--nanotrack-snapshot", default="", help="Optional NanoTrack checkpoint path.")
+    parser.add_argument("--nanotrack-device", default="", help="Optional NanoTrack torch device, for example cpu or 0.")
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
     parser.add_argument("--conf", type=float, default=0.25, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
@@ -175,6 +179,20 @@ def build_detector(model, args: argparse.Namespace):
         preprocess_mode=args.input_mode,
         clahe=args.clahe,
         filters=filters,
+    )
+
+
+def build_tracker(args: argparse.Namespace):
+    """Instantiate an optional tracker object when extra backend configuration is required."""
+    if args.tracker != "nanotrack":
+        return args.tracker
+    return solutions.build_tracker(
+        "nanotrack",
+        nanotrack_root=args.nanotrack_root or None,
+        config_path=args.nanotrack_config or None,
+        snapshot_path=args.nanotrack_snapshot or None,
+        device=args.nanotrack_device or None,
+        score_threshold=args.tracker_score_thresh,
     )
 
 
@@ -337,7 +355,7 @@ def main() -> None:
     detector = build_detector(model, args)
     system = solutions.AntiUAVSystem(
         detector,
-        tracker=args.tracker,
+        tracker=build_tracker(args),
         detect_interval=args.detect_interval,
         max_lost=args.max_lost,
         tracker_score_thresh=args.tracker_score_thresh,

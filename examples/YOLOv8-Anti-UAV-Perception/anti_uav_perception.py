@@ -19,6 +19,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="yolov8n.pt", help="YOLO model path.")
     parser.add_argument("--source", required=True, help="Video path or camera index.")
     parser.add_argument("--tracker", default="template_match", choices=solutions.available_trackers(), help="Tracker backend.")
+    parser.add_argument("--nanotrack-root", default="", help="Optional upstream NanoTrack workspace root.")
+    parser.add_argument("--nanotrack-config", default="", help="Optional NanoTrack config yaml path.")
+    parser.add_argument("--nanotrack-snapshot", default="", help="Optional NanoTrack checkpoint path.")
+    parser.add_argument("--nanotrack-device", default="", help="Optional NanoTrack torch device, for example cpu or 0.")
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
     parser.add_argument("--conf", type=float, default=0.25, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
@@ -62,6 +66,19 @@ def build_detector(model, args: argparse.Namespace):
     )
 
 
+def build_tracker(args: argparse.Namespace):
+    """Instantiate tracker backends that need extra runtime parameters."""
+    if args.tracker != "nanotrack":
+        return args.tracker
+    return solutions.build_tracker(
+        "nanotrack",
+        nanotrack_root=args.nanotrack_root or None,
+        config_path=args.nanotrack_config or None,
+        snapshot_path=args.nanotrack_snapshot or None,
+        device=args.nanotrack_device or None,
+    )
+
+
 def maybe_handle_keypress(key: int, system: solutions.AntiUAVSystem) -> None:
     if key in {ord("c"), ord("C")}:
         system.confirm_current_target(True, note="operator_confirmed")
@@ -75,7 +92,7 @@ def main() -> None:
     detector = build_detector(model, args)
     system = solutions.AntiUAVSystem(
         detector,
-        tracker=args.tracker,
+        tracker=build_tracker(args),
         detect_interval=args.detect_interval,
         max_lost=args.max_lost,
         roi_redetect=not args.disable_roi_redetect,

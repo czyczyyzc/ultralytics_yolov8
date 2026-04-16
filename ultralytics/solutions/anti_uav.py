@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import os
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -213,6 +216,92 @@ class OpenCVTracker(BaseSingleTargetTracker):
             return False, None, 0.0
         x, y, w, h = bbox
         return True, _clip_bbox((x, y, x + w, y + h), frame.shape), 1.0
+
+
+_NANOTRACK_MODULE_CACHE = {}
+
+
+class NanoTrackPyTracker(BaseSingleTargetTracker):
+    """
+    Thin adapter around the upstream NanoTrack PyTorch implementation.
+
+    This adapter is intentionally limited to perception-only replay. It does not expose any actuation or control API.
+    The expected NanoTrack workspace is the upstream `HonglinChu/SiamTrackers/NanoTrack` directory prepared by
+    `scripts/anti_uav/setup_nanotrack.sh`.
+    """
+
+    name = "nanotrack"
+
+    def __init__(
+        self,
+        nanotrack_root: Optional[Union[str, Path]] = None,
+        config_path: Optional[Union[str, Path]] = None,
+        snapshot_path: Optional[Union[str, Path]] = None,
+        device: Optional[str] = None,
+        score_threshold: float = 0.25,
+    ):
+        self.nanotrack_root = _resolve_nanotrack_root(nanotrack_root)
+        self.config_path = self._resolve_file(
+            config_path,
+            fallback=self.nanotrack_root / "models" / "config" / "configv2.yaml",
+            label="NanoTrack config",
+        )
+        self.snapshot_path = self._resolve_file(
+            snapshot_path,
+            fallback=self.nanotrack_root / "models" / "pretrained" / "nanotrackv2.pth",
+            label="NanoTrack snapshot",
+        )
+        self.score_threshold = float(score_threshold)
+        self.device = device
+        self.initialized = False
+        self._modules = _load_nanotrack_modules(self.nanotrack_root)
+        self._torch = importlib.import_module("torch")
+        self._runtime_device = _parse_torch_device(self._torch, device)
+        if self._runtime_device.type == "cuda":
+            self._torch.cuda.set_device(self._runtime_device.index or 0)
+        self._tracker = self._build_tracker()
+
+    @staticmethod
+    def _resolve_file(value: Optional[Union[str, Path]], fallback: Path, label: str) -> Path:
+        path = Path(value).expanduser().resolve() if value else fallback.expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"{label} not found: {path}")
+        return path
+
+    def _build_tracker(self):
+        cfg = self._modules["cfg"]
+        cfg.merge_from_file(str(self.config_path))
+        cfg.CUDA = self._runtime_device.type == "cuda"
+
+        model = self._modules["ModelBuilder"]()
+        model = self._modules["load_pretrain"](model, str(self.snapshot_path))
+        model = model.to(self._runtime_device).eval()
+        return self._modules["build_tracker"](model)
+
+    def reset(self) -> None:
+        """Forget the current track state while keeping the loaded model in memory."""
+        self.initialized = False
+
+    def init(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Initialize NanoTrack with an xyxy bbox."""
+        x1, y1, x2, y2 = _clip_bbox(bbox, frame.shape)
+        self._tracker.init(frame, [x1, y1, x2 - x1, y2 - y1])
+        self.initialized = True
+
+    def update(self, frame: np.ndarray) -> Tuple[bool, Optional[Tuple[float, float, float, float]], float]:
+        """Advance NanoTrack and convert its xywh output back to xyxy coordinates."""
+        if not self.initialized:
+            return False, None, 0.0
+
+        outputs = self._tracker.track(frame)
+        bbox = outputs.get("bbox")
+        if bbox is None:
+            return False, None, 0.0
+
+        x, y, w, h = [float(v) for v in bbox]
+        clipped = _clip_bbox((x, y, x + w, y + h), frame.shape)
+        score = float(outputs.get("best_score", 0.0))
+        return score >= self.score_threshold, clipped, score
 
 
 class DetectionFilter(ABC):
@@ -889,6 +978,62 @@ def _create_opencv_tracker(tracker_type: str):
     raise RuntimeError(f"OpenCV tracker '{tracker_type}' is not available in this build")
 
 
+def _resolve_nanotrack_root(nanotrack_root: Optional[Union[str, Path]]) -> Path:
+    """Resolve the upstream NanoTrack workspace path."""
+    candidates = []
+    if nanotrack_root:
+        candidates.append(Path(nanotrack_root))
+    for env_name in ("NANOTRACK_ROOT",):
+        raw = os.environ.get(env_name)
+        if raw:
+            candidates.append(Path(raw))
+    candidates.append(Path(__file__).resolve().parents[2] / "third_party" / "SiamTrackers" / "NanoTrack")
+
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if (resolved / "nanotrack").exists():
+            return resolved
+    hint = candidates[0].expanduser().resolve() if candidates else Path("third_party/SiamTrackers/NanoTrack").resolve()
+    raise FileNotFoundError(
+        "NanoTrack workspace not found. Run scripts/anti_uav/setup_nanotrack.sh or pass "
+        f"nanotrack_root/NANOTRACK_ROOT. Last checked: {hint}"
+    )
+
+
+def _load_nanotrack_modules(nanotrack_root: Path) -> dict:
+    """Import the upstream NanoTrack modules once per workspace path."""
+    key = str(nanotrack_root.resolve())
+    if key in _NANOTRACK_MODULE_CACHE:
+        return _NANOTRACK_MODULE_CACHE[key]
+
+    if key not in sys.path:
+        sys.path.insert(0, key)
+
+    modules = {
+        "cfg": importlib.import_module("nanotrack.core.config").cfg,
+        "ModelBuilder": importlib.import_module("nanotrack.models.model_builder").ModelBuilder,
+        "build_tracker": importlib.import_module("nanotrack.tracker.tracker_builder").build_tracker,
+        "load_pretrain": importlib.import_module("nanotrack.utils.model_load").load_pretrain,
+    }
+    _NANOTRACK_MODULE_CACHE[key] = modules
+    return modules
+
+
+def _parse_torch_device(torch_module, device: Optional[Union[str, int]]):
+    """Parse a single-device torch target for NanoTrack."""
+    if device is None or device == "":
+        return torch_module.device("cuda:0" if torch_module.cuda.is_available() else "cpu")
+    if isinstance(device, int):
+        return torch_module.device(f"cuda:{device}")
+
+    value = str(device).strip()
+    if "," in value:
+        value = value.split(",", 1)[0].strip()
+    if value.isdigit():
+        return torch_module.device(f"cuda:{value}")
+    return torch_module.device(value)
+
+
 def _clip_bbox(bbox: Sequence[float], frame_shape: Tuple[int, ...]) -> Tuple[float, float, float, float]:
     """Clip bbox coordinates to image bounds."""
     height, width = frame_shape[:2]
@@ -935,6 +1080,7 @@ def _bbox_iou(box1: Sequence[float], box2: Sequence[float]) -> float:
 
 register_tracker(TemplateMatchTracker.name, TemplateMatchTracker, overwrite=True)
 register_tracker(OpenCVTracker.name, OpenCVTracker, overwrite=True)
+register_tracker(NanoTrackPyTracker.name, NanoTrackPyTracker, overwrite=True)
 
 
 __all__ = (
@@ -947,6 +1093,7 @@ __all__ = (
     "BorderFilter",
     "Detection",
     "DetectionFilter",
+    "NanoTrackPyTracker",
     "OpenCVTracker",
     "PatchClassifierFilter",
     "TargetState",

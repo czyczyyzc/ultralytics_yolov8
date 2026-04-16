@@ -1,5 +1,11 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import cv2
 import numpy as np
 
 from ultralytics import solutions
@@ -119,6 +125,7 @@ def test_tracker_registry_contains_expected_defaults():
     names = solutions.available_trackers()
     assert "template_match" in names
     assert "opencv" in names
+    assert "nanotrack" in names
     assert isinstance(solutions.build_tracker("template_match"), solutions.TemplateMatchTracker)
 
 
@@ -128,3 +135,48 @@ def test_iter_tiles_covers_full_frame():
     assert tiles[0] == (0.0, 0.0, 64.0, 64.0)
     assert any(tile[2] == 120.0 for tile in tiles)
     assert any(tile[3] == 100.0 for tile in tiles)
+
+
+def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
+    source_root = tmp_path / "Anti-UAV300" / "train"
+    sequence_root = source_root / "seq001"
+    sequence_root.mkdir(parents=True)
+
+    video_path = sequence_root / "rgb.mp4"
+    writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), 5.0, (64, 48))
+    for frame_index in range(3):
+        frame = np.full((48, 64, 3), frame_index * 40, dtype=np.uint8)
+        writer.write(frame)
+    writer.release()
+
+    annotation_path = sequence_root / "rgb_label.json"
+    annotation_path.write_text(json.dumps({"gt_rect": [[10, 12, 8, 6], [11, 12, 8, 6], []]}), encoding="utf-8")
+
+    output_root = tmp_path / "nanotrack_export"
+    converter = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "convert_anti_uav300_nanotrack.py"
+    subprocess.run(
+        [
+            sys.executable,
+            str(converter),
+            "--source-root",
+            str(tmp_path / "Anti-UAV300"),
+            "--output-root",
+            str(output_root),
+            "--modalities",
+            "rgb",
+            "--frame-step",
+            "1",
+        ],
+        check=True,
+    )
+
+    train_json = output_root / "rgb" / "train.json"
+    val_json = output_root / "rgb" / "val.json"
+    crop_path = output_root / "rgb" / "crop511" / "train_seq001" / "000000.00.x.jpg"
+
+    assert train_json.exists() or val_json.exists()
+    assert crop_path.exists()
+    metadata = json.loads((train_json if train_json.stat().st_size else val_json).read_text(encoding="utf-8"))
+    assert "train_seq001" in metadata
+    assert "00" in metadata["train_seq001"]
+    assert "000000" in metadata["train_seq001"]["00"]

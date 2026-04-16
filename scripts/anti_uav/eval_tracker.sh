@@ -16,6 +16,7 @@ TILE_SIZE="${TILE_SIZE:-0}"
 SAVE_VIDEO="${SAVE_VIDEO:-}"
 SUMMARY_JSON="${SUMMARY_JSON:-${REPO_ROOT}/runs/anti_uav/replay_summary.json}"
 ERROR_LOG="${ERROR_LOG:-${REPO_ROOT}/runs/anti_uav/replay_errors.jsonl}"
+EXTRA_ARGS="${EXTRA_ARGS:-}"
 
 if [[ -z "${SEQUENCE_ROOT}" ]]; then
   echo "Please set SEQUENCE_ROOT to one Anti-UAV sequence directory." >&2
@@ -43,6 +44,12 @@ fi
 
 if [[ -n "${SAVE_VIDEO}" ]]; then
   replay_args+=(--save-video "${SAVE_VIDEO}")
+fi
+
+if [[ -n "${EXTRA_ARGS}" ]]; then
+  # shellcheck disable=SC2206
+  extra_args=(${EXTRA_ARGS})
+  replay_args+=("${extra_args[@]}")
 fi
 
 PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" "${replay_args[@]}"

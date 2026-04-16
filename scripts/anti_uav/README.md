@@ -2,6 +2,18 @@
 
 These scripts support a defensive, alerting-only anti-UAV workflow.
 
+## NanoTrack Notes
+
+If you want a NanoTrack backend inside this repository, the most useful references are:
+
+- `HonglinChu/SiamTrackers/NanoTrack` for the upstream PyTorch tracker and training code
+- `Try2ChangeX/NanoTrack_RK3588_python` for RK3588-specific RKNN runtime layout and post-processing
+
+In other words:
+
+- for local replay and fine-tuning, use upstream NanoTrack
+- for later RK3588 deployment, use the RK3588 repo as the export/runtime reference
+
 ## `prepare_anti_uav300.sh`
 
 Downloads `Anti-UAV300`, extracts it, and converts the videos plus JSON annotations into a YOLO detection dataset.
@@ -19,6 +31,48 @@ Useful overrides:
 - `NEGATIVE_FRAME_STEP=8`
 - `EXPORT_MODALITIES="rgb ir"`
 - `DOWNLOAD_URL=https://huggingface.co/datasets/VoyageWang/antiuav/resolve/main/Anti-UAV300.zip`
+
+## `setup_nanotrack.sh`
+
+Sparse-checks out the upstream NanoTrack workspace under `third_party/SiamTrackers/NanoTrack`
+and optionally downloads the matching pretrained checkpoint.
+
+Example:
+
+```bash
+bash scripts/anti_uav/setup_nanotrack.sh
+```
+
+Useful overrides:
+
+- `VARIANT=v1|v2|v3`
+- `NANOTRACK_ROOT=/path/to/NanoTrack`
+- `DOWNLOAD_PRETRAINED=0`
+- `BUILD_EXT=1`
+
+## `convert_anti_uav300_nanotrack.py`
+
+Converts `Anti-UAV300` into a NanoTrack-style `crop511` dataset with modality-specific
+`train.json` and `val.json` files.
+
+Example:
+
+```bash
+python scripts/anti_uav/convert_anti_uav300_nanotrack.py \
+  --source-root /mnt/chenziye/datasets/anti_uav/Anti-UAV300 \
+  --output-root /mnt/chenziye/datasets/anti_uav/anti_uav300_nanotrack \
+  --modalities rgb ir \
+  --frame-step 1
+```
+
+Output layout:
+
+- `.../rgb/crop511/<sequence>/<frame>.00.x.jpg`
+- `.../rgb/train.json`
+- `.../rgb/val.json`
+- `.../ir/crop511/<sequence>/<frame>.00.x.jpg`
+- `.../ir/train.json`
+- `.../ir/val.json`
 
 ## `train_detect.sh`
 
@@ -91,6 +145,16 @@ TRACKER=template_match \
 bash scripts/anti_uav/eval_tracker.sh
 ```
 
+To evaluate with NanoTrack:
+
+```bash
+MODEL=runs/anti_uav/yolov8n_anti_uav300_rgb_8gpu_b128_e50_nbs128/weights/best.pt \
+SEQUENCE_ROOT=/mnt/chenziye/datasets/anti_uav/Anti-UAV300/test-dev/20190925_101846_1_1 \
+TRACKER=nanotrack \
+EXTRA_ARGS="--nanotrack-root /mnt/chenziye/codes/ultralytics_yolov8/third_party/SiamTrackers/NanoTrack --nanotrack-snapshot /mnt/chenziye/codes/ultralytics_yolov8/third_party/SiamTrackers/NanoTrack/models/pretrained/nanotrackv2.pth" \
+bash scripts/anti_uav/eval_tracker.sh
+```
+
 ## `replay_eval.py`
 
 Offline replay and evaluation for:
@@ -130,6 +194,10 @@ Useful tuning flags:
 - `--border-margin`
 - `--disable-roi-redetect`
 - `--disable-full-frame-fallback`
+- `--nanotrack-root`
+- `--nanotrack-config`
+- `--nanotrack-snapshot`
+- `--nanotrack-device`
 
 ## `batch_replay_eval.py`
 
@@ -181,3 +249,27 @@ python scripts/anti_uav/benchmark_rknn.py \
   --output-json runs/anti_uav/rknn_benchmark.json \
   --preview-dir runs/anti_uav/rknn_preview
 ```
+
+## `train_nanotrack.sh`
+
+Runs a NanoTrack fine-tuning job against the converted `Anti-UAV300` crop dataset.
+
+Example:
+
+```bash
+MODALITY=rgb \
+VARIANT=v2 \
+DEVICE=0 \
+bash scripts/anti_uav/train_nanotrack.sh
+```
+
+Useful overrides:
+
+- `PREPARE_NANOTRACK=0` when the upstream workspace is already present
+- `PRETRAINED=/path/to/nanotrackv2.pth`
+- `EPOCHS=30`
+- `BATCH_SIZE=32`
+- `VIDEOS_PER_EPOCH=120000`
+- `NAME=nanotrack_rgb_v2_anti_uav300`
+
+This launcher keeps the scope on tracking-model fine-tuning only. It does not add any actuation or interception logic.

@@ -13,6 +13,7 @@ DOWNLOAD_PRETRAINED="${DOWNLOAD_PRETRAINED:-1}"
 INSTALL_DEPS="${INSTALL_DEPS:-1}"
 VARIANT="${VARIANT:-v2}"
 ARCHIVE_URL="${ARCHIVE_URL:-https://github.com/HonglinChu/SiamTrackers/archive/refs/heads/${BRANCH}.zip}"
+GIT_CLONE_TIMEOUT="${GIT_CLONE_TIMEOUT:-30s}"
 
 case "${VARIANT}" in
   v1) PRETRAINED_NAME="nanotrackv1.pth" ;;
@@ -29,7 +30,11 @@ PRETRAINED_URL="${PRETRAINED_URL:-https://github.com/HonglinChu/SiamTrackers/raw
 mkdir -p "$(dirname "${THIRD_PARTY_ROOT}")"
 
 if [[ ! -d "${THIRD_PARTY_ROOT}/.git" && ! -d "${NANOTRACK_ROOT}/nanotrack" ]]; then
-  if ! git clone --depth=1 --filter=blob:none --sparse --branch "${BRANCH}" https://github.com/HonglinChu/SiamTrackers "${THIRD_PARTY_ROOT}"; then
+  clone_cmd=(git clone --depth=1 --filter=blob:none --sparse --branch "${BRANCH}" https://github.com/HonglinChu/SiamTrackers "${THIRD_PARTY_ROOT}")
+  if command -v timeout >/dev/null 2>&1; then
+    clone_cmd=(timeout "${GIT_CLONE_TIMEOUT}" "${clone_cmd[@]}")
+  fi
+  if ! "${clone_cmd[@]}"; then
     rm -rf "${THIRD_PARTY_ROOT}"
     tmp_zip="$(mktemp /tmp/siamtrackers.XXXXXX.zip)"
     tmp_dir="$(mktemp -d /tmp/siamtrackers.XXXXXX)"

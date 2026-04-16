@@ -249,3 +249,69 @@ def test_train_nanotrack_local_smoke(tmp_path):
 
     assert (run_root / "snapshots" / "best.pth").exists()
     assert (run_root / "logs" / "history.json").exists()
+
+
+def test_export_nanotrack_rk3588_dry_run(tmp_path):
+    crop_root = tmp_path / "rgb" / "crop511"
+    crop_root.mkdir(parents=True)
+    train_json = tmp_path / "rgb" / "train.json"
+    train_json.write_text(json.dumps({}), encoding="utf-8")
+
+    config_path = tmp_path / "config.yaml"
+    run_root = tmp_path / "run"
+    writer = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "write_nanotrack_config.py"
+    exporter = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "export_nanotrack_rk3588.py"
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(writer),
+            "--output",
+            str(config_path),
+            "--dataset-name",
+            "ANTIUAV300_RGB",
+            "--crop-root",
+            str(crop_root),
+            "--train-json",
+            str(train_json),
+            "--variant",
+            "v2",
+            "--pretrained",
+            "",
+            "--snapshot-dir",
+            str(run_root / "snapshots"),
+            "--log-dir",
+            str(run_root / "logs"),
+            "--epochs",
+            "1",
+            "--batch-size",
+            "1",
+            "--num-workers",
+            "0",
+            "--videos-per-epoch",
+            "1",
+        ],
+        check=True,
+    )
+
+    output_dir = tmp_path / "rk3588_onnx"
+    subprocess.run(
+        [
+            sys.executable,
+            str(exporter),
+            "--cfg",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+            "--device",
+            "cpu",
+            "--dry-run",
+        ],
+        check=True,
+    )
+
+    manifest = json.loads((output_dir / "export_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["template_input_shape_nchw"] == [1, 3, 127, 127]
+    assert manifest["search_input_shape_nchw"] == [1, 3, 255, 255]
+    assert manifest["head_cls_shape_nchw"][0] == 1
+    assert manifest["head_loc_shape_nchw"][1] == 4

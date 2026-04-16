@@ -289,3 +289,33 @@ Example RGB and IR jobs on one machine:
 MODALITY=rgb DEVICE=cuda:0 NAME=nanotrack_rgb_v2_anti_uav300 bash scripts/anti_uav/train_nanotrack.sh
 MODALITY=ir DEVICE=cuda:1 NAME=nanotrack_ir_v2_anti_uav300 bash scripts/anti_uav/train_nanotrack.sh
 ```
+
+## `export_nanotrack_rk3588.py`
+
+Exports the vendored NanoTrack model into three ONNX components aligned with the
+`Try2ChangeX/NanoTrack_RK3588_python` runtime split:
+
+- `nanotrack_t_backbone.onnx`
+- `nanotrack_x_backbone.onnx`
+- `nanotrack_head.onnx`
+
+Example:
+
+```bash
+python scripts/anti_uav/export_nanotrack_rk3588.py \
+  --cfg runs/anti_uav/nanotrack_rgb_v2_anti_uav300/config.yaml \
+  --snapshot runs/anti_uav/nanotrack_rgb_v2_anti_uav300/snapshots/best.pth \
+  --output-dir runs/anti_uav/nanotrack_rgb_v2_anti_uav300/rk3588_onnx
+```
+
+Useful flags:
+
+- `--device cpu`
+- `--opset 12`
+- `--template-size 127`
+- `--search-size 255`
+- `--dry-run`
+
+The generated manifest records the feature tensor shapes so the later RKNN conversion
+and board-side runtime can be checked against the expected `T-backbone / X-backbone / Head`
+interfaces before building `.rknn` artifacts.

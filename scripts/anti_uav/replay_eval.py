@@ -71,21 +71,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nanotrack-snapshot", default="", help="Optional NanoTrack checkpoint path.")
     parser.add_argument("--nanotrack-device", default="", help="Optional NanoTrack torch device, for example cpu or 0.")
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
-    parser.add_argument("--conf", type=float, default=0.25, help="Detector confidence threshold.")
+    parser.add_argument("--conf", type=float, default=0.45, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
     parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
-    parser.add_argument("--detect-interval", type=int, default=8, help="Run detector every N frames while tracking.")
+    parser.add_argument("--detect-interval", type=int, default=4, help="Run detector every N frames while tracking.")
     parser.add_argument("--max-lost", type=int, default=30, help="Frames to wait before dropping a lost target.")
     parser.add_argument(
         "--tracker-score-thresh",
         type=float,
-        default=0.2,
+        default=0.4,
         help="Minimum acceptable tracker score before forcing detector recovery.",
     )
     parser.add_argument(
         "--min-confidence",
         type=float,
-        default=0.2,
+        default=0.45,
         help="Minimum detector confidence accepted by the single-target state machine.",
     )
     parser.add_argument("--tile-size", type=int, default=0, help="Enable tiled detection with square tile size.")
@@ -115,6 +115,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--iou-thresh", type=float, default=0.3, help="IoU threshold for frame-level matches.")
     parser.add_argument("--max-frames", type=int, default=0, help="Stop after N frames. 0 means no limit.")
     parser.add_argument("--auto-confirm", action="store_true", help="Auto-confirm pending targets during offline replay.")
+    parser.add_argument(
+        "--min-confirm-detections",
+        type=int,
+        default=2,
+        help="Require this many detector-backed hits before a target can enter pending/confirmed review state.",
+    )
     parser.add_argument("--save-video", default="", help="Optional annotated replay output video path.")
     parser.add_argument("--summary-json", default="", help="Optional path to write replay metrics as JSON.")
     parser.add_argument("--error-log", default="", help="Optional JSONL file for FP/FN/alert review records.")
@@ -363,6 +369,7 @@ def main() -> None:
         roi_redetect=not args.disable_roi_redetect,
         full_frame_fallback=not args.disable_full_frame_fallback,
         manual_confirmation=not args.auto_confirm,
+        min_confirm_detections=args.min_confirm_detections,
     )
     recorder = solutions.AlertRecorder(
         state_path=args.state_log or None,

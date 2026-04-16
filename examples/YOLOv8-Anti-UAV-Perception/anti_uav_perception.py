@@ -24,11 +24,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nanotrack-snapshot", default="", help="Optional NanoTrack checkpoint path.")
     parser.add_argument("--nanotrack-device", default="", help="Optional NanoTrack torch device, for example cpu or 0.")
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
-    parser.add_argument("--conf", type=float, default=0.25, help="Detector confidence threshold.")
+    parser.add_argument("--conf", type=float, default=0.45, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
     parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
-    parser.add_argument("--detect-interval", type=int, default=8, help="Run detector every N frames while tracking.")
+    parser.add_argument("--detect-interval", type=int, default=4, help="Run detector every N frames while tracking.")
     parser.add_argument("--max-lost", type=int, default=30, help="Frames to wait before dropping a lost target.")
+    parser.add_argument(
+        "--min-confirm-detections",
+        type=int,
+        default=2,
+        help="Require this many detector-backed hits before a target enters pending/confirmed review state.",
+    )
     parser.add_argument("--input-mode", default="rgb", choices=("rgb", "gray", "ir"), help="Input preprocessing mode.")
     parser.add_argument("--clahe", action="store_true", help="Apply CLAHE in gray/IR preprocessing.")
     parser.add_argument("--tile-size", type=int, default=0, help="Enable tiled detection with square tile size.")
@@ -49,7 +55,11 @@ def open_source(source: str):
 
 def build_detector(model, args: argparse.Namespace):
     class_names = [name.strip() for name in args.target_classes.split(",") if name.strip()]
-    filters = [solutions.AreaFilter(min_area_px=9), solutions.AspectRatioFilter(), solutions.BorderFilter()]
+    filters = [
+        solutions.AreaFilter(min_area_px=16),
+        solutions.AspectRatioFilter(min_ratio=0.25, max_ratio=4.0),
+        solutions.BorderFilter(margin_px=6),
+    ]
     return solutions.YOLODetectionAdapter(
         model,
         class_names=class_names or None,
@@ -95,8 +105,11 @@ def main() -> None:
         tracker=build_tracker(args),
         detect_interval=args.detect_interval,
         max_lost=args.max_lost,
+        tracker_score_thresh=0.4,
+        min_confidence=0.45,
         roi_redetect=not args.disable_roi_redetect,
         manual_confirmation=not args.no_manual_confirmation,
+        min_confirm_detections=args.min_confirm_detections,
     )
     recorder = solutions.AlertRecorder(
         state_path=args.state_log or None,

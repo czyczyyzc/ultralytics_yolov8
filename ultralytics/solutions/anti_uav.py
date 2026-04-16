@@ -72,6 +72,8 @@ class TargetState:
     alert_active: bool
     alert_emitted: bool
     detector_mode: str
+    confirmation_hits: int
+    detection_hits: int
     class_id: int = -1
     class_name: str = "target"
 
@@ -567,15 +569,21 @@ class AntiUAVSystem:
         detector,
         *,
         tracker: Optional[Union[str, BaseSingleTargetTracker]] = None,
-        detect_interval: int = 8,
+        detect_interval: int = 4,
         max_lost: int = 30,
-        tracker_score_thresh: float = 0.2,
-        min_confidence: float = 0.2,
+        tracker_score_thresh: float = 0.4,
+        min_confidence: float = 0.45,
         roi_redetect: bool = True,
         full_frame_fallback: bool = True,
         manual_confirmation: bool = True,
-        pending_frames: int = 2,
+        pending_frames: int = 3,
         auto_confirm_frames: int = 4,
+        min_confirm_detections: int = 1,
+        association_min_iou: float = 0.1,
+        association_max_center_ratio: float = 1.25,
+        association_max_area_change: float = 3.0,
+        association_max_aspect_change: float = 2.5,
+        association_relaxed_multiplier: float = 1.5,
     ):
         self.detector = detector
         if isinstance(tracker, str):
@@ -594,6 +602,12 @@ class AntiUAVSystem:
         self.manual_confirmation = manual_confirmation
         self.pending_frames = max(1, pending_frames)
         self.auto_confirm_frames = max(1, auto_confirm_frames)
+        self.min_confirm_detections = max(1, min_confirm_detections)
+        self.association_min_iou = max(0.0, association_min_iou)
+        self.association_max_center_ratio = max(0.0, association_max_center_ratio)
+        self.association_max_area_change = max(1.0, association_max_area_change)
+        self.association_max_aspect_change = max(1.0, association_max_aspect_change)
+        self.association_relaxed_multiplier = max(1.0, association_relaxed_multiplier)
         self.reset()
 
     def reset(self) -> None:
@@ -615,6 +629,8 @@ class AntiUAVSystem:
         self.last_detector_mode = "none"
         self.last_frame_shape = (1, 1, 3)
         self.last_threat_score = 0.0
+        self.confirmation_hits = 0
+        self.detection_hits = 0
         self.tracker.reset()
 
     def step(self, frame: np.ndarray) -> TargetState:
@@ -627,6 +643,7 @@ class AntiUAVSystem:
         self.pending_events = []
         alert_emitted = False
         tracking_ok = False
+        detection_accepted = False
         self.last_frame_shape = frame.shape
 
         if self.bbox is not None:
@@ -650,23 +667,33 @@ class AntiUAVSystem:
 
         if should_detect:
             detections = self._detect_candidates(frame, prefer_roi=tracking_ok)
-            detection = self._select_detection(detections)
+            detection = self._select_detection(detections, association_bbox=self.bbox, strict_association=tracking_ok)
             self.frames_since_detection = 0
             if detection is not None:
                 previous_bbox = self.bbox
                 self._activate_detection(frame, detection)
+                detection_accepted = True
                 if previous_bbox is None:
                     self.status = "detected"
                     self.age = 1
+                    self.confirmation_hits = 1
+                    self.detection_hits = 1
                 elif tracking_ok:
                     self.status = "redetected"
                     self.age += 1
+                    self.confirmation_hits += 1
+                    self.detection_hits += 1
                 else:
                     self.status = "reacquired"
                     self.age += 1
+                    self.confirmation_hits = 1
+                    self.detection_hits = 1
                 self.lost_frames = 0
             else:
-                if self.bbox is None or self.lost_frames > self.max_lost:
+                if tracking_ok and self.bbox is not None:
+                    self.status = "tracking"
+                    self.lost_frames = 0
+                elif self.bbox is None or self.lost_frames > self.max_lost:
                     self._drop_target(frame, note="target_lost")
                 else:
                     self.status = "lost"
@@ -674,13 +701,31 @@ class AntiUAVSystem:
             self.frames_since_detection += 1
             self.last_detector_mode = "idle"
 
+        if self.bbox is None:
+            self.confirmation_hits = 0
+            self.detection_hits = 0
+        elif detection_accepted:
+            pass
+        elif tracking_ok and self.track_score >= self.tracker_score_thresh:
+            self.confirmation_hits += 1
+        else:
+            self.confirmation_hits = 0
+
         threat_score = self._estimate_threat_score(frame.shape)
         self.last_threat_score = threat_score
         if self.bbox is not None:
             if self.manual_confirmation:
-                if self.age >= self.pending_frames and self.confirmation_state in {"idle", "pending"}:
+                if (
+                    self.confirmation_hits >= self.pending_frames
+                    and self.detection_hits >= self.min_confirm_detections
+                    and self.confirmation_state in {"idle", "pending"}
+                ):
                     self.confirmation_state = "pending"
-            elif self.age >= self.auto_confirm_frames and self.confirmation_state != "confirmed":
+            elif (
+                self.confirmation_hits >= self.auto_confirm_frames
+                and self.detection_hits >= self.min_confirm_detections
+                and self.confirmation_state != "confirmed"
+            ):
                 event = self._confirm_current_target(note="auto_confirmed")
                 alert_emitted = event is not None
         else:
@@ -701,6 +746,8 @@ class AntiUAVSystem:
             alert_active=self.alert_active,
             alert_emitted=alert_emitted,
             detector_mode=self.last_detector_mode,
+            confirmation_hits=self.confirmation_hits,
+            detection_hits=self.detection_hits,
             class_id=self.active_detection.class_id if self.active_detection else -1,
             class_name=self.active_detection.class_name if self.active_detection else "target",
         )
@@ -746,6 +793,8 @@ class AntiUAVSystem:
                 alert_active=self.alert_active,
                 alert_emitted=False,
                 detector_mode=self.last_detector_mode,
+                confirmation_hits=self.confirmation_hits,
+                detection_hits=self.detection_hits,
                 class_id=self.active_detection.class_id if self.active_detection else -1,
                 class_name=self.active_detection.class_name if self.active_detection else "target",
             )
@@ -841,21 +890,54 @@ class AntiUAVSystem:
         self.age = 0
         self.lost_frames = 0
         self.frames_since_detection = 0
+        self.confirmation_hits = 0
+        self.detection_hits = 0
         self.confirmation_state = "idle"
         self.alert_active = False
         self.current_alert_id = 0
         self.tracker.reset()
 
-    def _select_detection(self, detections: Sequence[Detection]) -> Optional[Detection]:
+    def _select_detection(
+        self,
+        detections: Sequence[Detection],
+        association_bbox: Optional[Sequence[float]] = None,
+        strict_association: bool = False,
+    ) -> Optional[Detection]:
         """Choose the most plausible single target, preferring consistency with the current target."""
         filtered = [d for d in detections if d.confidence >= self.min_confidence]
         if not filtered:
             return None
 
-        if self.bbox is None:
+        if association_bbox is None:
             return max(filtered, key=lambda det: det.confidence)
 
-        return max(filtered, key=lambda det: det.confidence + 0.3 * _bbox_iou(det.bbox, self.bbox))
+        gated = [d for d in filtered if self._passes_association_gate(d.bbox, association_bbox, strict_association)]
+        if not gated:
+            return None
+
+        return max(gated, key=lambda det: det.confidence + 0.3 * _bbox_iou(det.bbox, association_bbox))
+
+    def _passes_association_gate(
+        self,
+        candidate_bbox: Sequence[float],
+        reference_bbox: Sequence[float],
+        strict: bool,
+    ) -> bool:
+        """Reject detector refreshes that jump too far from the active target hypothesis."""
+        iou = _bbox_iou(candidate_bbox, reference_bbox)
+        center_ratio = _bbox_center_distance_ratio(candidate_bbox, reference_bbox)
+        area_change = _bbox_area_change_ratio(candidate_bbox, reference_bbox)
+        aspect_change = _bbox_aspect_change_ratio(candidate_bbox, reference_bbox)
+
+        multiplier = 1.0 if strict else self.association_relaxed_multiplier
+        min_iou = self.association_min_iou / multiplier
+        max_center_ratio = self.association_max_center_ratio * multiplier
+        max_area_change = self.association_max_area_change * multiplier
+        max_aspect_change = self.association_max_aspect_change * multiplier
+
+        spatially_consistent = iou >= min_iou or center_ratio <= max_center_ratio
+        scale_consistent = area_change <= max_area_change and aspect_change <= max_aspect_change
+        return spatially_consistent and scale_consistent
 
     def _confirm_current_target(self, note: str) -> Optional[AlertEvent]:
         """Mark the current target as human-validated and raise an alert if needed."""
@@ -1078,6 +1160,31 @@ def _bbox_iou(box1: Sequence[float], box2: Sequence[float]) -> float:
     area2 = max(0.0, (box2[2] - box2[0]) * (box2[3] - box2[1]))
     union = area1 + area2 - inter
     return inter / union if union > 0 else 0.0
+
+
+def _bbox_center_distance_ratio(box1: Sequence[float], box2: Sequence[float]) -> float:
+    """Center distance normalized by the reference-box diagonal."""
+    cx1 = (box1[0] + box1[2]) / 2.0
+    cy1 = (box1[1] + box1[3]) / 2.0
+    cx2 = (box2[0] + box2[2]) / 2.0
+    cy2 = (box2[1] + box2[3]) / 2.0
+    distance = float(np.hypot(cx1 - cx2, cy1 - cy2))
+    reference_diag = float(np.hypot(max(box2[2] - box2[0], 1.0), max(box2[3] - box2[1], 1.0)))
+    return distance / max(reference_diag, 1.0)
+
+
+def _bbox_area_change_ratio(box1: Sequence[float], box2: Sequence[float]) -> float:
+    """Symmetric area-change ratio between two boxes."""
+    area1 = max((box1[2] - box1[0]) * (box1[3] - box1[1]), 1.0)
+    area2 = max((box2[2] - box2[0]) * (box2[3] - box2[1]), 1.0)
+    return max(area1 / area2, area2 / area1)
+
+
+def _bbox_aspect_change_ratio(box1: Sequence[float], box2: Sequence[float]) -> float:
+    """Symmetric aspect-ratio change between two boxes."""
+    aspect1 = max(box1[2] - box1[0], 1.0) / max(box1[3] - box1[1], 1.0)
+    aspect2 = max(box2[2] - box2[0], 1.0) / max(box2[3] - box2[1], 1.0)
+    return max(aspect1 / aspect2, aspect2 / aspect1)
 
 
 register_tracker(TemplateMatchTracker.name, TemplateMatchTracker, overwrite=True)

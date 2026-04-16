@@ -111,7 +111,14 @@ def test_manual_confirmation_emits_alert_event():
     detector = DummyDetector([[solutions.Detection(bbox=(10, 10, 30, 30), confidence=0.95, class_id=0, class_name="drone")]])
     tracker = FakeTracker([])
 
-    system = solutions.AntiUAVSystem(detector, tracker=tracker, detect_interval=5, pending_frames=1, manual_confirmation=True)
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=5,
+        pending_frames=1,
+        min_confirm_detections=1,
+        manual_confirmation=True,
+    )
     state = system.step(frame)
     event = system.confirm_current_target(True, note="unit_test_confirm")
     events = system.drain_alerts()
@@ -120,6 +127,79 @@ def test_manual_confirmation_emits_alert_event():
     assert event is not None
     assert event.event_type == "alert_raised"
     assert events[0].event_type == "alert_raised"
+
+
+def test_confirmation_requires_multiple_detection_hits():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(10, 10, 30, 30), confidence=0.95, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(11, 10, 31, 30), confidence=0.93, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (10, 10, 30, 30), 0.88),
+            (True, (11, 10, 31, 30), 0.86),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        pending_frames=2,
+        min_confirm_detections=2,
+        manual_confirmation=True,
+    )
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.confirmation_state == "idle"
+    assert second.confirmation_state == "idle"
+    assert second.confirmation_hits == 2
+    assert second.detection_hits == 1
+    assert third.status == "redetected"
+    assert third.confirmation_state == "pending"
+    assert third.detection_hits == 2
+
+
+def test_association_gate_rejects_far_redetection_and_keeps_track():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(20, 20, 40, 40), confidence=0.95, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(90, 70, 120, 100), confidence=0.98, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (21, 20, 41, 40), 0.92),
+            (True, (22, 20, 42, 40), 0.90),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        tracker_score_thresh=0.4,
+        min_confidence=0.45,
+        manual_confirmation=False,
+    )
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert third.status == "tracking"
+    assert third.bbox == (22.0, 20.0, 42.0, 40.0)
+    assert third.detection_hits == 1
+    assert detector.calls[-1]["roi"] == (22.0, 20.0, 42.0, 40.0)
 
 
 def test_tracker_registry_contains_expected_defaults():

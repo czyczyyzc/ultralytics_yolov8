@@ -118,6 +118,13 @@ def prepare_batch(batch: dict, device: torch.device) -> dict:
     return prepared
 
 
+def reduce_loss_tensor(value):
+    """Reduce DataParallel per-device scalar outputs back to a single scalar."""
+    if torch.is_tensor(value) and value.ndim > 0:
+        return value.mean()
+    return value
+
+
 def main() -> None:
     args = parse_args()
     cfg.merge_from_file(args.cfg)
@@ -170,13 +177,15 @@ def main() -> None:
             batch = prepare_batch(batch, device)
             optimizer.zero_grad(set_to_none=True)
             outputs = model(batch)
-            loss = outputs["total_loss"]
+            loss = reduce_loss_tensor(outputs["total_loss"])
+            cls_loss = reduce_loss_tensor(outputs["cls_loss"])
+            loc_loss = reduce_loss_tensor(outputs["loc_loss"])
             loss.backward()
             clip_grad_norm_(base_model.parameters(), float(cfg.TRAIN.GRAD_CLIP))
             optimizer.step()
             epoch_loss += float(loss.item())
-            cls_loss_sum += float(outputs["cls_loss"].item())
-            loc_loss_sum += float(outputs["loc_loss"].item())
+            cls_loss_sum += float(cls_loss.item())
+            loc_loss_sum += float(loc_loss.item())
             if step % int(cfg.TRAIN.PRINT_FREQ) == 0 or step == len(loader):
                 LOGGER.info(
                     "epoch=%d step=%d/%d loss=%.4f cls=%.4f loc=%.4f lr=%.6f",

@@ -180,3 +180,72 @@ def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
     assert "train_seq001" in metadata
     assert "00" in metadata["train_seq001"]
     assert "000000" in metadata["train_seq001"]["00"]
+
+
+def test_train_nanotrack_local_smoke(tmp_path):
+    crop_root = tmp_path / "rgb" / "crop511" / "train_seq001"
+    crop_root.mkdir(parents=True)
+
+    frame = np.full((255, 255, 3), 127, dtype=np.uint8)
+    for frame_index in range(2):
+        cv2.imwrite(str(crop_root / f"{frame_index:06d}.00.x.jpg"), frame)
+
+    train_json = tmp_path / "rgb" / "train.json"
+    train_json.write_text(
+        json.dumps({"train_seq001": {"00": {"000000": [100, 100, 40, 32], "000001": [102, 101, 40, 32]}}}),
+        encoding="utf-8",
+    )
+
+    config_path = tmp_path / "config.yaml"
+    run_root = tmp_path / "run"
+    writer = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "write_nanotrack_config.py"
+    trainer = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "train_nanotrack_local.py"
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(writer),
+            "--output",
+            str(config_path),
+            "--dataset-name",
+            "ANTIUAV300_RGB",
+            "--crop-root",
+            str(tmp_path / "rgb" / "crop511"),
+            "--train-json",
+            str(train_json),
+            "--variant",
+            "v2",
+            "--pretrained",
+            "",
+            "--snapshot-dir",
+            str(run_root / "snapshots"),
+            "--log-dir",
+            str(run_root / "logs"),
+            "--epochs",
+            "1",
+            "--batch-size",
+            "1",
+            "--num-workers",
+            "0",
+            "--videos-per-epoch",
+            "2",
+        ],
+        check=True,
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(trainer),
+            "--cfg",
+            str(config_path),
+            "--device",
+            "cpu",
+            "--save-every",
+            "1",
+        ],
+        check=True,
+    )
+
+    assert (run_root / "snapshots" / "best.pth").exists()
+    assert (run_root / "logs" / "history.json").exists()

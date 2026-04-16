@@ -9,6 +9,7 @@ from pathlib import Path
 
 VARIANT_PRESETS = {
     "v1": {
+        "ban_version": "v2",
         "backbone_type": "mobilenetv3_small",
         "backbone_pretrained": "./models/pretrained/mobilenetv3_small_1.0.pth",
         "adjust_channels": 64,
@@ -22,6 +23,7 @@ VARIANT_PRESETS = {
         "videos_per_epoch": 100000,
     },
     "v2": {
+        "ban_version": "v2",
         "backbone_type": "mobilenetv3_small",
         "backbone_pretrained": "./models/pretrained/mobilenetv3_small_1.0.pth",
         "adjust_channels": 64,
@@ -35,6 +37,7 @@ VARIANT_PRESETS = {
         "videos_per_epoch": 120000,
     },
     "v3": {
+        "ban_version": "v3",
         "backbone_type": "mobilenetv3_small_v3",
         "backbone_pretrained": "./models/pretrained/mobilenetv3_small_1.0.pth",
         "adjust_channels": 96,
@@ -100,6 +103,7 @@ ADJUST:
 BAN:
     BAN: True
     TYPE: DepthwiseBAN
+    VERSION: "{preset['ban_version']}"
     KWARGS:
         in_channels: {preset['adjust_channels']}
         out_channels: {preset['adjust_channels']}

@@ -223,11 +223,11 @@ _NANOTRACK_MODULE_CACHE = {}
 
 class NanoTrackPyTracker(BaseSingleTargetTracker):
     """
-    Thin adapter around the upstream NanoTrack PyTorch implementation.
+    Thin adapter around a NanoTrack-style PyTorch implementation.
 
     This adapter is intentionally limited to perception-only replay. It does not expose any actuation or control API.
-    The expected NanoTrack workspace is the upstream `HonglinChu/SiamTrackers/NanoTrack` directory prepared by
-    `scripts/anti_uav/setup_nanotrack.sh`.
+    The expected workspace is either the vendored `third_party/nanotrack_vendor` snapshot or a compatible upstream
+    checkout passed explicitly through `nanotrack_root`.
     """
 
     name = "nanotrack"
@@ -979,7 +979,7 @@ def _create_opencv_tracker(tracker_type: str):
 
 
 def _resolve_nanotrack_root(nanotrack_root: Optional[Union[str, Path]]) -> Path:
-    """Resolve the upstream NanoTrack workspace path."""
+    """Resolve a NanoTrack workspace path."""
     candidates = []
     if nanotrack_root:
         candidates.append(Path(nanotrack_root))
@@ -987,15 +987,17 @@ def _resolve_nanotrack_root(nanotrack_root: Optional[Union[str, Path]]) -> Path:
         raw = os.environ.get(env_name)
         if raw:
             candidates.append(Path(raw))
-    candidates.append(Path(__file__).resolve().parents[2] / "third_party" / "SiamTrackers" / "NanoTrack")
+    repo_root = Path(__file__).resolve().parents[2]
+    candidates.append(repo_root / "third_party" / "nanotrack_vendor")
+    candidates.append(repo_root / "third_party" / "SiamTrackers" / "NanoTrack")
 
     for candidate in candidates:
         resolved = candidate.expanduser().resolve()
         if (resolved / "nanotrack").exists():
             return resolved
-    hint = candidates[0].expanduser().resolve() if candidates else Path("third_party/SiamTrackers/NanoTrack").resolve()
+    hint = candidates[0].expanduser().resolve() if candidates else (repo_root / "third_party" / "nanotrack_vendor").resolve()
     raise FileNotFoundError(
-        "NanoTrack workspace not found. Run scripts/anti_uav/setup_nanotrack.sh or pass "
+        "NanoTrack workspace not found. Vendor the local snapshot or pass "
         f"nanotrack_root/NANOTRACK_ROOT. Last checked: {hint}"
     )
 

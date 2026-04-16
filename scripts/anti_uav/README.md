@@ -14,6 +14,10 @@ In other words:
 - for local replay and fine-tuning, use upstream NanoTrack
 - for later RK3588 deployment, use the RK3588 repo as the export/runtime reference
 
+This repository also carries a minimal vendored NanoTrack-compatible snapshot under
+`third_party/nanotrack_vendor`. That snapshot is enough for local replay and Anti-UAV300
+fine-tuning without any server-side GitHub dependency.
+
 ## `prepare_anti_uav300.sh`
 
 Downloads `Anti-UAV300`, extracts it, and converts the videos plus JSON annotations into a YOLO detection dataset.
@@ -36,6 +40,9 @@ Useful overrides:
 
 Sparse-checks out the upstream NanoTrack workspace under `third_party/SiamTrackers/NanoTrack`
 and optionally downloads the matching pretrained checkpoint.
+
+You no longer need this step for the default training flow because `train_nanotrack.sh`
+uses the vendored `third_party/nanotrack_vendor` snapshot by default.
 
 Example:
 
@@ -151,7 +158,7 @@ To evaluate with NanoTrack:
 MODEL=runs/anti_uav/yolov8n_anti_uav300_rgb_8gpu_b128_e50_nbs128/weights/best.pt \
 SEQUENCE_ROOT=/mnt/chenziye/datasets/anti_uav/Anti-UAV300/test-dev/20190925_101846_1_1 \
 TRACKER=nanotrack \
-EXTRA_ARGS="--nanotrack-root /mnt/chenziye/codes/ultralytics_yolov8/third_party/SiamTrackers/NanoTrack --nanotrack-snapshot /mnt/chenziye/codes/ultralytics_yolov8/third_party/SiamTrackers/NanoTrack/models/pretrained/nanotrackv2.pth" \
+EXTRA_ARGS="--nanotrack-root /mnt/chenziye/codes/ultralytics_yolov8/third_party/nanotrack_vendor --nanotrack-config /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/nanotrack_rgb_v2_anti_uav300/config.yaml --nanotrack-snapshot /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/nanotrack_rgb_v2_anti_uav300/snapshots/best.pth" \
 bash scripts/anti_uav/eval_tracker.sh
 ```
 
@@ -265,11 +272,20 @@ bash scripts/anti_uav/train_nanotrack.sh
 
 Useful overrides:
 
-- `PREPARE_NANOTRACK=0` when the upstream workspace is already present
+- `NANOTRACK_ROOT=/path/to/custom/nanotrack/root`
 - `PRETRAINED=/path/to/nanotrackv2.pth`
 - `EPOCHS=30`
 - `BATCH_SIZE=32`
 - `VIDEOS_PER_EPOCH=120000`
+- `DEVICE=cuda:0`
+- `SAVE_EVERY=5`
 - `NAME=nanotrack_rgb_v2_anti_uav300`
 
 This launcher keeps the scope on tracking-model fine-tuning only. It does not add any actuation or interception logic.
+
+Example RGB and IR jobs on one machine:
+
+```bash
+MODALITY=rgb DEVICE=cuda:0 NAME=nanotrack_rgb_v2_anti_uav300 bash scripts/anti_uav/train_nanotrack.sh
+MODALITY=ir DEVICE=cuda:1 NAME=nanotrack_ir_v2_anti_uav300 bash scripts/anti_uav/train_nanotrack.sh
+```

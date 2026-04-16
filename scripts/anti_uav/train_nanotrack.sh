@@ -11,25 +11,21 @@ MODALITY="${MODALITY:-rgb}"
 VARIANT="${VARIANT:-v2}"
 FRAME_STEP="${FRAME_STEP:-1}"
 MIN_BOX_SIZE="${MIN_BOX_SIZE:-2}"
-NANOTRACK_ROOT="${NANOTRACK_ROOT:-${REPO_ROOT}/third_party/SiamTrackers/NanoTrack}"
-PREPARE_NANOTRACK="${PREPARE_NANOTRACK:-1}"
+NANOTRACK_ROOT="${NANOTRACK_ROOT:-${REPO_ROOT}/third_party/nanotrack_vendor}"
 PRETRAINED="${PRETRAINED:-}"
 EPOCHS="${EPOCHS:-30}"
 BATCH_SIZE="${BATCH_SIZE:-0}"
 NUM_WORKERS="${NUM_WORKERS:-8}"
 VIDEOS_PER_EPOCH="${VIDEOS_PER_EPOCH:-0}"
-DEVICE="${DEVICE:-0}"
+DEVICE="${DEVICE:-cuda:0}"
 NAME="${NAME:-nanotrack_${MODALITY}_${VARIANT}_anti_uav300}"
 RUN_ROOT="${RUN_ROOT:-${REPO_ROOT}/runs/anti_uav/${NAME}}"
 OVERWRITE_EXPORT="${OVERWRITE_EXPORT:-0}"
+SAVE_EVERY="${SAVE_EVERY:-5}"
 
 CONVERTER="${REPO_ROOT}/scripts/anti_uav/convert_anti_uav300_nanotrack.py"
-SETUP_SCRIPT="${REPO_ROOT}/scripts/anti_uav/setup_nanotrack.sh"
 CONFIG_WRITER="${REPO_ROOT}/scripts/anti_uav/write_nanotrack_config.py"
-
-if [[ "${PREPARE_NANOTRACK}" == "1" ]]; then
-  VARIANT="${VARIANT}" NANOTRACK_ROOT="${NANOTRACK_ROOT}" "${SETUP_SCRIPT}"
-fi
+TRAINER="${REPO_ROOT}/scripts/anti_uav/train_nanotrack_local.py"
 
 if [[ ! -d "${SOURCE_ROOT}" ]]; then
   echo "Extracted Anti-UAV300 root not found: ${SOURCE_ROOT}" >&2
@@ -67,7 +63,10 @@ LOG_DIR="${RUN_ROOT}/logs"
 SNAPSHOT_DIR="${RUN_ROOT}/snapshots"
 
 if [[ -z "${PRETRAINED}" ]]; then
-  PRETRAINED="${NANOTRACK_ROOT}/models/pretrained/nanotrack${VARIANT}.pth"
+  candidate="${NANOTRACK_ROOT}/models/pretrained/nanotrack${VARIANT}.pth"
+  if [[ -f "${candidate}" ]]; then
+    PRETRAINED="${candidate}"
+  fi
 fi
 
 "${PYTHON_BIN}" "${CONFIG_WRITER}" \
@@ -84,10 +83,9 @@ fi
   --num-workers "${NUM_WORKERS}" \
   --videos-per-epoch "${VIDEOS_PER_EPOCH}"
 
-export CUDA_VISIBLE_DEVICES="${DEVICE}"
 export PYTHONPATH="${NANOTRACK_ROOT}:${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
-(
-  cd "${NANOTRACK_ROOT}"
-  "${PYTHON_BIN}" ./bin/train.py --cfg "${CONFIG_PATH}"
-)
+"${PYTHON_BIN}" "${TRAINER}" \
+  --cfg "${CONFIG_PATH}" \
+  --device "${DEVICE}" \
+  --save-every "${SAVE_EVERY}"

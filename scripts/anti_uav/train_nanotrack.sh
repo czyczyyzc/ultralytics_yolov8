@@ -86,7 +86,23 @@ fi
 
 export PYTHONPATH="${NANOTRACK_ROOT}:${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
-"${PYTHON_BIN}" "${TRAINER}" \
-  --cfg "${CONFIG_PATH}" \
-  --device "${DEVICE}" \
+launch_args=(
+  --cfg "${CONFIG_PATH}"
+  --device "${DEVICE}"
   --save-every "${SAVE_EVERY}"
+)
+
+if [[ "${DEVICE}" == cuda:* && "${DEVICE}" == *,* ]]; then
+  visible_devices="${DEVICE#cuda:}"
+  IFS=',' read -r -a gpu_ids <<< "${visible_devices}"
+  world_size="${#gpu_ids[@]}"
+  if [[ "${world_size}" -lt 2 ]]; then
+    echo "Expected at least 2 GPUs in DEVICE for DDP launch, got: ${DEVICE}" >&2
+    exit 1
+  fi
+  export CUDA_VISIBLE_DEVICES="${visible_devices}"
+  launch_args[3]="cuda"
+  "${PYTHON_BIN}" -m torch.distributed.run --standalone --nproc_per_node="${world_size}" "${TRAINER}" "${launch_args[@]}"
+else
+  "${PYTHON_BIN}" "${TRAINER}" "${launch_args[@]}"
+fi

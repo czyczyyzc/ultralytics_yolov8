@@ -14,9 +14,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
+import torch.distributed as dist
 from torch.nn.utils import clip_grad_norm_
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[2]
@@ -38,6 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda:0", help="Torch device, for example cuda:0 or cpu.")
     parser.add_argument("--seed", type=int, default=123456, help="Random seed.")
     parser.add_argument("--save-every", type=int, default=5, help="Checkpoint interval in epochs.")
+    parser.add_argument("--local-rank", "--local_rank", dest="local_rank", type=int, default=int(os.environ.get("LOCAL_RANK", -1)), help="Torch distributed local rank.")
+    parser.add_argument("--backend", default="nccl", help="Distributed backend.")
     return parser.parse_args()
 
 
@@ -106,6 +110,28 @@ def build_scheduler(optimizer: torch.optim.Optimizer):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
 
+def configure_logging(log_path: Path, rank: int) -> None:
+    """Configure rank-aware logging."""
+    handlers = [logging.StreamHandler(sys.stdout)] if rank == 0 else []
+    if rank == 0:
+        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+    logging.basicConfig(level=logging.INFO if rank == 0 else logging.WARNING, format="%(asctime)s | %(levelname)s | %(message)s", handlers=handlers, force=True)
+
+
+def setup_distributed(args: argparse.Namespace) -> tuple[torch.device, int, int, bool]:
+    """Initialize distributed state when launched with torchrun."""
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    if args.local_rank >= 0 and world_size > 1:
+        if not args.device.startswith("cuda"):
+            raise ValueError("DDP NanoTrack training currently expects a CUDA device")
+        torch.cuda.set_device(args.local_rank)
+        dist.init_process_group(backend=args.backend)
+        return torch.device(f"cuda:{args.local_rank}"), args.local_rank, world_size, True
+
+    device, _ = parse_device_spec(args.device)
+    return device, 0, 1, False
+
+
 def prepare_batch(batch: dict, device: torch.device) -> dict:
     prepared = {}
     for key, value in batch.items():
@@ -125,22 +151,38 @@ def reduce_loss_tensor(value):
     return value
 
 
+def reduce_for_logging(value: torch.Tensor, distributed: bool) -> torch.Tensor:
+    """All-reduce a detached scalar for logging."""
+    reduced = value.detach()
+    if distributed:
+        dist.all_reduce(reduced, op=dist.ReduceOp.SUM)
+        reduced /= dist.get_world_size()
+    return reduced
+
+
+def worker_init_fn_builder(base_seed: int, rank: int):
+    """Create a deterministic worker seed initializer."""
+
+    def _init(worker_id: int) -> None:
+        seed = base_seed + rank * 1000 + worker_id
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
+    return _init
+
+
 def main() -> None:
     args = parse_args()
     cfg.merge_from_file(args.cfg)
-    device, parallel_ids = parse_device_spec(args.device)
+    device, rank, world_size, distributed = setup_distributed(args)
     cfg.CUDA = device.type == "cuda"
-    Path(cfg.TRAIN.LOG_DIR).mkdir(parents=True, exist_ok=True)
-    Path(cfg.TRAIN.SNAPSHOT_DIR).mkdir(parents=True, exist_ok=True)
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler(Path(cfg.TRAIN.LOG_DIR) / "train.log", encoding="utf-8"),
-        ],
-    )
+    if rank == 0:
+        Path(cfg.TRAIN.LOG_DIR).mkdir(parents=True, exist_ok=True)
+        Path(cfg.TRAIN.SNAPSHOT_DIR).mkdir(parents=True, exist_ok=True)
+    if distributed:
+        dist.barrier()
+    configure_logging(Path(cfg.TRAIN.LOG_DIR) / "train.log", rank)
     seed_everything(args.seed)
 
     model = ModelBuilder().to(device).train()
@@ -150,25 +192,42 @@ def main() -> None:
     elif cfg.TRAIN.PRETRAINED:
         LOGGER.warning("Pretrained checkpoint not found, starting from scratch: %s", cfg.TRAIN.PRETRAINED)
 
-    base_model = model
-    if device.type == "cuda" and len(parallel_ids) > 1:
-        torch.cuda.set_device(parallel_ids[0])
-        model = nn.DataParallel(model, device_ids=parallel_ids, output_device=parallel_ids[0])
-        LOGGER.info("Enabled DataParallel on GPUs: %s", parallel_ids)
+    if distributed:
+        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank, broadcast_buffers=False)
+        LOGGER.info("Enabled DDP on rank %d/%d", rank, world_size)
 
     dataset = BANDataset()
-    loader = DataLoader(dataset, batch_size=int(cfg.TRAIN.BATCH_SIZE), num_workers=int(cfg.TRAIN.NUM_WORKERS), pin_memory=device.type == "cuda", shuffle=False)
+    if distributed and int(cfg.TRAIN.BATCH_SIZE) % world_size != 0:
+        raise ValueError(f"Global batch size {cfg.TRAIN.BATCH_SIZE} must be divisible by world size {world_size}")
+    local_batch_size = int(cfg.TRAIN.BATCH_SIZE) // world_size if distributed else int(cfg.TRAIN.BATCH_SIZE)
+    local_num_workers = max(0, int(cfg.TRAIN.NUM_WORKERS) // world_size) if distributed else int(cfg.TRAIN.NUM_WORKERS)
+    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=False) if distributed else None
+    loader = DataLoader(
+        dataset,
+        batch_size=local_batch_size,
+        num_workers=local_num_workers,
+        pin_memory=device.type == "cuda",
+        shuffle=False,
+        sampler=sampler,
+        worker_init_fn=worker_init_fn_builder(args.seed, rank),
+    )
+    base_model = model.module if isinstance(model, DDP) else model
     optimizer = build_optimizer(base_model)
     scheduler = build_scheduler(optimizer)
 
     best_loss = float("inf")
     history = []
-    LOGGER.info("Training config:\n%s", cfg.dump())
-    LOGGER.info("Dataset length per epoch: %d", len(dataset))
+    if rank == 0:
+        LOGGER.info("Training config:\n%s", cfg.dump())
+        LOGGER.info("Dataset length per epoch: %d", len(dataset))
+        LOGGER.info("Global batch size: %d | Local batch size: %d | Global workers: %d | Local workers: %d | World size: %d", int(cfg.TRAIN.BATCH_SIZE), local_batch_size, int(cfg.TRAIN.NUM_WORKERS), local_num_workers, world_size)
 
     for epoch in range(int(cfg.TRAIN.EPOCH)):
         model.train()
+        np.random.seed(args.seed + epoch)
         dataset.resample()
+        if sampler is not None:
+            sampler.set_epoch(epoch)
         epoch_loss = 0.0
         cls_loss_sum = 0.0
         loc_loss_sum = 0.0
@@ -183,10 +242,13 @@ def main() -> None:
             loss.backward()
             clip_grad_norm_(base_model.parameters(), float(cfg.TRAIN.GRAD_CLIP))
             optimizer.step()
-            epoch_loss += float(loss.item())
-            cls_loss_sum += float(cls_loss.item())
-            loc_loss_sum += float(loc_loss.item())
-            if step % int(cfg.TRAIN.PRINT_FREQ) == 0 or step == len(loader):
+            log_loss = reduce_for_logging(loss, distributed)
+            log_cls_loss = reduce_for_logging(cls_loss, distributed)
+            log_loc_loss = reduce_for_logging(loc_loss, distributed)
+            epoch_loss += float(log_loss.item())
+            cls_loss_sum += float(log_cls_loss.item())
+            loc_loss_sum += float(log_loc_loss.item())
+            if rank == 0 and (step % int(cfg.TRAIN.PRINT_FREQ) == 0 or step == len(loader)):
                 LOGGER.info(
                     "epoch=%d step=%d/%d loss=%.4f cls=%.4f loc=%.4f lr=%.6f",
                     epoch + 1,
@@ -202,20 +264,26 @@ def main() -> None:
         avg_cls = cls_loss_sum / max(len(loader), 1)
         avg_loc = loc_loss_sum / max(len(loader), 1)
         elapsed = time.time() - start
-        history.append({"epoch": epoch + 1, "loss": avg_loss, "cls_loss": avg_cls, "loc_loss": avg_loc, "seconds": elapsed})
-        LOGGER.info("epoch=%d done loss=%.4f cls=%.4f loc=%.4f elapsed=%.1fs", epoch + 1, avg_loss, avg_cls, avg_loc, elapsed)
+        if rank == 0:
+            history.append({"epoch": epoch + 1, "loss": avg_loss, "cls_loss": avg_cls, "loc_loss": avg_loc, "seconds": elapsed})
+            LOGGER.info("epoch=%d done loss=%.4f cls=%.4f loc=%.4f elapsed=%.1fs", epoch + 1, avg_loss, avg_cls, avg_loc, elapsed)
 
-        checkpoint = {"epoch": epoch + 1, "state_dict": base_model.state_dict(), "optimizer": optimizer.state_dict(), "history": history}
-        torch.save(checkpoint, Path(cfg.TRAIN.SNAPSHOT_DIR) / "last.pth")
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            torch.save(checkpoint, Path(cfg.TRAIN.SNAPSHOT_DIR) / "best.pth")
-        if (epoch + 1) % max(args.save_every, 1) == 0:
-            torch.save(checkpoint, Path(cfg.TRAIN.SNAPSHOT_DIR) / f"epoch_{epoch+1:03d}.pth")
+            checkpoint = {"epoch": epoch + 1, "state_dict": base_model.state_dict(), "optimizer": optimizer.state_dict(), "history": history}
+            torch.save(checkpoint, Path(cfg.TRAIN.SNAPSHOT_DIR) / "last.pth")
+            if avg_loss < best_loss:
+                best_loss = avg_loss
+                torch.save(checkpoint, Path(cfg.TRAIN.SNAPSHOT_DIR) / "best.pth")
+            if (epoch + 1) % max(args.save_every, 1) == 0:
+                torch.save(checkpoint, Path(cfg.TRAIN.SNAPSHOT_DIR) / f"epoch_{epoch+1:03d}.pth")
+        if distributed:
+            dist.barrier()
 
-    history_path = Path(cfg.TRAIN.LOG_DIR) / "history.json"
-    history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
-    LOGGER.info("Training complete. best_loss=%.4f history=%s", best_loss, history_path)
+    if rank == 0:
+        history_path = Path(cfg.TRAIN.LOG_DIR) / "history.json"
+        history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+        LOGGER.info("Training complete. best_loss=%.4f history=%s", best_loss, history_path)
+    if distributed:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

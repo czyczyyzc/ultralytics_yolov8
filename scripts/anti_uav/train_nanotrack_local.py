@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 
@@ -38,6 +39,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=123456, help="Random seed.")
     parser.add_argument("--save-every", type=int, default=5, help="Checkpoint interval in epochs.")
     return parser.parse_args()
+
+
+def parse_device_spec(device_spec: str) -> tuple[torch.device, list[int]]:
+    """Parse single- or multi-GPU device strings such as `cuda:0` or `cuda:0,1,2,3`."""
+    value = str(device_spec).strip()
+    if value.lower() == "cpu":
+        return torch.device("cpu"), []
+    if not value.startswith("cuda"):
+        return torch.device(value), []
+
+    suffix = value[4:].lstrip(":")
+    if not suffix:
+        return torch.device("cuda:0"), [0] if torch.cuda.is_available() else []
+
+    if "," in suffix:
+        ids = [int(part.strip()) for part in suffix.split(",") if part.strip()]
+        if not ids:
+            raise ValueError(f"Invalid CUDA device list: {device_spec}")
+        return torch.device(f"cuda:{ids[0]}"), ids
+
+    return torch.device(value), [int(suffix)]
 
 
 def seed_everything(seed: int) -> None:
@@ -99,7 +121,7 @@ def prepare_batch(batch: dict, device: torch.device) -> dict:
 def main() -> None:
     args = parse_args()
     cfg.merge_from_file(args.cfg)
-    device = torch.device(args.device)
+    device, parallel_ids = parse_device_spec(args.device)
     cfg.CUDA = device.type == "cuda"
     Path(cfg.TRAIN.LOG_DIR).mkdir(parents=True, exist_ok=True)
     Path(cfg.TRAIN.SNAPSHOT_DIR).mkdir(parents=True, exist_ok=True)
@@ -121,9 +143,15 @@ def main() -> None:
     elif cfg.TRAIN.PRETRAINED:
         LOGGER.warning("Pretrained checkpoint not found, starting from scratch: %s", cfg.TRAIN.PRETRAINED)
 
+    base_model = model
+    if device.type == "cuda" and len(parallel_ids) > 1:
+        torch.cuda.set_device(parallel_ids[0])
+        model = nn.DataParallel(model, device_ids=parallel_ids, output_device=parallel_ids[0])
+        LOGGER.info("Enabled DataParallel on GPUs: %s", parallel_ids)
+
     dataset = BANDataset()
     loader = DataLoader(dataset, batch_size=int(cfg.TRAIN.BATCH_SIZE), num_workers=int(cfg.TRAIN.NUM_WORKERS), pin_memory=device.type == "cuda", shuffle=False)
-    optimizer = build_optimizer(model)
+    optimizer = build_optimizer(base_model)
     scheduler = build_scheduler(optimizer)
 
     best_loss = float("inf")
@@ -144,7 +172,7 @@ def main() -> None:
             outputs = model(batch)
             loss = outputs["total_loss"]
             loss.backward()
-            clip_grad_norm_(model.parameters(), float(cfg.TRAIN.GRAD_CLIP))
+            clip_grad_norm_(base_model.parameters(), float(cfg.TRAIN.GRAD_CLIP))
             optimizer.step()
             epoch_loss += float(loss.item())
             cls_loss_sum += float(outputs["cls_loss"].item())
@@ -168,7 +196,7 @@ def main() -> None:
         history.append({"epoch": epoch + 1, "loss": avg_loss, "cls_loss": avg_cls, "loc_loss": avg_loc, "seconds": elapsed})
         LOGGER.info("epoch=%d done loss=%.4f cls=%.4f loc=%.4f elapsed=%.1fs", epoch + 1, avg_loss, avg_cls, avg_loc, elapsed)
 
-        checkpoint = {"epoch": epoch + 1, "state_dict": model.state_dict(), "optimizer": optimizer.state_dict(), "history": history}
+        checkpoint = {"epoch": epoch + 1, "state_dict": base_model.state_dict(), "optimizer": optimizer.state_dict(), "history": history}
         torch.save(checkpoint, Path(cfg.TRAIN.SNAPSHOT_DIR) / "last.pth")
         if avg_loss < best_loss:
             best_loss = avg_loss

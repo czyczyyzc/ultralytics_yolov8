@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from ultralytics import solutions
+from scripts.anti_uav.train_nanotrack_local import parse_device_spec
 
 
 class FakeTracker:
@@ -315,3 +316,13 @@ def test_export_nanotrack_rk3588_dry_run(tmp_path):
     assert manifest["search_input_shape_nchw"] == [1, 3, 255, 255]
     assert manifest["head_cls_shape_nchw"][0] == 1
     assert manifest["head_loc_shape_nchw"][1] == 4
+
+
+def test_parse_nanotrack_device_spec():
+    device, ids = parse_device_spec("cuda:0,1,2,3")
+    assert str(device) == "cuda:0"
+    assert ids == [0, 1, 2, 3]
+
+    device, ids = parse_device_spec("cpu")
+    assert str(device) == "cpu"
+    assert ids == []

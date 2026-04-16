@@ -193,7 +193,13 @@ def main() -> None:
         LOGGER.warning("Pretrained checkpoint not found, starting from scratch: %s", cfg.TRAIN.PRETRAINED)
 
     if distributed:
-        model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank, broadcast_buffers=False)
+        model = DDP(
+            model,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank,
+            broadcast_buffers=False,
+            find_unused_parameters=True,
+        )
         LOGGER.info("Enabled DDP on rank %d/%d", rank, world_size)
 
     dataset = BANDataset()

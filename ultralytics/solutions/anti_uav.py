@@ -569,7 +569,7 @@ class AntiUAVSystem:
         detector,
         *,
         tracker: Optional[Union[str, BaseSingleTargetTracker]] = None,
-        detect_interval: int = 4,
+        detect_interval: int = 2,
         max_lost: int = 30,
         tracker_score_thresh: float = 0.4,
         min_confidence: float = 0.45,
@@ -579,11 +579,11 @@ class AntiUAVSystem:
         pending_frames: int = 3,
         auto_confirm_frames: int = 4,
         min_confirm_detections: int = 1,
-        association_min_iou: float = 0.1,
-        association_max_center_ratio: float = 1.25,
-        association_max_area_change: float = 3.0,
-        association_max_aspect_change: float = 2.5,
-        association_relaxed_multiplier: float = 1.5,
+        association_min_iou: float = 0.05,
+        association_max_center_ratio: float = 2.0,
+        association_max_area_change: float = 6.0,
+        association_max_aspect_change: float = 3.5,
+        association_relaxed_multiplier: float = 2.0,
     ):
         self.detector = detector
         if isinstance(tracker, str):
@@ -631,6 +631,7 @@ class AntiUAVSystem:
         self.last_threat_score = 0.0
         self.confirmation_hits = 0
         self.detection_hits = 0
+        self.requires_detector_refresh = False
         self.tracker.reset()
 
     def step(self, frame: np.ndarray) -> TargetState:
@@ -657,6 +658,9 @@ class AntiUAVSystem:
             else:
                 self.status = "lost"
                 self.lost_frames += 1
+                if self.confirmation_state == "confirmed":
+                    self.confirmation_state = "pending"
+                    self.requires_detector_refresh = True
 
         should_detect = (
             self.bbox is None
@@ -689,6 +693,9 @@ class AntiUAVSystem:
                     self.confirmation_hits = 1
                     self.detection_hits = 1
                 self.lost_frames = 0
+                if self.requires_detector_refresh and self.alert_active:
+                    self.confirmation_state = "confirmed"
+                self.requires_detector_refresh = False
             else:
                 if tracking_ok and self.bbox is not None:
                     self.status = "tracking"
@@ -704,6 +711,7 @@ class AntiUAVSystem:
         if self.bbox is None:
             self.confirmation_hits = 0
             self.detection_hits = 0
+            self.requires_detector_refresh = False
         elif detection_accepted:
             pass
         elif tracking_ok and self.track_score >= self.tracker_score_thresh:
@@ -714,7 +722,9 @@ class AntiUAVSystem:
         threat_score = self._estimate_threat_score(frame.shape)
         self.last_threat_score = threat_score
         if self.bbox is not None:
-            if self.manual_confirmation:
+            if self.requires_detector_refresh:
+                self.confirmation_state = "pending"
+            elif self.manual_confirmation:
                 if (
                     self.confirmation_hits >= self.pending_frames
                     and self.detection_hits >= self.min_confirm_detections
@@ -762,6 +772,9 @@ class AntiUAVSystem:
         if self.bbox is None:
             return None
         if accepted:
+            if self.requires_detector_refresh:
+                self.confirmation_state = "pending"
+                return None
             return self._confirm_current_target(note=note)
 
         self.confirmation_state = "rejected"
@@ -892,6 +905,7 @@ class AntiUAVSystem:
         self.frames_since_detection = 0
         self.confirmation_hits = 0
         self.detection_hits = 0
+        self.requires_detector_refresh = False
         self.confirmation_state = "idle"
         self.alert_active = False
         self.current_alert_id = 0

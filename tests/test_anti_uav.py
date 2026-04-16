@@ -202,6 +202,76 @@ def test_association_gate_rejects_far_redetection_and_keeps_track():
     assert detector.calls[-1]["roi"] == (22.0, 20.0, 42.0, 40.0)
 
 
+def test_detector_miss_does_not_mark_fake_lost_when_tracker_is_healthy():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(20, 20, 40, 40), confidence=0.95, class_id=0, class_name="drone")],
+            [],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (21, 20, 41, 40), 0.94),
+            (True, (22, 20, 42, 40), 0.92),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(detector, tracker=tracker, detect_interval=1, manual_confirmation=False)
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert third.status == "tracking"
+    assert third.lost_frames == 0
+    assert third.bbox == (22.0, 20.0, 42.0, 40.0)
+
+
+def test_confirmed_target_requires_detector_refresh_after_lost():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(20, 20, 40, 40), confidence=0.95, class_id=0, class_name="drone")],
+            [],
+            [solutions.Detection(bbox=(23, 20, 43, 40), confidence=0.94, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (False, None, 0.0),
+            (True, (21, 20, 41, 40), 0.93),
+            (True, (22, 20, 42, 40), 0.91),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        pending_frames=1,
+        min_confirm_detections=1,
+        manual_confirmation=True,
+        full_frame_fallback=False,
+    )
+
+    first = system.step(frame)
+    system.confirm_current_target(True, note="unit_test_confirm")
+    second = system.step(frame)
+    third = system.step(frame)
+    fourth = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "lost"
+    assert second.confirmation_state == "pending"
+    assert third.status == "tracking"
+    assert third.confirmation_state == "pending"
+    assert fourth.status == "redetected"
+    assert fourth.confirmation_state == "confirmed"
+
+
 def test_tracker_registry_contains_expected_defaults():
     names = solutions.available_trackers()
     assert "template_match" in names

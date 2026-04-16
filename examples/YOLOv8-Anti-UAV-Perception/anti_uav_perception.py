@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.45, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
     parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
-    parser.add_argument("--detect-interval", type=int, default=4, help="Run detector every N frames while tracking.")
+    parser.add_argument("--detect-interval", type=int, default=2, help="Run detector every N frames while tracking.")
     parser.add_argument("--max-lost", type=int, default=30, help="Frames to wait before dropping a lost target.")
     parser.add_argument(
         "--min-confirm-detections",

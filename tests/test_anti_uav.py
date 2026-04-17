@@ -162,6 +162,99 @@ def test_reacquired_uses_hard_reinit_after_loss():
     assert tracker.corrected == []
 
 
+def test_assist_window_escalates_to_hard_reinit_after_consecutive_disagreement():
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(40, 40, 80, 80), confidence=0.9, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(45, 40, 85, 80), confidence=0.91, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(170, 40, 210, 80), confidence=0.92, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(175, 40, 215, 80), confidence=0.93, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (42, 40, 82, 80), 0.92),
+            (True, (46, 40, 86, 80), 0.90),
+            (True, (47, 40, 87, 80), 0.88),
+            (True, (48, 40, 88, 80), 0.87),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        manual_confirmation=False,
+        assist_hard_reinit_streak=2,
+    )
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+    fourth = system.step(frame)
+    fifth = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert third.status == "redetected"
+    assert fourth.status == "redetected"
+    assert fifth.status == "redetected"
+    assert tracker.corrected == [
+        (45.0, 40.0, 85.0, 80.0),
+        (170.0, 40.0, 210.0, 80.0),
+    ]
+    assert tracker.reinitialized == [
+        (40.0, 40.0, 80.0, 80.0),
+        (175.0, 40.0, 215.0, 80.0),
+    ]
+    assert system.assist_disagreement_streak == 0
+
+
+def test_assist_window_resets_disagreement_streak_after_consistent_refresh():
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(40, 40, 80, 80), confidence=0.9, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(45, 40, 85, 80), confidence=0.91, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(170, 40, 210, 80), confidence=0.92, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(48, 40, 88, 80), confidence=0.90, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(176, 40, 216, 80), confidence=0.93, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (42, 40, 82, 80), 0.92),
+            (True, (46, 40, 86, 80), 0.90),
+            (True, (47, 40, 87, 80), 0.89),
+            (True, (49, 40, 89, 80), 0.88),
+            (True, (50, 40, 90, 80), 0.87),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        manual_confirmation=False,
+        assist_hard_reinit_streak=2,
+    )
+
+    states = [system.step(frame) for _ in range(6)]
+
+    assert [state.status for state in states] == [
+        "detected",
+        "tracking",
+        "redetected",
+        "redetected",
+        "redetected",
+        "redetected",
+    ]
+    assert tracker.reinitialized == [(40.0, 40.0, 80.0, 80.0)]
+    assert tracker.corrected[-1] == (176.0, 40.0, 216.0, 80.0)
+    assert system.assist_disagreement_streak == 1
+
+
 def test_anti_uav_drops_target_after_too_many_misses():
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
     detector = DummyDetector([[solutions.Detection(bbox=(20, 20, 60, 60), confidence=0.9, class_id=0, class_name="drone")], [], []])

@@ -618,6 +618,7 @@ class AntiUAVSystem:
         association_max_aspect_change: float = 3.5,
         association_relaxed_multiplier: float = 2.0,
         assist_frames: int = 6,
+        assist_hard_reinit_streak: int = 2,
         suspect_score_thresh: Optional[float] = None,
     ):
         self.detector = detector
@@ -644,6 +645,7 @@ class AntiUAVSystem:
         self.association_max_aspect_change = max(1.0, association_max_aspect_change)
         self.association_relaxed_multiplier = max(1.0, association_relaxed_multiplier)
         self.assist_frames = max(0, int(assist_frames))
+        self.assist_hard_reinit_streak = max(1, int(assist_hard_reinit_streak))
         default_suspect_thresh = max(self.tracker_score_thresh + 0.10, 0.55)
         self.suspect_score_thresh = (
             default_suspect_thresh if suspect_score_thresh is None else max(float(suspect_score_thresh), self.tracker_score_thresh)
@@ -673,6 +675,7 @@ class AntiUAVSystem:
         self.detection_hits = 0
         self.requires_detector_refresh = False
         self.assist_frames_remaining = 0
+        self.assist_disagreement_streak = 0
         self.tracker.reset()
 
     def step(self, frame: np.ndarray) -> TargetState:
@@ -723,7 +726,7 @@ class AntiUAVSystem:
             self.frames_since_detection = 0
             if detection is not None:
                 previous_bbox = self.bbox
-                handoff = "soft" if previous_bbox is not None and tracking_ok else "hard"
+                handoff = self._resolve_detection_handoff(previous_bbox, detection.bbox, tracking_ok, assist_active)
                 self._activate_detection(frame, detection, handoff=handoff)
                 detection_accepted = True
                 if previous_bbox is None:
@@ -749,6 +752,7 @@ class AntiUAVSystem:
                     self.confirmation_state = "confirmed"
                 self.requires_detector_refresh = False
             else:
+                self.assist_disagreement_streak = 0
                 if tracking_ok and self.bbox is not None:
                     self.status = "tracking"
                     self.lost_frames = 0
@@ -765,6 +769,7 @@ class AntiUAVSystem:
             self.detection_hits = 0
             self.requires_detector_refresh = False
             self.assist_frames_remaining = 0
+            self.assist_disagreement_streak = 0
         elif detection_accepted:
             pass
         elif tracking_ok and self.track_score >= self.tracker_score_thresh:
@@ -946,6 +951,7 @@ class AntiUAVSystem:
             self.tracker.correct_bbox(frame, self.bbox)
         else:
             self.tracker.reinit_from_detection(frame, self.bbox)
+            self.assist_disagreement_streak = 0
 
     def _drop_target(self, frame: Optional[np.ndarray], note: str, emit_clear: bool = True) -> None:
         """Forget the current target and return to searching."""
@@ -963,10 +969,43 @@ class AntiUAVSystem:
         self.confirmation_hits = 0
         self.detection_hits = 0
         self.requires_detector_refresh = False
+        self.assist_disagreement_streak = 0
         self.confirmation_state = "idle"
         self.alert_active = False
         self.current_alert_id = 0
         self.tracker.reset()
+
+    def _resolve_detection_handoff(
+        self,
+        previous_bbox: Optional[Sequence[float]],
+        detection_bbox: Sequence[float],
+        tracking_ok: bool,
+        assist_active: bool,
+    ) -> str:
+        """
+        Decide whether a detector refresh should only correct the live box or rebuild the tracker template.
+
+        During the assist window we tolerate one detector/tracker disagreement to avoid overreacting to detector
+        jitter. If the detector only passes the relaxed association gate for multiple consecutive assist frames,
+        the current template is likely stale and we escalate to a hard reinitialization.
+        """
+        if previous_bbox is None or not tracking_ok:
+            self.assist_disagreement_streak = 0
+            return "hard"
+        if not assist_active:
+            self.assist_disagreement_streak = 0
+            return "soft"
+
+        detector_disagrees = not self._passes_association_gate(detection_bbox, previous_bbox, strict=True)
+        if not detector_disagrees:
+            self.assist_disagreement_streak = 0
+            return "soft"
+
+        self.assist_disagreement_streak += 1
+        if self.assist_disagreement_streak >= self.assist_hard_reinit_streak:
+            self.assist_disagreement_streak = 0
+            return "hard"
+        return "soft"
 
     def _select_detection(
         self,

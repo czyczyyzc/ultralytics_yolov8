@@ -16,6 +16,8 @@ class FakeTracker:
     def __init__(self, responses):
         self.responses = list(responses)
         self.initialized = []
+        self.corrected = []
+        self.reinitialized = []
         self.reset_count = 0
 
     def init(self, frame, bbox):
@@ -30,6 +32,16 @@ class FakeTracker:
 
     def reset(self):
         self.reset_count += 1
+
+    def correct_bbox(self, frame, bbox):
+        del frame
+        self.corrected.append(tuple(bbox))
+        self.initialized.append(tuple(bbox))
+
+    def reinit_from_detection(self, frame, bbox):
+        self.reinitialized.append(tuple(bbox))
+        self.reset()
+        self.init(frame, bbox)
 
 
 class DummyDetector:
@@ -103,6 +115,51 @@ def test_anti_uav_reacquires_after_tracker_loss():
     assert second.bbox == (44.0, 44.0, 84.0, 84.0)
     assert second.lost_frames == 0
     assert detector.calls[1]["roi"] == (40.0, 40.0, 80.0, 80.0)
+    assert tracker.reinitialized[-1] == (44.0, 44.0, 84.0, 84.0)
+
+
+def test_redetected_uses_soft_correction_instead_of_hard_reinit():
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(40, 40, 80, 80), confidence=0.9, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(43, 42, 83, 82), confidence=0.91, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker([(True, (41, 40, 81, 80), 0.92), (True, (42, 41, 82, 81), 0.91)])
+
+    system = solutions.AntiUAVSystem(detector, tracker=tracker, detect_interval=1, manual_confirmation=False)
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert third.status == "redetected"
+    assert tracker.corrected[-1] == (43.0, 42.0, 83.0, 82.0)
+    assert tracker.reinitialized == [(40.0, 40.0, 80.0, 80.0)]
+
+
+def test_reacquired_uses_hard_reinit_after_loss():
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(60, 60, 100, 100), confidence=0.9, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(64, 62, 104, 102), confidence=0.92, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker([(False, None, 0.05)])
+
+    system = solutions.AntiUAVSystem(detector, tracker=tracker, detect_interval=1, manual_confirmation=False)
+
+    first = system.step(frame)
+    second = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "reacquired"
+    assert tracker.reinitialized[-1] == (64.0, 62.0, 104.0, 102.0)
+    assert tracker.corrected == []
 
 
 def test_anti_uav_drops_target_after_too_many_misses():

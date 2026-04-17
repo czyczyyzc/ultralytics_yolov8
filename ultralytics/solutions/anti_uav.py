@@ -102,6 +102,20 @@ class BaseSingleTargetTracker(ABC):
     def reset(self) -> None:
         """Forget the current track."""
 
+    def correct_bbox(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """
+        Apply a detector-driven bbox correction without necessarily rebuilding identity state.
+
+        Trackers that do not distinguish soft correction from hard reinitialization can fall back to the
+        legacy behavior and simply reinitialize from the detector box.
+        """
+        self.reinit_from_detection(frame, bbox)
+
+    def reinit_from_detection(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Hard reinitialize tracker state from a detector-provided bbox."""
+        self.reset()
+        self.init(frame, bbox)
+
 
 _TRACKER_REGISTRY: Dict[str, Callable[..., BaseSingleTargetTracker]] = {}
 
@@ -284,11 +298,30 @@ class NanoTrackPyTracker(BaseSingleTargetTracker):
         """Forget the current track state while keeping the loaded model in memory."""
         self.initialized = False
 
+    def _apply_runtime_bbox(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Update NanoTrack search center/scale while preserving the existing template features."""
+        x1, y1, x2, y2 = _clip_bbox(bbox, frame.shape)
+        width = max(float(x2 - x1), 10.0)
+        height = max(float(y2 - y1), 10.0)
+        self._tracker.center_pos = np.array([x1 + (width - 1.0) / 2.0, y1 + (height - 1.0) / 2.0], dtype=np.float32)
+        self._tracker.size = np.array([width, height], dtype=np.float32)
+        self._tracker.channel_average = np.mean(frame, axis=(0, 1))
+        self.initialized = True
+
     def init(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
         """Initialize NanoTrack with an xyxy bbox."""
         x1, y1, x2, y2 = _clip_bbox(bbox, frame.shape)
         self._tracker.init(frame, [x1, y1, x2 - x1, y2 - y1])
         self.initialized = True
+
+    def correct_bbox(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Apply detector correction without refreshing the NanoTrack template embedding."""
+        self._apply_runtime_bbox(frame, bbox)
+
+    def reinit_from_detection(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Refresh NanoTrack from a detector-provided box and rebuild template state."""
+        self.reset()
+        self.init(frame, bbox)
 
     def update(self, frame: np.ndarray) -> Tuple[bool, Optional[Tuple[float, float, float, float]], float]:
         """Advance NanoTrack and convert its xywh output back to xyxy coordinates."""
@@ -584,6 +617,8 @@ class AntiUAVSystem:
         association_max_area_change: float = 6.0,
         association_max_aspect_change: float = 3.5,
         association_relaxed_multiplier: float = 2.0,
+        assist_frames: int = 6,
+        suspect_score_thresh: Optional[float] = None,
     ):
         self.detector = detector
         if isinstance(tracker, str):
@@ -608,6 +643,11 @@ class AntiUAVSystem:
         self.association_max_area_change = max(1.0, association_max_area_change)
         self.association_max_aspect_change = max(1.0, association_max_aspect_change)
         self.association_relaxed_multiplier = max(1.0, association_relaxed_multiplier)
+        self.assist_frames = max(0, int(assist_frames))
+        default_suspect_thresh = max(self.tracker_score_thresh + 0.10, 0.55)
+        self.suspect_score_thresh = (
+            default_suspect_thresh if suspect_score_thresh is None else max(float(suspect_score_thresh), self.tracker_score_thresh)
+        )
         self.reset()
 
     def reset(self) -> None:
@@ -632,6 +672,7 @@ class AntiUAVSystem:
         self.confirmation_hits = 0
         self.detection_hits = 0
         self.requires_detector_refresh = False
+        self.assist_frames_remaining = 0
         self.tracker.reset()
 
     def step(self, frame: np.ndarray) -> TargetState:
@@ -645,6 +686,8 @@ class AntiUAVSystem:
         alert_emitted = False
         tracking_ok = False
         detection_accepted = False
+        assist_active = self.assist_frames_remaining > 0
+        suspect_tracking = False
         self.last_frame_shape = frame.shape
 
         if self.bbox is not None:
@@ -652,6 +695,7 @@ class AntiUAVSystem:
             self.track_score = float(track_score)
             if tracking_ok and tracked_bbox is not None:
                 self.bbox = _clip_bbox(tracked_bbox, frame.shape)
+                suspect_tracking = self.track_score < self.suspect_score_thresh
                 self.status = "tracking"
                 self.lost_frames = 0
                 self.age += 1
@@ -667,31 +711,39 @@ class AntiUAVSystem:
             or not tracking_ok
             or self.frames_since_detection >= self.detect_interval
             or self.status == "searching"
+            or assist_active
+            or suspect_tracking
         )
 
         if should_detect:
-            detections = self._detect_candidates(frame, prefer_roi=tracking_ok)
-            detection = self._select_detection(detections, association_bbox=self.bbox, strict_association=tracking_ok)
+            prefer_roi = tracking_ok and not assist_active and not suspect_tracking
+            detections = self._detect_candidates(frame, prefer_roi=prefer_roi)
+            strict_association = tracking_ok and not assist_active and not suspect_tracking
+            detection = self._select_detection(detections, association_bbox=self.bbox, strict_association=strict_association)
             self.frames_since_detection = 0
             if detection is not None:
                 previous_bbox = self.bbox
-                self._activate_detection(frame, detection)
+                handoff = "soft" if previous_bbox is not None and tracking_ok else "hard"
+                self._activate_detection(frame, detection, handoff=handoff)
                 detection_accepted = True
                 if previous_bbox is None:
                     self.status = "detected"
                     self.age = 1
                     self.confirmation_hits = 1
                     self.detection_hits = 1
+                    self.assist_frames_remaining = 0
                 elif tracking_ok:
                     self.status = "redetected"
                     self.age += 1
                     self.confirmation_hits += 1
                     self.detection_hits += 1
+                    self.assist_frames_remaining = self.assist_frames
                 else:
                     self.status = "reacquired"
                     self.age += 1
                     self.confirmation_hits = 1
                     self.detection_hits = 1
+                    self.assist_frames_remaining = self.assist_frames
                 self.lost_frames = 0
                 if self.requires_detector_refresh and self.alert_active:
                     self.confirmation_state = "confirmed"
@@ -712,6 +764,7 @@ class AntiUAVSystem:
             self.confirmation_hits = 0
             self.detection_hits = 0
             self.requires_detector_refresh = False
+            self.assist_frames_remaining = 0
         elif detection_accepted:
             pass
         elif tracking_ok and self.track_score >= self.tracker_score_thresh:
@@ -761,6 +814,8 @@ class AntiUAVSystem:
             class_id=self.active_detection.class_id if self.active_detection else -1,
             class_name=self.active_detection.class_name if self.active_detection else "target",
         )
+        if self.bbox is not None and self.assist_frames_remaining > 0 and not detection_accepted:
+            self.assist_frames_remaining -= 1
         return state
 
     def confirm_current_target(self, accepted: bool, note: str = "manual_review") -> Optional[AlertEvent]:
@@ -879,16 +934,18 @@ class AntiUAVSystem:
         self.last_detector_mode = "full_frame"
         return detections
 
-    def _activate_detection(self, frame: np.ndarray, detection: Detection) -> None:
-        """Promote a detector output into the active target."""
+    def _activate_detection(self, frame: np.ndarray, detection: Detection, handoff: str = "hard") -> None:
+        """Promote a detector output into the active target with either soft correction or hard reinitialization."""
         self.active_detection = detection
         self.bbox = _clip_bbox(detection.bbox, frame.shape)
         self.confidence = float(detection.confidence)
         self.track_score = 1.0
         if self.confirmation_state == "rejected":
             self.confirmation_state = "idle"
-        self.tracker.reset()
-        self.tracker.init(frame, self.bbox)
+        if handoff == "soft":
+            self.tracker.correct_bbox(frame, self.bbox)
+        else:
+            self.tracker.reinit_from_detection(frame, self.bbox)
 
     def _drop_target(self, frame: Optional[np.ndarray], note: str, emit_clear: bool = True) -> None:
         """Forget the current target and return to searching."""

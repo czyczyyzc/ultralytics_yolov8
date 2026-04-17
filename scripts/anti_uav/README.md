@@ -69,17 +69,31 @@ python scripts/anti_uav/convert_anti_uav300_nanotrack.py \
   --source-root /mnt/chenziye/datasets/anti_uav/Anti-UAV300 \
   --output-root /mnt/chenziye/datasets/anti_uav/anti_uav300_nanotrack \
   --modalities rgb ir \
-  --frame-step 1
+  --frame-step 1 \
+  --background-frame-step 6 \
+  --distractor-frame-step 2
 ```
 
 Output layout:
 
 - `.../rgb/crop511/<sequence>/<frame>.00.x.jpg`
+- `.../rgb/crop511/<sequence>/<frame>.__neg__.x.jpg`
+- `.../rgb/crop511/<sequence>/<frame>.__bg__.x.jpg`
 - `.../rgb/train.json`
 - `.../rgb/val.json`
+- `.../rgb/split_manifest.json`
 - `.../ir/crop511/<sequence>/<frame>.00.x.jpg`
+- `.../ir/crop511/<sequence>/<frame>.__neg__.x.jpg`
+- `.../ir/crop511/<sequence>/<frame>.__bg__.x.jpg`
 - `.../ir/train.json`
 - `.../ir/val.json`
+
+Notes:
+
+- `00` is the positive target track.
+- `__neg__` stores same-scene distractor negatives sampled near the UAV without overlapping it.
+- `__bg__` stores no-target/background negatives from frames where the UAV is absent.
+- `split_manifest.json` preserves the deterministic train/val split so training and validation stay aligned.
 
 ## `train_detect.sh`
 
@@ -274,9 +288,14 @@ Useful overrides:
 
 - `NANOTRACK_ROOT=/path/to/custom/nanotrack/root`
 - `PRETRAINED=/path/to/nanotrackv2.pth`
-- `EPOCHS=30`
-- `BATCH_SIZE=32`
+- `EPOCHS=40`
+- `BATCH_SIZE=64`
 - `VIDEOS_PER_EPOCH=120000`
+- `NEG_RATIO=0.35`
+- `NEG_SAME_SEQ_PROB=0.75`
+- `NEG_BACKGROUND_PROB=0.35`
+- `BACKGROUND_FRAME_STEP=6`
+- `DISTRACTOR_FRAME_STEP=2`
 - `DEVICE=cuda:0`
 - `SAVE_EVERY=5`
 - `NAME=nanotrack_rgb_v2_anti_uav300`
@@ -289,6 +308,65 @@ Example RGB and IR jobs on one machine:
 MODALITY=rgb DEVICE=cuda:0 NAME=nanotrack_rgb_v2_anti_uav300 bash scripts/anti_uav/train_nanotrack.sh
 MODALITY=ir DEVICE=cuda:1 NAME=nanotrack_ir_v2_anti_uav300 bash scripts/anti_uav/train_nanotrack.sh
 ```
+
+## `nanotrack_val_eval.py`
+
+Runs tracker-only validation replays for NanoTrack checkpoints on Anti-UAV300 splits and reports
+tracking stability metrics that are more useful than raw training loss when picking checkpoints.
+
+Example:
+
+```bash
+python scripts/anti_uav/nanotrack_val_eval.py \
+  --source-root /mnt/chenziye/datasets/anti_uav/Anti-UAV300 \
+  --converted-root /mnt/chenziye/datasets/anti_uav/anti_uav300_nanotrack \
+  --modality rgb \
+  --split val \
+  --config runs/anti_uav/nanotrack_rgb_v2_anti_uav300/config.yaml \
+  --snapshot runs/anti_uav/nanotrack_rgb_v2_anti_uav300/snapshots/best.pth \
+  --nanotrack-root third_party/nanotrack_vendor \
+  --output-json runs/anti_uav/nanotrack_rgb_v2_anti_uav300/val_eval.json
+```
+
+Useful flags:
+
+- `--score-threshold`
+- `--iou-threshold`
+- `--center-threshold`
+- `--max-sequences`
+- `--per-sequence-dir`
+- `--dry-run`
+
+The aggregate report includes `success_rate`, `center_precision`, `absent_fp_rate`, and a
+`composite` score intended for checkpoint ranking.
+
+## `nanotrack_checkpoint_sweep.py`
+
+Evaluates a directory of NanoTrack checkpoints with `nanotrack_val_eval.py` and ranks them by
+validation metrics instead of training loss.
+
+Example:
+
+```bash
+python scripts/anti_uav/nanotrack_checkpoint_sweep.py \
+  --snapshot-dir runs/anti_uav/nanotrack_rgb_v2_anti_uav300/snapshots \
+  --config runs/anti_uav/nanotrack_rgb_v2_anti_uav300/config.yaml \
+  --source-root /mnt/chenziye/datasets/anti_uav/Anti-UAV300 \
+  --converted-root /mnt/chenziye/datasets/anti_uav/anti_uav300_nanotrack \
+  --modality rgb \
+  --split val \
+  --metric composite \
+  --include-best \
+  --include-last \
+  --output-json runs/anti_uav/nanotrack_rgb_v2_anti_uav300/checkpoint_sweep.json
+```
+
+Useful flags:
+
+- `--pattern epoch_*.pth`
+- `--metric composite|success_rate|avg_iou|precision|recall`
+- `--max-sequences`
+- `--dry-run`
 
 ## `export_nanotrack_rk3588.py`
 

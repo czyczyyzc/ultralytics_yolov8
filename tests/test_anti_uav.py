@@ -45,6 +45,22 @@ class DummyDetector:
         return []
 
 
+def create_mini_anti_uav_sequence(root: Path, sequence_name: str, modality: str, boxes: list[list[float]]) -> Path:
+    sequence_root = root / sequence_name
+    sequence_root.mkdir(parents=True, exist_ok=True)
+
+    video_path = sequence_root / f"{modality}.mp4"
+    writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), 5.0, (64, 48))
+    for frame_index in range(len(boxes)):
+        frame = np.full((48, 64, 3), frame_index * 25, dtype=np.uint8)
+        writer.write(frame)
+    writer.release()
+
+    annotation_path = sequence_root / f"{modality}_label.json"
+    annotation_path.write_text(json.dumps({"gt_rect": boxes}), encoding="utf-8")
+    return sequence_root
+
+
 def test_anti_uav_detects_and_tracks():
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
     detector = DummyDetector(
@@ -290,18 +306,7 @@ def test_iter_tiles_covers_full_frame():
 
 def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
     source_root = tmp_path / "Anti-UAV300" / "train"
-    sequence_root = source_root / "seq001"
-    sequence_root.mkdir(parents=True)
-
-    video_path = sequence_root / "rgb.mp4"
-    writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), 5.0, (64, 48))
-    for frame_index in range(3):
-        frame = np.full((48, 64, 3), frame_index * 40, dtype=np.uint8)
-        writer.write(frame)
-    writer.release()
-
-    annotation_path = sequence_root / "rgb_label.json"
-    annotation_path.write_text(json.dumps({"gt_rect": [[10, 12, 8, 6], [11, 12, 8, 6], []]}), encoding="utf-8")
+    create_mini_anti_uav_sequence(source_root, "seq001", "rgb", [[10, 12, 8, 6], [11, 12, 8, 6], [], [12, 13, 8, 6], []])
 
     output_root = tmp_path / "nanotrack_export"
     converter = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "convert_anti_uav300_nanotrack.py"
@@ -317,6 +322,10 @@ def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
             "rgb",
             "--frame-step",
             "1",
+            "--background-frame-step",
+            "1",
+            "--distractor-frame-step",
+            "1",
         ],
         check=True,
     )
@@ -324,13 +333,99 @@ def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
     train_json = output_root / "rgb" / "train.json"
     val_json = output_root / "rgb" / "val.json"
     crop_path = output_root / "rgb" / "crop511" / "train_seq001" / "000000.00.x.jpg"
+    split_manifest = output_root / "rgb" / "split_manifest.json"
 
     assert train_json.exists() or val_json.exists()
     assert crop_path.exists()
+    assert split_manifest.exists()
     metadata = json.loads((train_json if train_json.stat().st_size else val_json).read_text(encoding="utf-8"))
     assert "train_seq001" in metadata
     assert "00" in metadata["train_seq001"]
     assert "000000" in metadata["train_seq001"]["00"]
+    assert "__neg__" in metadata["train_seq001"]
+    assert "__bg__" in metadata["train_seq001"]
+
+
+def test_nanotrack_val_eval_and_checkpoint_sweep_dry_run(tmp_path):
+    source_root = tmp_path / "Anti-UAV300" / "train"
+    create_mini_anti_uav_sequence(source_root, "seq001", "rgb", [[10, 12, 8, 6], [11, 12, 8, 6], [], [12, 13, 8, 6]])
+    create_mini_anti_uav_sequence(source_root, "seq002", "rgb", [[14, 10, 7, 6], [], [15, 11, 7, 6], []])
+
+    output_root = tmp_path / "nanotrack_export"
+    converter = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "convert_anti_uav300_nanotrack.py"
+    val_eval = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "nanotrack_val_eval.py"
+    sweep = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "nanotrack_checkpoint_sweep.py"
+    fake_cfg = tmp_path / "config.yaml"
+    fake_cfg.write_text("META_ARC: \"nanotrack\"\n", encoding="utf-8")
+    snapshot_dir = tmp_path / "snapshots"
+    snapshot_dir.mkdir(parents=True)
+    (snapshot_dir / "epoch_001.pth").write_bytes(b"fake")
+    (snapshot_dir / "best.pth").write_bytes(b"fake")
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(converter),
+            "--source-root",
+            str(tmp_path / "Anti-UAV300"),
+            "--output-root",
+            str(output_root),
+            "--modalities",
+            "rgb",
+        ],
+        check=True,
+    )
+
+    val_manifest = tmp_path / "val_eval_manifest.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(val_eval),
+            "--source-root",
+            str(tmp_path / "Anti-UAV300"),
+            "--converted-root",
+            str(output_root),
+            "--modality",
+            "rgb",
+            "--split",
+            "train",
+            "--dry-run",
+            "--output-json",
+            str(val_manifest),
+        ],
+        check=True,
+    )
+    manifest = json.loads(val_manifest.read_text(encoding="utf-8"))
+    assert manifest["sequence_count"] >= 1
+    assert manifest["sequence_names"]
+
+    sweep_manifest = tmp_path / "checkpoint_sweep.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(sweep),
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--config",
+            str(fake_cfg),
+            "--source-root",
+            str(tmp_path / "Anti-UAV300"),
+            "--converted-root",
+            str(output_root),
+            "--modality",
+            "rgb",
+            "--split",
+            "train",
+            "--include-best",
+            "--dry-run",
+            "--output-json",
+            str(sweep_manifest),
+        ],
+        check=True,
+    )
+    sweep_payload = json.loads(sweep_manifest.read_text(encoding="utf-8"))
+    assert any(path.endswith("epoch_001.pth") for path in sweep_payload["checkpoints"])
+    assert any(path.endswith("best.pth") for path in sweep_payload["checkpoints"])
 
 
 def test_train_nanotrack_local_smoke(tmp_path):

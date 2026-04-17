@@ -14,8 +14,8 @@ FRAME_STEP="${FRAME_STEP:-1}"
 MIN_BOX_SIZE="${MIN_BOX_SIZE:-2}"
 NANOTRACK_ROOT="${NANOTRACK_ROOT:-${REPO_ROOT}/third_party/nanotrack_vendor}"
 PRETRAINED="${PRETRAINED:-}"
-EPOCHS="${EPOCHS:-30}"
-BATCH_SIZE="${BATCH_SIZE:-0}"
+EPOCHS="${EPOCHS:-40}"
+BATCH_SIZE="${BATCH_SIZE:-64}"
 NUM_WORKERS="${NUM_WORKERS:-8}"
 VIDEOS_PER_EPOCH="${VIDEOS_PER_EPOCH:-0}"
 DEVICE="${DEVICE:-cuda:0}"
@@ -23,6 +23,11 @@ NAME="${NAME:-nanotrack_${MODALITY}_${VARIANT}_anti_uav300}"
 RUN_ROOT="${RUN_ROOT:-${REPO_ROOT}/runs/anti_uav/${NAME}}"
 OVERWRITE_EXPORT="${OVERWRITE_EXPORT:-0}"
 SAVE_EVERY="${SAVE_EVERY:-5}"
+BACKGROUND_FRAME_STEP="${BACKGROUND_FRAME_STEP:-6}"
+DISTRACTOR_FRAME_STEP="${DISTRACTOR_FRAME_STEP:-2}"
+NEG_RATIO="${NEG_RATIO:-0.35}"
+NEG_SAME_SEQ_PROB="${NEG_SAME_SEQ_PROB:-0.75}"
+NEG_BACKGROUND_PROB="${NEG_BACKGROUND_PROB:-0.35}"
 
 CONVERTER="${REPO_ROOT}/scripts/anti_uav/convert_anti_uav300_nanotrack.py"
 CONFIG_WRITER="${REPO_ROOT}/scripts/anti_uav/write_nanotrack_config.py"
@@ -45,6 +50,8 @@ convert_args=(
   --modalities "${MODALITY}"
   --frame-step "${FRAME_STEP}"
   --min-box-size "${MIN_BOX_SIZE}"
+  --background-frame-step "${BACKGROUND_FRAME_STEP}"
+  --distractor-frame-step "${DISTRACTOR_FRAME_STEP}"
 )
 if [[ "${OVERWRITE_EXPORT}" == "1" ]]; then
   convert_args+=(--overwrite)
@@ -82,7 +89,10 @@ fi
   --epochs "${EPOCHS}" \
   --batch-size "${BATCH_SIZE}" \
   --num-workers "${NUM_WORKERS}" \
-  --videos-per-epoch "${VIDEOS_PER_EPOCH}"
+  --videos-per-epoch "${VIDEOS_PER_EPOCH}" \
+  --neg-ratio "${NEG_RATIO}" \
+  --neg-same-seq-prob "${NEG_SAME_SEQ_PROB}" \
+  --neg-background-prob "${NEG_BACKGROUND_PROB}"
 
 export PYTHONPATH="${NANOTRACK_ROOT}:${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 

@@ -63,12 +63,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pretrained", default="", help="Optional pretrained checkpoint used for fine-tuning.")
     parser.add_argument("--snapshot-dir", type=Path, required=True, help="Directory for NanoTrack checkpoints.")
     parser.add_argument("--log-dir", type=Path, required=True, help="Directory for NanoTrack logs.")
-    parser.add_argument("--epochs", type=int, default=30, help="Training epochs.")
+    parser.add_argument("--epochs", type=int, default=40, help="Training epochs.")
     parser.add_argument("--batch-size", type=int, default=0, help="Override train batch size. 0 uses the preset default.")
     parser.add_argument("--num-workers", type=int, default=8, help="Data loader workers.")
     parser.add_argument("--videos-per-epoch", type=int, default=0, help="Override dataset videos per epoch. 0 uses preset.")
     parser.add_argument("--frame-range", type=int, default=30, help="Positive pair sampling range.")
     parser.add_argument("--base-lr", type=float, default=0.005, help="Base learning rate.")
+    parser.add_argument("--neg-ratio", type=float, default=0.35, help="Fraction of negative pairs.")
+    parser.add_argument("--neg-same-seq-prob", type=float, default=0.75, help="Prefer same-sequence negatives with this probability.")
+    parser.add_argument("--neg-background-prob", type=float, default=0.35, help="Within same-sequence negatives, background-negative sampling probability.")
     return parser.parse_args()
 
 
@@ -168,7 +171,9 @@ DATASET:
         BLUR: 0.2
         FLIP: 0.0
         COLOR: 1.0
-    NEG: 0.2
+    NEG: {args.neg_ratio}
+    NEG_SAME_SEQ_PROB: {args.neg_same_seq_prob}
+    NEG_BACKGROUND_PROB: {args.neg_background_prob}
     GRAY: 0.0
     {args.dataset_name}:
         ROOT: "{args.crop_root.expanduser().resolve()}"

@@ -29,6 +29,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exemplar-size", type=int, default=127, help="NanoTrack exemplar size used to derive crop scale.")
     parser.add_argument("--context-amount", type=float, default=0.5, help="Context padding around the target during crop export.")
     parser.add_argument("--min-box-size", type=float, default=2.0, help="Skip boxes smaller than this size in pixels.")
+    parser.add_argument(
+        "--background-frame-step",
+        type=int,
+        default=6,
+        help="Export one same-scene background negative every N no-target frames. 0 disables background negatives.",
+    )
+    parser.add_argument(
+        "--distractor-frame-step",
+        type=int,
+        default=2,
+        help="Export one same-scene distractor negative every N positive frames. 0 disables distractor negatives.",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing crops and JSON files.")
     return parser.parse_args()
 
@@ -107,6 +119,87 @@ def crop_like_nanotrack(
     return get_subwindow_numpy(frame, (cx, cy), crop_size, int(round(s_x)))
 
 
+def is_valid_bbox(box: list[float] | tuple[float, ...], min_box_size: float) -> bool:
+    """Return True when the Anti-UAV box has a usable positive extent."""
+    return bool(box) and len(box) >= 4 and float(box[2]) >= min_box_size and float(box[3]) >= min_box_size
+
+
+def estimate_reference_size(boxes: list[list[float]], min_box_size: float) -> tuple[float, float]:
+    """Estimate a stable per-sequence target size for background negative crops."""
+    valid_sizes = np.array([[float(box[2]), float(box[3])] for box in boxes if is_valid_bbox(box, min_box_size)], dtype=np.float32)
+    if len(valid_sizes) == 0:
+        return 32.0, 32.0
+    median_w, median_h = np.median(valid_sizes, axis=0)
+    return float(max(median_w, min_box_size)), float(max(median_h, min_box_size))
+
+
+def sample_background_bbox(frame_shape: tuple[int, ...], ref_size: tuple[float, float], seed_key: str) -> list[float]:
+    """Pick a deterministic background crop anchor for frames without a target."""
+    im_h, im_w = frame_shape[:2]
+    w = min(max(ref_size[0], 12.0), max(im_w - 2, 12))
+    h = min(max(ref_size[1], 12.0), max(im_h - 2, 12))
+    anchors = np.array(
+        [
+            [0.20, 0.20],
+            [0.50, 0.20],
+            [0.80, 0.20],
+            [0.20, 0.50],
+            [0.50, 0.50],
+            [0.80, 0.50],
+            [0.20, 0.80],
+            [0.50, 0.80],
+            [0.80, 0.80],
+        ],
+        dtype=np.float32,
+    )
+    anchor = anchors[stable_score(seed_key) % len(anchors)]
+    cx = float(np.clip(anchor[0] * im_w, w / 2.0, im_w - w / 2.0))
+    cy = float(np.clip(anchor[1] * im_h, h / 2.0, im_h - h / 2.0))
+    return [cx - w / 2.0, cy - h / 2.0, w, h]
+
+
+def sample_distractor_bbox(frame_shape: tuple[int, ...], gt_bbox_xywh: list[float], seed_key: str) -> list[float] | None:
+    """Sample a near-target negative crop that stays in-scene but does not overlap the GT box."""
+    im_h, im_w = frame_shape[:2]
+    gx, gy, gw, gh = [float(value) for value in gt_bbox_xywh[:4]]
+    gcx = gx + gw / 2.0
+    gcy = gy + gh / 2.0
+    min_center_distance = max(np.hypot(gw, gh) * 1.35, 12.0)
+    seed = stable_score(seed_key)
+    base_angle = (seed % 360) * np.pi / 180.0
+    radii = (1.0, 1.35, 1.7, 2.1)
+    angle_offsets = (0.0, np.pi / 2.0, np.pi, 3.0 * np.pi / 2.0)
+
+    for radius in radii:
+        for angle_offset in angle_offsets:
+            angle = base_angle + angle_offset
+            cx = gcx + np.cos(angle) * min_center_distance * radius
+            cy = gcy + np.sin(angle) * min_center_distance * radius
+            x = float(np.clip(cx - gw / 2.0, 0.0, max(im_w - gw, 0.0)))
+            y = float(np.clip(cy - gh / 2.0, 0.0, max(im_h - gh, 0.0)))
+            candidate = [x, y, gw, gh]
+            if bbox_iou_xywh(candidate, gt_bbox_xywh) <= 0.05:
+                return candidate
+    return None
+
+
+def bbox_iou_xywh(box1: list[float], box2: list[float]) -> float:
+    """IoU helper for xywh-format boxes."""
+    ax1, ay1, aw, ah = box1
+    bx1, by1, bw, bh = box2
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+    inter_w = max(0.0, inter_x2 - inter_x1)
+    inter_h = max(0.0, inter_y2 - inter_y1)
+    inter = inter_w * inter_h
+    union = max(aw * ah + bw * bh - inter, 1e-6)
+    return float(inter / union)
+
+
 def get_subwindow_numpy(frame: np.ndarray, center_xy: tuple[float, float], crop_size: int, original_size: int) -> np.ndarray:
     """Numpy/OpenCV version of the Siamese tracker crop helper."""
     if crop_size <= 0 or original_size <= 0:
@@ -159,6 +252,8 @@ def export_sequence(
     exemplar_size: int,
     context_amount: float,
     min_box_size: float,
+    background_frame_step: int,
+    distractor_frame_step: int,
     overwrite: bool,
 ) -> dict:
     """Export one sequence/modality to NanoTrack crops plus JSON metadata."""
@@ -169,9 +264,12 @@ def export_sequence(
     sequence_dir = crop_root / sequence["name"]
     sequence_dir.mkdir(parents=True, exist_ok=True)
 
-    track_key = "00"
-    track_meta = {}
-    exported_frames = 0
+    positive_track_key = "00"
+    distractor_track_key = "__neg__"
+    background_track_key = "__bg__"
+    track_meta = {positive_track_key: {}, distractor_track_key: {}, background_track_key: {}}
+    counts = {"positive": 0, "distractor": 0, "background": 0}
+    reference_size = estimate_reference_size(boxes, min_box_size)
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -184,34 +282,61 @@ def export_sequence(
             if not success:
                 break
 
-            bbox = boxes[frame_index] if frame_index < len(boxes) else []
-            if not bbox or len(bbox) < 4:
-                frame_index += 1
-                continue
-
-            x, y, w, h = [float(value) for value in bbox[:4]]
-            if frame_index % frame_step != 0 or w < min_box_size or h < min_box_size:
-                frame_index += 1
-                continue
-
-            crop = crop_like_nanotrack(
-                frame,
-                [x, y, w, h],
-                crop_size=crop_size,
-                exemplar_size=exemplar_size,
-                context_amount=context_amount,
-            )
             frame_key = f"{frame_index:06d}"
-            crop_path = sequence_dir / f"{frame_key}.{track_key}.x.jpg"
-            if overwrite or not crop_path.exists():
-                cv2.imwrite(str(crop_path), crop)
-            track_meta[frame_key] = [0.0, 0.0, float(w), float(h)]
-            exported_frames += 1
+            bbox = boxes[frame_index] if frame_index < len(boxes) else []
+            has_target = is_valid_bbox(bbox, min_box_size)
+
+            if has_target:
+                x, y, w, h = [float(value) for value in bbox[:4]]
+                if frame_index % frame_step == 0:
+                    crop = crop_like_nanotrack(
+                        frame,
+                        [x, y, w, h],
+                        crop_size=crop_size,
+                        exemplar_size=exemplar_size,
+                        context_amount=context_amount,
+                    )
+                    crop_path = sequence_dir / f"{frame_key}.{positive_track_key}.x.jpg"
+                    if overwrite or not crop_path.exists():
+                        cv2.imwrite(str(crop_path), crop)
+                    track_meta[positive_track_key][frame_key] = [0.0, 0.0, float(w), float(h)]
+                    counts["positive"] += 1
+
+                if distractor_frame_step > 0 and frame_index % distractor_frame_step == 0:
+                    distractor_bbox = sample_distractor_bbox(frame.shape, [x, y, w, h], f"{sequence['name']}:{modality}:neg:{frame_key}")
+                    if distractor_bbox is not None:
+                        distractor_crop = crop_like_nanotrack(
+                            frame,
+                            distractor_bbox,
+                            crop_size=crop_size,
+                            exemplar_size=exemplar_size,
+                            context_amount=context_amount,
+                        )
+                        distractor_path = sequence_dir / f"{frame_key}.{distractor_track_key}.x.jpg"
+                        if overwrite or not distractor_path.exists():
+                            cv2.imwrite(str(distractor_path), distractor_crop)
+                        track_meta[distractor_track_key][frame_key] = [0.0, 0.0, float(distractor_bbox[2]), float(distractor_bbox[3])]
+                        counts["distractor"] += 1
+            elif background_frame_step > 0 and frame_index % background_frame_step == 0:
+                background_bbox = sample_background_bbox(frame.shape, reference_size, f"{sequence['name']}:{modality}:bg:{frame_key}")
+                background_crop = crop_like_nanotrack(
+                    frame,
+                    background_bbox,
+                    crop_size=crop_size,
+                    exemplar_size=exemplar_size,
+                    context_amount=context_amount,
+                )
+                background_path = sequence_dir / f"{frame_key}.{background_track_key}.x.jpg"
+                if overwrite or not background_path.exists():
+                    cv2.imwrite(str(background_path), background_crop)
+                track_meta[background_track_key][frame_key] = [0.0, 0.0, float(background_bbox[2]), float(background_bbox[3])]
+                counts["background"] += 1
             frame_index += 1
     finally:
         cap.release()
 
-    return {"meta": {sequence["name"]: {track_key: track_meta}} if track_meta else {}, "frames": exported_frames}
+    filtered_tracks = {track_name: frames for track_name, frames in track_meta.items() if frames}
+    return {"meta": {sequence["name"]: filtered_tracks} if filtered_tracks else {}, "counts": counts}
 
 
 def merge_meta(target: dict, payload: dict) -> None:
@@ -240,8 +365,9 @@ def main() -> None:
     for modality in args.modalities:
         train_meta = {}
         val_meta = {}
-        train_frames = 0
-        val_frames = 0
+        train_counts = {"positive": 0, "distractor": 0, "background": 0}
+        val_counts = {"positive": 0, "distractor": 0, "background": 0}
+        split_manifest = {"train": [], "val": []}
         for sequence in sequences:
             if modality not in sequence["modalities"]:
                 continue
@@ -254,32 +380,62 @@ def main() -> None:
                 exemplar_size=args.exemplar_size,
                 context_amount=args.context_amount,
                 min_box_size=args.min_box_size,
+                background_frame_step=max(0, args.background_frame_step),
+                distractor_frame_step=max(0, args.distractor_frame_step),
                 overwrite=args.overwrite,
             )
             if sequence["name"] in train_sequences:
                 merge_meta(train_meta, result["meta"])
-                train_frames += result["frames"]
+                for key in train_counts:
+                    train_counts[key] += result["counts"][key]
+                if result["meta"]:
+                    split_manifest["train"].append(
+                        {
+                            "name": sequence["name"],
+                            "source_dir": str(sequence["dir"].resolve()),
+                            "video": str(sequence["modalities"][modality]["video"].resolve()),
+                            "label": str(sequence["modalities"][modality]["label"].resolve()),
+                        }
+                    )
             else:
                 merge_meta(val_meta, result["meta"])
-                val_frames += result["frames"]
+                for key in val_counts:
+                    val_counts[key] += result["counts"][key]
+                if result["meta"]:
+                    split_manifest["val"].append(
+                        {
+                            "name": sequence["name"],
+                            "source_dir": str(sequence["dir"].resolve()),
+                            "video": str(sequence["modalities"][modality]["video"].resolve()),
+                            "label": str(sequence["modalities"][modality]["label"].resolve()),
+                        }
+                    )
 
         modality_root = output_root / modality
         modality_root.mkdir(parents=True, exist_ok=True)
         train_path = modality_root / "train.json"
         val_path = modality_root / "val.json"
+        split_manifest_path = modality_root / "split_manifest.json"
         if args.overwrite or not train_path.exists():
             train_path.write_text(json.dumps(train_meta, indent=2, ensure_ascii=False), encoding="utf-8")
         if args.overwrite or not val_path.exists():
             val_path.write_text(json.dumps(val_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        if args.overwrite or not split_manifest_path.exists():
+            split_manifest_path.write_text(json.dumps(split_manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 
         summary["modalities"][modality] = {
             "crop_root": str((modality_root / "crop511").resolve()),
             "train_json": str(train_path.resolve()),
             "val_json": str(val_path.resolve()),
+            "split_manifest_json": str(split_manifest_path.resolve()),
             "train_sequences": sum(1 for name in train_sequences if name in train_meta),
             "val_sequences": sum(1 for name in val_sequences if name in val_meta),
-            "train_frames": train_frames,
-            "val_frames": val_frames,
+            "train_positive_frames": train_counts["positive"],
+            "train_distractor_frames": train_counts["distractor"],
+            "train_background_frames": train_counts["background"],
+            "val_positive_frames": val_counts["positive"],
+            "val_distractor_frames": val_counts["distractor"],
+            "val_background_frames": val_counts["background"],
         }
 
     summary_path = output_root / "summary.json"

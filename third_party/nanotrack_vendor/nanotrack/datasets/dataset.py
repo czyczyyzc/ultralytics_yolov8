@@ -44,6 +44,15 @@ class SubDataset(object):
         self.num = len(self.labels)
         self.num_use = self.num if self.num_use == -1 else self.num_use
         self.videos = list(meta_data.keys())
+        self.positive_tracks = {}
+        self.negative_tracks = {}
+        for video_name, tracks in meta_data.items():
+            positive = [track_name for track_name in tracks if not track_name.startswith("__")]
+            negative = [track_name for track_name in tracks if track_name.startswith("__")]
+            if positive:
+                self.positive_tracks[video_name] = positive
+            if negative:
+                self.negative_tracks[video_name] = negative
         self.path_format = "{}.{}.x.jpg"
         self.pick = self.shuffle()
 
@@ -81,7 +90,7 @@ class SubDataset(object):
     def get_positive_pair(self, index):
         video_name = self.videos[index]
         video = self.labels[video_name]
-        track = np.random.choice(list(video.keys()))
+        track = np.random.choice(self.positive_tracks[video_name])
         frames = video[track]["frames"]
         template_idx = np.random.randint(0, len(frames))
         left = max(template_idx - self.frame_range, 0)
@@ -91,13 +100,38 @@ class SubDataset(object):
         search_frame = np.random.choice(search_range)
         return self.get_image_anno(video_name, track, template_frame), self.get_image_anno(video_name, track, search_frame)
 
-    def get_random_target(self, index=-1):
+    def get_random_target(self, index=-1, return_video=False):
         if index == -1:
             index = np.random.randint(0, self.num)
         video_name = self.videos[index]
         video = self.labels[video_name]
-        track = np.random.choice(list(video.keys()))
+        track = np.random.choice(self.positive_tracks[video_name])
         frames = video[track]["frames"]
+        frame = np.random.choice(frames)
+        sample = self.get_image_anno(video_name, track, frame)
+        return (video_name, sample) if return_video else sample
+
+    def get_negative_search(self, index=-1, *, preferred_video=None):
+        if preferred_video and self.negative_tracks.get(preferred_video) and np.random.random() < float(getattr(cfg.DATASET, "NEG_SAME_SEQ_PROB", 0.75)):
+            video_name = preferred_video
+        else:
+            negative_videos = [name for name, tracks in self.negative_tracks.items() if tracks]
+            if negative_videos:
+                video_name = np.random.choice(negative_videos)
+            else:
+                return self.get_random_target(index)
+
+        tracks = self.negative_tracks.get(video_name, [])
+        distractor_tracks = [track for track in tracks if "neg" in track]
+        background_tracks = [track for track in tracks if "bg" in track]
+        background_prob = float(getattr(cfg.DATASET, "NEG_BACKGROUND_PROB", 0.35))
+        if distractor_tracks and background_tracks:
+            candidate_tracks = background_tracks if np.random.random() < background_prob else distractor_tracks
+        else:
+            candidate_tracks = distractor_tracks or background_tracks or tracks
+
+        track = np.random.choice(candidate_tracks)
+        frames = self.labels[video_name][track]["frames"]
         frame = np.random.choice(frames)
         return self.get_image_anno(video_name, track, frame)
 
@@ -166,8 +200,8 @@ class BANDataset(Dataset):
         gray = cfg.DATASET.GRAY and cfg.DATASET.GRAY > np.random.random()
         neg = cfg.DATASET.NEG and cfg.DATASET.NEG > np.random.random()
         if neg:
-            template = dataset.get_random_target(index)
-            search = np.random.choice(self.all_dataset).get_random_target()
+            video_name, template = dataset.get_random_target(index, return_video=True)
+            search = dataset.get_negative_search(index, preferred_video=video_name)
         else:
             template, search = dataset.get_positive_pair(index)
 

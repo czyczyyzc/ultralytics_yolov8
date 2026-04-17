@@ -207,7 +207,7 @@ class OpenCVTracker(BaseSingleTargetTracker):
         self.reset()
         self.tracker = _create_opencv_tracker(self.tracker_type)
         x1, y1, x2, y2 = _clip_bbox(bbox, frame.shape)
-        self.tracker.init(frame, (x1, y1, x2 - x1, y2 - y1))
+        self.tracker.init(frame, tuple(int(round(v)) for v in (x1, y1, x2 - x1, y2 - y1)))
 
     def update(self, frame: np.ndarray) -> Tuple[bool, Optional[Tuple[float, float, float, float]], float]:
         """Advance the OpenCV tracker state."""

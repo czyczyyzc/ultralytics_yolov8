@@ -19,6 +19,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="yolov8n.pt", help="YOLO model path.")
     parser.add_argument("--source", required=True, help="Video path or camera index.")
     parser.add_argument("--tracker", default="template_match", choices=solutions.available_trackers(), help="Tracker backend.")
+    parser.add_argument(
+        "--opencv-tracker-type",
+        default="csrt",
+        help="OpenCV tracker type when --tracker opencv is selected, for example mil.",
+    )
     parser.add_argument("--nanotrack-root", default="", help="Optional upstream NanoTrack workspace root.")
     parser.add_argument("--nanotrack-config", default="", help="Optional NanoTrack config yaml path.")
     parser.add_argument("--nanotrack-snapshot", default="", help="Optional NanoTrack checkpoint path.")
@@ -78,6 +83,8 @@ def build_detector(model, args: argparse.Namespace):
 
 def build_tracker(args: argparse.Namespace):
     """Instantiate tracker backends that need extra runtime parameters."""
+    if args.tracker == "opencv":
+        return solutions.build_tracker("opencv", tracker_type=args.opencv_tracker_type)
     if args.tracker != "nanotrack":
         return args.tracker
     return solutions.build_tracker(

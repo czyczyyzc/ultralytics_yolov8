@@ -66,6 +66,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence-root", default="", help="Sequence directory for Anti-UAV style datasets.")
     parser.add_argument("--modality", default="rgb", choices=("rgb", "ir", "auto"), help="Anti-UAV modality selector.")
     parser.add_argument("--tracker", default="template_match", choices=solutions.available_trackers(), help="Tracker backend.")
+    parser.add_argument(
+        "--opencv-tracker-type",
+        default="csrt",
+        help="OpenCV tracker type when --tracker opencv is selected, for example mil.",
+    )
     parser.add_argument("--nanotrack-root", default="", help="Optional upstream NanoTrack workspace root.")
     parser.add_argument("--nanotrack-config", default="", help="Optional NanoTrack config yaml path.")
     parser.add_argument("--nanotrack-snapshot", default="", help="Optional NanoTrack checkpoint path.")
@@ -190,6 +195,8 @@ def build_detector(model, args: argparse.Namespace):
 
 def build_tracker(args: argparse.Namespace):
     """Instantiate an optional tracker object when extra backend configuration is required."""
+    if args.tracker == "opencv":
+        return solutions.build_tracker("opencv", tracker_type=args.opencv_tracker_type)
     if args.tracker != "nanotrack":
         return args.tracker
     return solutions.build_tracker(

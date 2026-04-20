@@ -619,6 +619,13 @@ class AntiUAVSystem:
         association_relaxed_multiplier: float = 2.0,
         assist_frames: int = 6,
         assist_hard_reinit_streak: int = 2,
+        stale_search_lost_frames: int = 12,
+        stale_search_low_score_streak: int = 8,
+        stale_search_edge_margin_px: int = 8,
+        refresh_override_confidence: float = 0.75,
+        refresh_override_consensus_frames: int = 2,
+        refresh_override_stability_iou: float = 0.25,
+        refresh_override_min_center_ratio: float = 3.0,
         suspect_score_thresh: Optional[float] = None,
     ):
         self.detector = detector
@@ -646,6 +653,13 @@ class AntiUAVSystem:
         self.association_relaxed_multiplier = max(1.0, association_relaxed_multiplier)
         self.assist_frames = max(0, int(assist_frames))
         self.assist_hard_reinit_streak = max(1, int(assist_hard_reinit_streak))
+        self.stale_search_lost_frames = max(1, int(stale_search_lost_frames))
+        self.stale_search_low_score_streak = max(1, int(stale_search_low_score_streak))
+        self.stale_search_edge_margin_px = max(1, int(stale_search_edge_margin_px))
+        self.refresh_override_confidence = float(refresh_override_confidence)
+        self.refresh_override_consensus_frames = max(1, int(refresh_override_consensus_frames))
+        self.refresh_override_stability_iou = float(np.clip(refresh_override_stability_iou, 0.0, 1.0))
+        self.refresh_override_min_center_ratio = max(0.0, float(refresh_override_min_center_ratio))
         default_suspect_thresh = max(self.tracker_score_thresh + 0.10, 0.55)
         self.suspect_score_thresh = (
             default_suspect_thresh if suspect_score_thresh is None else max(float(suspect_score_thresh), self.tracker_score_thresh)
@@ -676,6 +690,10 @@ class AntiUAVSystem:
         self.requires_detector_refresh = False
         self.assist_frames_remaining = 0
         self.assist_disagreement_streak = 0
+        self.low_score_streak = 0
+        self.refresh_override_streak = 0
+        self.refresh_override_candidate = None
+        self.force_hard_reacquire = False
         self.tracker.reset()
 
     def step(self, frame: np.ndarray) -> TargetState:
@@ -692,6 +710,7 @@ class AntiUAVSystem:
         assist_active = self.assist_frames_remaining > 0
         suspect_tracking = False
         self.last_frame_shape = frame.shape
+        self.force_hard_reacquire = False
 
         if self.bbox is not None:
             tracking_ok, tracked_bbox, track_score = self.tracker.update(frame)
@@ -702,12 +721,20 @@ class AntiUAVSystem:
                 self.status = "tracking"
                 self.lost_frames = 0
                 self.age += 1
+                self.low_score_streak = 0 if self.track_score >= self.tracker_score_thresh else self.low_score_streak + 1
             else:
                 self.status = "lost"
                 self.lost_frames += 1
+                self.low_score_streak += 1
                 if self.confirmation_state == "confirmed":
                     self.confirmation_state = "pending"
                     self.requires_detector_refresh = True
+
+        if self._should_force_full_frame_search():
+            self._drop_target(frame, note="force_full_frame_search")
+            tracking_ok = False
+            assist_active = False
+            suspect_tracking = False
 
         should_detect = (
             self.bbox is None
@@ -716,17 +743,22 @@ class AntiUAVSystem:
             or self.status == "searching"
             or assist_active
             or suspect_tracking
+            or self.requires_detector_refresh
         )
 
         if should_detect:
-            prefer_roi = tracking_ok and not assist_active and not suspect_tracking
+            prefer_roi = tracking_ok and not assist_active and not suspect_tracking and not self.requires_detector_refresh
             detections = self._detect_candidates(frame, prefer_roi=prefer_roi)
-            strict_association = tracking_ok and not assist_active and not suspect_tracking
+            strict_association = tracking_ok and not assist_active and not suspect_tracking and not self.requires_detector_refresh
             detection = self._select_detection(detections, association_bbox=self.bbox, strict_association=strict_association)
             self.frames_since_detection = 0
             if detection is not None:
                 previous_bbox = self.bbox
-                handoff = self._resolve_detection_handoff(previous_bbox, detection.bbox, tracking_ok, assist_active)
+                handoff = (
+                    "hard"
+                    if self.force_hard_reacquire
+                    else self._resolve_detection_handoff(previous_bbox, detection.bbox, tracking_ok, assist_active)
+                )
                 self._activate_detection(frame, detection, handoff=handoff)
                 detection_accepted = True
                 if previous_bbox is None:
@@ -735,7 +767,7 @@ class AntiUAVSystem:
                     self.confirmation_hits = 1
                     self.detection_hits = 1
                     self.assist_frames_remaining = 0
-                elif tracking_ok:
+                elif tracking_ok and not self.force_hard_reacquire:
                     self.status = "redetected"
                     self.age += 1
                     self.confirmation_hits += 1
@@ -748,9 +780,11 @@ class AntiUAVSystem:
                     self.detection_hits = 1
                     self.assist_frames_remaining = self.assist_frames
                 self.lost_frames = 0
+                self.low_score_streak = 0
                 if self.requires_detector_refresh and self.alert_active:
                     self.confirmation_state = "confirmed"
                 self.requires_detector_refresh = False
+                self._reset_refresh_override()
             else:
                 self.assist_disagreement_streak = 0
                 if tracking_ok and self.bbox is not None:
@@ -770,6 +804,8 @@ class AntiUAVSystem:
             self.requires_detector_refresh = False
             self.assist_frames_remaining = 0
             self.assist_disagreement_streak = 0
+            self.low_score_streak = 0
+            self._reset_refresh_override()
         elif detection_accepted:
             pass
         elif tracking_ok and self.track_score >= self.tracker_score_thresh:
@@ -970,6 +1006,8 @@ class AntiUAVSystem:
         self.detection_hits = 0
         self.requires_detector_refresh = False
         self.assist_disagreement_streak = 0
+        self.low_score_streak = 0
+        self._reset_refresh_override()
         self.confirmation_state = "idle"
         self.alert_active = False
         self.current_alert_id = 0
@@ -1019,13 +1057,74 @@ class AntiUAVSystem:
             return None
 
         if association_bbox is None:
+            self._reset_refresh_override()
             return max(filtered, key=lambda det: det.confidence)
+
+        if self.requires_detector_refresh:
+            refresh_override = self._select_refresh_override(filtered, association_bbox)
+            if refresh_override is not None:
+                if self.refresh_override_streak >= self.refresh_override_consensus_frames:
+                    self.force_hard_reacquire = True
+                    return refresh_override
+                return None
+        else:
+            self._reset_refresh_override()
 
         gated = [d for d in filtered if self._passes_association_gate(d.bbox, association_bbox, strict_association)]
         if not gated:
             return None
 
         return max(gated, key=lambda det: det.confidence + 0.3 * _bbox_iou(det.bbox, association_bbox))
+
+    def _select_refresh_override(
+        self,
+        detections: Sequence[Detection],
+        association_bbox: Sequence[float],
+    ) -> Optional[Detection]:
+        """Track a stable far full-frame candidate while detector refresh is required."""
+        candidates = [
+            detection
+            for detection in detections
+            if detection.source == "full_frame"
+            and detection.confidence >= self.refresh_override_confidence
+            and self._is_far_refresh_candidate(detection.bbox, association_bbox)
+        ]
+        if not candidates:
+            self._reset_refresh_override()
+            return None
+
+        selected = max(candidates, key=lambda det: det.confidence)
+        if (
+            self.refresh_override_candidate is not None
+            and _bbox_iou(selected.bbox, self.refresh_override_candidate.bbox) >= self.refresh_override_stability_iou
+        ):
+            self.refresh_override_streak += 1
+        else:
+            self.refresh_override_streak = 1
+        self.refresh_override_candidate = selected
+        return selected
+
+    def _is_far_refresh_candidate(self, candidate_bbox: Sequence[float], reference_bbox: Sequence[float]) -> bool:
+        """Return True when a full-frame candidate is far enough to justify bypassing association gating."""
+        if self._passes_association_gate(candidate_bbox, reference_bbox, strict=True):
+            return False
+        return _bbox_center_distance_ratio(candidate_bbox, reference_bbox) >= self.refresh_override_min_center_ratio
+
+    def _should_force_full_frame_search(self) -> bool:
+        """Drop a stale edge-locked track so the detector can re-enter global search mode."""
+        if self.bbox is None or not self.requires_detector_refresh:
+            return False
+        if self.lost_frames < self.stale_search_lost_frames:
+            return False
+        if self.low_score_streak < self.stale_search_low_score_streak:
+            return False
+        return _bbox_near_frame_edge(self.bbox, self.last_frame_shape, self.stale_search_edge_margin_px)
+
+    def _reset_refresh_override(self) -> None:
+        """Clear full-frame refresh override state."""
+        self.refresh_override_streak = 0
+        self.refresh_override_candidate = None
+        self.force_hard_reacquire = False
 
     def _passes_association_gate(
         self,
@@ -1295,6 +1394,14 @@ def _bbox_aspect_change_ratio(box1: Sequence[float], box2: Sequence[float]) -> f
     aspect1 = max(box1[2] - box1[0], 1.0) / max(box1[3] - box1[1], 1.0)
     aspect2 = max(box2[2] - box2[0], 1.0) / max(box2[3] - box2[1], 1.0)
     return max(aspect1 / aspect2, aspect2 / aspect1)
+
+
+def _bbox_near_frame_edge(bbox: Sequence[float], frame_shape: Tuple[int, ...], margin_px: int) -> bool:
+    """Return True when a bbox is anchored close to any image border."""
+    height, width = frame_shape[:2]
+    x1, y1, x2, y2 = bbox
+    margin = max(float(margin_px), 0.0)
+    return x1 <= margin or y1 <= margin or x2 >= width - margin or y2 >= height - margin
 
 
 register_tracker(TemplateMatchTracker.name, TemplateMatchTracker, overwrite=True)

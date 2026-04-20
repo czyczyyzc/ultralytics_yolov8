@@ -396,6 +396,110 @@ def test_detector_miss_does_not_mark_fake_lost_when_tracker_is_healthy():
     assert third.bbox == (22.0, 20.0, 42.0, 40.0)
 
 
+def test_stale_edge_locked_track_drops_target_and_forces_full_frame_search():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(0, 20, 20, 40), confidence=0.95, class_id=0, class_name="drone")],
+            [],
+            [],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (False, None, 0.0),
+            (False, None, 0.0),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        manual_confirmation=True,
+        pending_frames=1,
+        min_confirm_detections=1,
+        stale_search_lost_frames=2,
+        stale_search_low_score_streak=2,
+        stale_search_edge_margin_px=4,
+    )
+
+    first = system.step(frame)
+    system.confirm_current_target(True, note="unit_test_confirm")
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "lost"
+    assert second.confirmation_state == "pending"
+    assert third.status == "searching"
+    assert third.bbox is None
+    assert detector.calls[-1]["roi"] is None
+
+
+def test_refresh_override_allows_far_full_frame_consensus_hard_reacquire():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    far_detection = solutions.Detection(
+        bbox=(110, 70, 138, 98),
+        confidence=0.92,
+        class_id=0,
+        class_name="drone",
+        source="full_frame",
+    )
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(10, 20, 30, 40), confidence=0.95, class_id=0, class_name="drone")],
+            [
+                solutions.Detection(bbox=(12, 20, 32, 40), confidence=0.80, class_id=0, class_name="drone", source="roi"),
+                far_detection,
+            ],
+            [
+                solutions.Detection(bbox=(13, 20, 33, 40), confidence=0.82, class_id=0, class_name="drone", source="roi"),
+                solutions.Detection(
+                    bbox=(111, 71, 139, 99),
+                    confidence=0.93,
+                    class_id=0,
+                    class_name="drone",
+                    source="full_frame",
+                ),
+            ],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (False, None, 0.0),
+            (False, None, 0.0),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        manual_confirmation=True,
+        pending_frames=1,
+        min_confirm_detections=1,
+        refresh_override_confidence=0.75,
+        refresh_override_consensus_frames=2,
+        refresh_override_stability_iou=0.25,
+        refresh_override_min_center_ratio=2.5,
+        full_frame_fallback=False,
+    )
+
+    first = system.step(frame)
+    system.confirm_current_target(True, note="unit_test_confirm")
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "lost"
+    assert second.bbox == (10.0, 20.0, 30.0, 40.0)
+    assert third.status == "reacquired"
+    assert third.bbox == (111.0, 71.0, 139.0, 99.0)
+    assert tracker.reinitialized[-1] == (111.0, 71.0, 139.0, 99.0)
+    assert system.refresh_override_streak == 0
+
+
 def test_confirmed_target_requires_detector_refresh_after_lost():
     frame = np.zeros((120, 160, 3), dtype=np.uint8)
     detector = DummyDetector(
@@ -432,9 +536,9 @@ def test_confirmed_target_requires_detector_refresh_after_lost():
     assert first.status == "detected"
     assert second.status == "lost"
     assert second.confirmation_state == "pending"
-    assert third.status == "tracking"
-    assert third.confirmation_state == "pending"
-    assert fourth.status == "redetected"
+    assert third.status == "redetected"
+    assert third.confirmation_state == "confirmed"
+    assert fourth.status == "tracking"
     assert fourth.confirmation_state == "confirmed"
 
 

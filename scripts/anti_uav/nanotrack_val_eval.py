@@ -22,6 +22,9 @@ from ultralytics import solutions
 
 DEFAULT_SOURCE_ROOT = Path("/mnt/chenziye/datasets/anti_uav/Anti-UAV300")
 DEFAULT_CONVERTED_ROOT = Path("/mnt/chenziye/datasets/anti_uav/anti_uav300_nanotrack")
+COMPOSITE_SUCCESS_WEIGHT = 0.45
+COMPOSITE_CENTER_WEIGHT = 0.15
+COMPOSITE_ABSENT_WEIGHT = 0.40
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,6 +51,15 @@ def parse_args() -> argparse.Namespace:
 def write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def compute_composite(success_rate: float, center_precision: float, absent_fp_rate: float) -> float:
+    """Tracker-selection score that penalizes absent-frame false positives more heavily."""
+    return (
+        success_rate * COMPOSITE_SUCCESS_WEIGHT
+        + center_precision * COMPOSITE_CENTER_WEIGHT
+        + (1.0 - absent_fp_rate) * COMPOSITE_ABSENT_WEIGHT
+    )
 
 
 def resolve_split_sequences(source_root: Path, converted_root: Path, modality: str, split: str, val_ratio: float) -> list[dict]:
@@ -214,10 +226,10 @@ def evaluate_sequence(entry: dict, tracker, args: argparse.Namespace) -> dict:
     metrics["success_rate"] = metrics["tp_frames"] / max(gt_present, 1)
     metrics["center_precision"] = metrics["center_hits"] / max(gt_present, 1)
     metrics["absent_fp_rate"] = metrics["absent_fp_frames"] / max(gt_absent, 1)
-    metrics["composite"] = (
-        metrics["success_rate"] * 0.6
-        + metrics["center_precision"] * 0.2
-        + (1.0 - metrics["absent_fp_rate"]) * 0.2
+    metrics["composite"] = compute_composite(
+        metrics["success_rate"],
+        metrics["center_precision"],
+        metrics["absent_fp_rate"],
     )
     metrics["frames"] = per_frame
     return metrics
@@ -250,10 +262,10 @@ def aggregate_results(sequence_results: list[dict]) -> dict:
     totals["center_precision"] = totals["center_hits"] / max(totals["gt_present_frames"], 1)
     absent = max(totals["frames_evaluated"] - totals["gt_present_frames"], 1)
     totals["absent_fp_rate"] = totals["absent_fp_frames"] / absent
-    totals["composite"] = (
-        totals["success_rate"] * 0.6
-        + totals["center_precision"] * 0.2
-        + (1.0 - totals["absent_fp_rate"]) * 0.2
+    totals["composite"] = compute_composite(
+        totals["success_rate"],
+        totals["center_precision"],
+        totals["absent_fp_rate"],
     )
     return totals
 

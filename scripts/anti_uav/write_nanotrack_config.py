@@ -71,7 +71,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-lr", type=float, default=0.005, help="Base learning rate.")
     parser.add_argument("--neg-ratio", type=float, default=0.35, help="Fraction of negative pairs.")
     parser.add_argument("--neg-same-seq-prob", type=float, default=0.75, help="Prefer same-sequence negatives with this probability.")
-    parser.add_argument("--neg-background-prob", type=float, default=0.35, help="Within same-sequence negatives, background-negative sampling probability.")
+    parser.add_argument("--neg-background-prob", type=float, default=0.20, help="Within same-sequence negatives, plain absent-background sampling probability.")
+    parser.add_argument("--neg-transition-prob", type=float, default=0.25, help="Within same-sequence negatives, exit/re-entry absent sampling probability.")
+    parser.add_argument("--neg-hard-prob", type=float, default=0.25, help="Within same-sequence negatives, replay-mined hard-negative sampling probability.")
+    parser.add_argument("--transition-template-prob", type=float, default=0.5, help="Bias template sampling toward visible frames near exit/re-entry boundaries.")
+    parser.add_argument("--transition-frame-window", type=int, default=8, help="Frames around a visible segment boundary treated as transition-critical.")
     return parser.parse_args()
 
 
@@ -174,6 +178,10 @@ DATASET:
     NEG: {args.neg_ratio}
     NEG_SAME_SEQ_PROB: {args.neg_same_seq_prob}
     NEG_BACKGROUND_PROB: {args.neg_background_prob}
+    NEG_TRANSITION_PROB: {args.neg_transition_prob}
+    NEG_HARD_PROB: {args.neg_hard_prob}
+    TRANSITION_TEMPLATE_PROB: {args.transition_template_prob}
+    TRANSITION_FRAME_WINDOW: {args.transition_frame_window}
     GRAY: 0.0
     {args.dataset_name}:
         ROOT: "{args.crop_root.expanduser().resolve()}"

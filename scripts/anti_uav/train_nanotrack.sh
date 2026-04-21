@@ -25,9 +25,14 @@ OVERWRITE_EXPORT="${OVERWRITE_EXPORT:-0}"
 SAVE_EVERY="${SAVE_EVERY:-5}"
 BACKGROUND_FRAME_STEP="${BACKGROUND_FRAME_STEP:-6}"
 DISTRACTOR_FRAME_STEP="${DISTRACTOR_FRAME_STEP:-2}"
+TRANSITION_WINDOW="${TRANSITION_WINDOW:-8}"
+HARD_NEGATIVE_ERRORS="${HARD_NEGATIVE_ERRORS:-}"
 NEG_RATIO="${NEG_RATIO:-0.35}"
 NEG_SAME_SEQ_PROB="${NEG_SAME_SEQ_PROB:-0.75}"
-NEG_BACKGROUND_PROB="${NEG_BACKGROUND_PROB:-0.35}"
+NEG_BACKGROUND_PROB="${NEG_BACKGROUND_PROB:-0.20}"
+NEG_TRANSITION_PROB="${NEG_TRANSITION_PROB:-0.25}"
+NEG_HARD_PROB="${NEG_HARD_PROB:-0.25}"
+TRANSITION_TEMPLATE_PROB="${TRANSITION_TEMPLATE_PROB:-0.50}"
 
 CONVERTER="${REPO_ROOT}/scripts/anti_uav/convert_anti_uav300_nanotrack.py"
 CONFIG_WRITER="${REPO_ROOT}/scripts/anti_uav/write_nanotrack_config.py"
@@ -52,7 +57,12 @@ convert_args=(
   --min-box-size "${MIN_BOX_SIZE}"
   --background-frame-step "${BACKGROUND_FRAME_STEP}"
   --distractor-frame-step "${DISTRACTOR_FRAME_STEP}"
+  --transition-window "${TRANSITION_WINDOW}"
 )
+if [[ -n "${HARD_NEGATIVE_ERRORS}" ]]; then
+  read -r -a hard_negative_args <<< "${HARD_NEGATIVE_ERRORS}"
+  convert_args+=(--hard-negative-errors "${hard_negative_args[@]}")
+fi
 if [[ "${OVERWRITE_EXPORT}" == "1" ]]; then
   convert_args+=(--overwrite)
 fi
@@ -92,7 +102,11 @@ fi
   --videos-per-epoch "${VIDEOS_PER_EPOCH}" \
   --neg-ratio "${NEG_RATIO}" \
   --neg-same-seq-prob "${NEG_SAME_SEQ_PROB}" \
-  --neg-background-prob "${NEG_BACKGROUND_PROB}"
+  --neg-background-prob "${NEG_BACKGROUND_PROB}" \
+  --neg-transition-prob "${NEG_TRANSITION_PROB}" \
+  --neg-hard-prob "${NEG_HARD_PROB}" \
+  --transition-template-prob "${TRANSITION_TEMPLATE_PROB}" \
+  --transition-frame-window "${TRANSITION_WINDOW}"
 
 export PYTHONPATH="${NANOTRACK_ROOT}:${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 

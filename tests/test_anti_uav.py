@@ -255,6 +255,51 @@ def test_assist_window_resets_disagreement_streak_after_consistent_refresh():
     assert system.assist_disagreement_streak == 1
 
 
+def test_detector_contradiction_forces_hard_reacquire_when_tracker_false_positive_persists():
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(2, 40, 42, 80), confidence=0.94, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(210, 44, 252, 86), confidence=0.82, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(219, 46, 261, 88), confidence=0.80, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (1, 40, 41, 80), 0.91),
+            (True, (0, 41, 40, 81), 0.90),
+            (True, (0, 42, 40, 82), 0.89),
+            (True, (0, 43, 40, 83), 0.88),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        roi_redetect=False,
+        manual_confirmation=False,
+        detector_contradiction_consensus_frames=2,
+        detector_contradiction_confidence=0.8,
+        detector_contradiction_continue_confidence=0.75,
+    )
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+    fourth = system.step(frame)
+    fifth = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert third.status == "tracking"
+    assert fourth.status == "tracking"
+    assert fifth.status == "reacquired"
+    assert fifth.bbox == (219.0, 46.0, 261.0, 88.0)
+    assert tracker.reinitialized[-1] == (219.0, 46.0, 261.0, 88.0)
+    assert system.requires_detector_refresh is False
+
+
 def test_anti_uav_drops_target_after_too_many_misses():
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
     detector = DummyDetector([[solutions.Detection(bbox=(20, 20, 60, 60), confidence=0.9, class_id=0, class_name="drone")], [], []])
@@ -612,6 +657,12 @@ def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
 
     output_root = tmp_path / "nanotrack_export"
     converter = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "convert_anti_uav300_nanotrack.py"
+    hardneg_root = tmp_path / "replay_errors" / "train_seq001"
+    hardneg_root.mkdir(parents=True)
+    (hardneg_root / "errors.jsonl").write_text(
+        json.dumps({"type": "false_positive", "frame_index": 3, "bbox": [4, 5, 14, 13]}) + "\n",
+        encoding="utf-8",
+    )
     subprocess.run(
         [
             sys.executable,
@@ -628,6 +679,10 @@ def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
             "1",
             "--distractor-frame-step",
             "1",
+            "--transition-window",
+            "2",
+            "--hard-negative-errors",
+            str(tmp_path / "replay_errors"),
         ],
         check=True,
     )
@@ -646,6 +701,74 @@ def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
     assert "000000" in metadata["train_seq001"]["00"]
     assert "__neg__" in metadata["train_seq001"]
     assert "__bg__" in metadata["train_seq001"]
+    assert "__bg_transition__" in metadata["train_seq001"]
+    assert "__hardneg__" in metadata["train_seq001"]
+
+
+def test_nanotrack_dataset_prefers_transition_templates_and_absent_search_tracks(tmp_path):
+    nanotrack_root = Path(__file__).resolve().parents[1] / "third_party" / "nanotrack_vendor"
+    if str(nanotrack_root) not in sys.path:
+        sys.path.insert(0, str(nanotrack_root))
+
+    from nanotrack.core.config import cfg
+    from nanotrack.datasets.dataset import SubDataset
+
+    crop_root = tmp_path / "rgb" / "crop511" / "train_seq001"
+    crop_root.mkdir(parents=True)
+    frame = np.full((255, 255, 3), 127, dtype=np.uint8)
+    track_names = ("00", "__neg__", "__bg__", "__bg_transition__", "__hardneg__")
+    frame_ids = [f"{frame_index:06d}" for frame_index in range(16)]
+    for frame_id in frame_ids:
+        for track_name in track_names:
+            cv2.imwrite(str(crop_root / f"{frame_id}.{track_name}.x.jpg"), frame)
+
+    train_json = tmp_path / "rgb" / "train.json"
+    train_json.write_text(
+        json.dumps(
+            {
+                "train_seq001": {
+                    "00": {frame_id: [100, 100, 40, 32] for frame_id in frame_ids},
+                    "__neg__": {"000004": [0, 0, 40, 32]},
+                    "__bg__": {"000006": [0, 0, 40, 32]},
+                    "__bg_transition__": {"000007": [0, 0, 40, 32]},
+                    "__hardneg__": {"000008": [0, 0, 40, 32]},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    original_values = {
+        "NEG_SAME_SEQ_PROB": getattr(cfg.DATASET, "NEG_SAME_SEQ_PROB", 0.75),
+        "NEG_HARD_PROB": getattr(cfg.DATASET, "NEG_HARD_PROB", 0.25),
+        "NEG_TRANSITION_PROB": getattr(cfg.DATASET, "NEG_TRANSITION_PROB", 0.25),
+        "NEG_BACKGROUND_PROB": getattr(cfg.DATASET, "NEG_BACKGROUND_PROB", 0.20),
+        "TRANSITION_TEMPLATE_PROB": getattr(cfg.DATASET, "TRANSITION_TEMPLATE_PROB", 0.5),
+        "TRANSITION_FRAME_WINDOW": getattr(cfg.DATASET, "TRANSITION_FRAME_WINDOW", 8),
+    }
+    try:
+        cfg.DATASET.NEG_SAME_SEQ_PROB = 1.0
+        cfg.DATASET.NEG_HARD_PROB = 1.0
+        cfg.DATASET.NEG_TRANSITION_PROB = 0.0
+        cfg.DATASET.NEG_BACKGROUND_PROB = 0.0
+        cfg.DATASET.TRANSITION_TEMPLATE_PROB = 1.0
+        cfg.DATASET.TRANSITION_FRAME_WINDOW = 1
+
+        dataset = SubDataset("ANTI", tmp_path / "rgb" / "crop511", train_json, frame_range=30, num_use=-1, start_idx=0)
+        _, template = dataset.get_random_target(0, return_video=True, prefer_transition=True)
+        hard_negative = dataset.get_negative_search(0, preferred_video="train_seq001")
+
+        transition_template_frames = {"000000", "000001", "000004", "000005", "000010", "000011", "000014", "000015"}
+        assert template[0].name.split(".")[0] in transition_template_frames
+        assert hard_negative[0].name.endswith("__hardneg__.x.jpg")
+
+        cfg.DATASET.NEG_HARD_PROB = 0.0
+        cfg.DATASET.NEG_TRANSITION_PROB = 1.0
+        transition_negative = dataset.get_negative_search(0, preferred_video="train_seq001")
+        assert transition_negative[0].name.endswith("__bg_transition__.x.jpg")
+    finally:
+        for key, value in original_values.items():
+            setattr(cfg.DATASET, key, value)
 
 
 def test_nanotrack_val_eval_and_checkpoint_sweep_dry_run(tmp_path):
@@ -730,6 +853,16 @@ def test_nanotrack_val_eval_and_checkpoint_sweep_dry_run(tmp_path):
     assert any(path.endswith("best.pth") for path in sweep_payload["checkpoints"])
 
 
+def test_nanotrack_val_eval_composite_penalizes_absent_false_positives_more_heavily():
+    from scripts.anti_uav.nanotrack_val_eval import compute_composite
+
+    low_absent_fp = compute_composite(0.80, 0.70, 0.05)
+    high_absent_fp = compute_composite(0.80, 0.70, 0.35)
+
+    assert low_absent_fp > high_absent_fp
+    assert round(low_absent_fp - high_absent_fp, 6) == round((0.35 - 0.05) * 0.40, 6)
+
+
 def test_train_nanotrack_local_smoke(tmp_path):
     crop_root = tmp_path / "rgb" / "crop511" / "train_seq001"
     crop_root.mkdir(parents=True)
@@ -777,9 +910,22 @@ def test_train_nanotrack_local_smoke(tmp_path):
             "0",
             "--videos-per-epoch",
             "2",
+            "--neg-transition-prob",
+            "0.25",
+            "--neg-hard-prob",
+            "0.25",
+            "--transition-template-prob",
+            "0.5",
+            "--transition-frame-window",
+            "8",
         ],
         check=True,
     )
+    config_text = config_path.read_text(encoding="utf-8")
+    assert "NEG_TRANSITION_PROB: 0.25" in config_text
+    assert "NEG_HARD_PROB: 0.25" in config_text
+    assert "TRANSITION_TEMPLATE_PROB: 0.5" in config_text
+    assert "TRANSITION_FRAME_WINDOW: 8" in config_text
 
     subprocess.run(
         [
@@ -838,6 +984,14 @@ def test_export_nanotrack_rk3588_dry_run(tmp_path):
             "0",
             "--videos-per-epoch",
             "1",
+            "--neg-transition-prob",
+            "0.25",
+            "--neg-hard-prob",
+            "0.25",
+            "--transition-template-prob",
+            "0.5",
+            "--transition-frame-window",
+            "8",
         ],
         check=True,
     )

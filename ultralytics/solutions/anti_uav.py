@@ -628,6 +628,13 @@ class AntiUAVSystem:
         refresh_override_stability_iou: float = 0.25,
         refresh_override_min_center_ratio: float = 3.0,
         refresh_override_motion_center_ratio: float = 5.0,
+        detector_contradiction_confidence: float = 0.75,
+        detector_contradiction_continue_confidence: Optional[float] = None,
+        detector_contradiction_consensus_frames: int = 2,
+        detector_contradiction_min_center_ratio: float = 3.0,
+        detector_contradiction_motion_center_ratio: float = 5.0,
+        detector_contradiction_track_score_thresh: float = 0.85,
+        detector_contradiction_edge_margin_px: int = 8,
         suspect_score_thresh: Optional[float] = None,
     ):
         self.detector = detector
@@ -669,6 +676,22 @@ class AntiUAVSystem:
         self.refresh_override_stability_iou = float(np.clip(refresh_override_stability_iou, 0.0, 1.0))
         self.refresh_override_min_center_ratio = max(0.0, float(refresh_override_min_center_ratio))
         self.refresh_override_motion_center_ratio = max(0.0, float(refresh_override_motion_center_ratio))
+        self.detector_contradiction_confidence = float(detector_contradiction_confidence)
+        default_contradiction_continue = max(
+            self.min_confidence, min(self.detector_contradiction_confidence, self.refresh_override_continue_confidence)
+        )
+        self.detector_contradiction_continue_confidence = (
+            default_contradiction_continue
+            if detector_contradiction_continue_confidence is None
+            else max(float(detector_contradiction_continue_confidence), self.min_confidence)
+        )
+        self.detector_contradiction_consensus_frames = max(1, int(detector_contradiction_consensus_frames))
+        self.detector_contradiction_min_center_ratio = max(0.0, float(detector_contradiction_min_center_ratio))
+        self.detector_contradiction_motion_center_ratio = max(0.0, float(detector_contradiction_motion_center_ratio))
+        self.detector_contradiction_track_score_thresh = max(
+            self.tracker_score_thresh, float(detector_contradiction_track_score_thresh)
+        )
+        self.detector_contradiction_edge_margin_px = max(1, int(detector_contradiction_edge_margin_px))
         default_suspect_thresh = max(self.tracker_score_thresh + 0.10, 0.55)
         self.suspect_score_thresh = (
             default_suspect_thresh if suspect_score_thresh is None else max(float(suspect_score_thresh), self.tracker_score_thresh)
@@ -703,6 +726,8 @@ class AntiUAVSystem:
         self.refresh_override_streak = 0
         self.refresh_override_candidate = None
         self.force_hard_reacquire = False
+        self.detector_contradiction_streak = 0
+        self.detector_contradiction_candidate = None
         self.tracker.reset()
 
     def step(self, frame: np.ndarray) -> TargetState:
@@ -790,6 +815,7 @@ class AntiUAVSystem:
                     self.assist_frames_remaining = self.assist_frames
                 self.lost_frames = 0
                 self.low_score_streak = 0
+                self._reset_detector_contradiction()
                 if self.requires_detector_refresh and self.alert_active:
                     self.confirmation_state = "confirmed"
                 self.requires_detector_refresh = False
@@ -814,6 +840,7 @@ class AntiUAVSystem:
             self.assist_frames_remaining = 0
             self.assist_disagreement_streak = 0
             self.low_score_streak = 0
+            self._reset_detector_contradiction()
             self._reset_refresh_override()
         elif detection_accepted:
             pass
@@ -1016,6 +1043,7 @@ class AntiUAVSystem:
         self.requires_detector_refresh = False
         self.assist_disagreement_streak = 0
         self.low_score_streak = 0
+        self._reset_detector_contradiction()
         self._reset_refresh_override()
         self.confirmation_state = "idle"
         self.alert_active = False
@@ -1063,11 +1091,24 @@ class AntiUAVSystem:
         """Choose the most plausible single target, preferring consistency with the current target."""
         filtered = [d for d in detections if d.confidence >= self.min_confidence]
         if not filtered:
+            self._reset_detector_contradiction()
+            self._reset_refresh_override()
             return None
 
         if association_bbox is None:
+            self._reset_detector_contradiction()
             self._reset_refresh_override()
             return max(filtered, key=lambda det: det.confidence)
+
+        if self._allow_detector_contradiction(association_bbox):
+            contradiction = self._select_detector_contradiction(filtered, association_bbox)
+            if contradiction is not None and self.detector_contradiction_streak >= self.detector_contradiction_consensus_frames:
+                self.requires_detector_refresh = True
+                self._reset_refresh_override()
+                self.force_hard_reacquire = True
+                return contradiction
+        else:
+            self._reset_detector_contradiction()
 
         if self.requires_detector_refresh:
             refresh_override = self._select_refresh_override(filtered, association_bbox)
@@ -1084,6 +1125,50 @@ class AntiUAVSystem:
             return None
 
         return max(gated, key=lambda det: det.confidence + 0.3 * _bbox_iou(det.bbox, association_bbox))
+
+    def _allow_detector_contradiction(self, association_bbox: Sequence[float]) -> bool:
+        """Enable contradiction handling when the tracker looks stale despite still returning success."""
+        if self.requires_detector_refresh or association_bbox is None or self.bbox is None:
+            return False
+        if self.track_score <= self.detector_contradiction_track_score_thresh:
+            return True
+        return _bbox_near_frame_edge(self.bbox, self.last_frame_shape, self.detector_contradiction_edge_margin_px)
+
+    def _select_detector_contradiction(
+        self,
+        detections: Sequence[Detection],
+        association_bbox: Sequence[float],
+    ) -> Optional[Detection]:
+        """Track repeated far full-frame detections that contradict the active tracker hypothesis."""
+        min_confidence = (
+            self.detector_contradiction_confidence
+            if self.detector_contradiction_candidate is None
+            else self.detector_contradiction_continue_confidence
+        )
+        candidates = [
+            detection
+            for detection in detections
+            if detection.source == "full_frame"
+            and detection.confidence >= min_confidence
+            and self._is_far_detector_contradiction_candidate(detection.bbox, association_bbox)
+        ]
+        if not candidates:
+            self._reset_detector_contradiction()
+            return None
+
+        selected = max(
+            candidates,
+            key=lambda det: (
+                1 if self._is_consistent_detector_contradiction_candidate(det.bbox) else 0,
+                det.confidence,
+            ),
+        )
+        if self._is_consistent_detector_contradiction_candidate(selected.bbox):
+            self.detector_contradiction_streak += 1
+        else:
+            self.detector_contradiction_streak = 1
+        self.detector_contradiction_candidate = selected
+        return selected
 
     def _select_refresh_override(
         self,
@@ -1121,6 +1206,28 @@ class AntiUAVSystem:
         self.refresh_override_candidate = selected
         return selected
 
+    def _is_far_detector_contradiction_candidate(
+        self,
+        candidate_bbox: Sequence[float],
+        reference_bbox: Sequence[float],
+    ) -> bool:
+        """Return True when a full-frame candidate strongly contradicts the current tracker hypothesis."""
+        if self._passes_association_gate(candidate_bbox, reference_bbox, strict=True):
+            return False
+        return _bbox_center_distance_ratio(candidate_bbox, reference_bbox) >= self.detector_contradiction_min_center_ratio
+
+    def _is_consistent_detector_contradiction_candidate(self, candidate_bbox: Sequence[float]) -> bool:
+        """Allow a contradiction to build either from stable boxes or from smoothly moving distant detections."""
+        if self.detector_contradiction_candidate is None:
+            return False
+        previous_bbox = self.detector_contradiction_candidate.bbox
+        return self._is_motion_consistent_candidate(
+            candidate_bbox,
+            previous_bbox,
+            self.refresh_override_stability_iou,
+            self.detector_contradiction_motion_center_ratio,
+        )
+
     def _is_far_refresh_candidate(self, candidate_bbox: Sequence[float], reference_bbox: Sequence[float]) -> bool:
         """Return True when a full-frame candidate is far enough to justify bypassing association gating."""
         if self._passes_association_gate(candidate_bbox, reference_bbox, strict=True):
@@ -1133,14 +1240,29 @@ class AntiUAVSystem:
             return False
 
         previous_bbox = self.refresh_override_candidate.bbox
-        if _bbox_iou(candidate_bbox, previous_bbox) >= self.refresh_override_stability_iou:
+        return self._is_motion_consistent_candidate(
+            candidate_bbox,
+            previous_bbox,
+            self.refresh_override_stability_iou,
+            self.refresh_override_motion_center_ratio,
+        )
+
+    def _is_motion_consistent_candidate(
+        self,
+        candidate_bbox: Sequence[float],
+        previous_bbox: Sequence[float],
+        stability_iou: float,
+        motion_center_ratio: float,
+    ) -> bool:
+        """Treat either overlapping or smoothly moving candidate boxes as a coherent detection trajectory."""
+        if _bbox_iou(candidate_bbox, previous_bbox) >= stability_iou:
             return True
 
         center_ratio = _bbox_center_distance_ratio(candidate_bbox, previous_bbox)
         area_change = _bbox_area_change_ratio(candidate_bbox, previous_bbox)
         aspect_change = _bbox_aspect_change_ratio(candidate_bbox, previous_bbox)
         return (
-            center_ratio <= self.refresh_override_motion_center_ratio
+            center_ratio <= motion_center_ratio
             and area_change <= self.association_max_area_change
             and aspect_change <= self.association_max_aspect_change
         )
@@ -1160,6 +1282,11 @@ class AntiUAVSystem:
         self.refresh_override_streak = 0
         self.refresh_override_candidate = None
         self.force_hard_reacquire = False
+
+    def _reset_detector_contradiction(self) -> None:
+        """Clear detector-contradiction state accumulated while tracker still reports success."""
+        self.detector_contradiction_streak = 0
+        self.detector_contradiction_candidate = None
 
     def _passes_association_gate(
         self,

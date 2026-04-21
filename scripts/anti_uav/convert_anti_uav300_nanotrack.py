@@ -41,6 +41,19 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Export one same-scene distractor negative every N positive frames. 0 disables distractor negatives.",
     )
+    parser.add_argument(
+        "--transition-window",
+        type=int,
+        default=8,
+        help="Treat absent frames within this many frames of a visible segment as exit/re-entry transition negatives.",
+    )
+    parser.add_argument(
+        "--hard-negative-errors",
+        nargs="*",
+        type=Path,
+        default=[],
+        help="Optional replay error logs or directories containing errors.jsonl files used to export hard negatives.",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing crops and JSON files.")
     return parser.parse_args()
 
@@ -88,6 +101,64 @@ def split_sequences(sequence_names: list[str], val_ratio: float) -> tuple[set[st
 def stable_score(text: str) -> int:
     """Stable hash for deterministic sequence splits."""
     return int(hashlib.sha1(text.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def compute_transition_absent_mask(boxes: list[list[float]], min_box_size: float, window: int) -> list[bool]:
+    """Flag absent frames that sit close to a visible segment boundary."""
+    present = [is_valid_bbox(box, min_box_size) for box in boxes]
+    if window <= 0:
+        return [False] * len(present)
+    mask = [False] * len(present)
+    for frame_index, is_present in enumerate(present):
+        if is_present:
+            continue
+        left = max(0, frame_index - window)
+        right = min(len(present), frame_index + window + 1)
+        mask[frame_index] = any(present[left:frame_index]) or any(present[frame_index + 1:right])
+    return mask
+
+
+def normalize_xyxy_bbox(bbox: list[float] | tuple[float, ...]) -> list[float] | None:
+    """Convert an xyxy bbox into xywh when it has a valid extent."""
+    if not bbox or len(bbox) < 4:
+        return None
+    x1, y1, x2, y2 = [float(value) for value in bbox[:4]]
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return [x1, y1, x2 - x1, y2 - y1]
+
+
+def collect_hard_negative_entries(inputs: list[Path]) -> dict[str, dict[int, list[float]]]:
+    """Load replay-derived hard negatives from errors.jsonl logs."""
+    collected: dict[str, dict[int, list[float]]] = {}
+    if not inputs:
+        return collected
+
+    error_files: list[Path] = []
+    for raw_path in inputs:
+        path = raw_path.expanduser().resolve()
+        if not path.exists():
+            continue
+        if path.is_file():
+            error_files.append(path)
+        else:
+            error_files.extend(sorted(path.rglob("errors.jsonl")))
+
+    for error_path in error_files:
+        sequence_name = error_path.parent.name
+        sequence_entries = collected.setdefault(sequence_name, {})
+        for line in error_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            if payload.get("type") not in {"false_positive", "localization_error", "bad_alert"}:
+                continue
+            bbox_xywh = normalize_xyxy_bbox(payload.get("bbox"))
+            frame_index = int(payload.get("frame_index", 0)) - 1
+            if bbox_xywh is None or frame_index < 0 or frame_index in sequence_entries:
+                continue
+            sequence_entries[frame_index] = bbox_xywh
+    return collected
 
 
 def read_boxes(label_path: Path) -> list[list[float]]:
@@ -254,6 +325,8 @@ def export_sequence(
     min_box_size: float,
     background_frame_step: int,
     distractor_frame_step: int,
+    transition_window: int,
+    hard_negative_entries: dict[int, list[float]] | None,
     overwrite: bool,
 ) -> dict:
     """Export one sequence/modality to NanoTrack crops plus JSON metadata."""
@@ -267,9 +340,19 @@ def export_sequence(
     positive_track_key = "00"
     distractor_track_key = "__neg__"
     background_track_key = "__bg__"
-    track_meta = {positive_track_key: {}, distractor_track_key: {}, background_track_key: {}}
-    counts = {"positive": 0, "distractor": 0, "background": 0}
+    transition_background_track_key = "__bg_transition__"
+    hard_negative_track_key = "__hardneg__"
+    track_meta = {
+        positive_track_key: {},
+        distractor_track_key: {},
+        background_track_key: {},
+        transition_background_track_key: {},
+        hard_negative_track_key: {},
+    }
+    counts = {"positive": 0, "distractor": 0, "background": 0, "transition_background": 0, "hard_negative": 0}
     reference_size = estimate_reference_size(boxes, min_box_size)
+    transition_absent_mask = compute_transition_absent_mask(boxes, min_box_size, transition_window)
+    hard_negative_entries = hard_negative_entries or {}
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -317,20 +400,67 @@ def export_sequence(
                             cv2.imwrite(str(distractor_path), distractor_crop)
                         track_meta[distractor_track_key][frame_key] = [0.0, 0.0, float(distractor_bbox[2]), float(distractor_bbox[3])]
                         counts["distractor"] += 1
-            elif background_frame_step > 0 and frame_index % background_frame_step == 0:
-                background_bbox = sample_background_bbox(frame.shape, reference_size, f"{sequence['name']}:{modality}:bg:{frame_key}")
-                background_crop = crop_like_nanotrack(
+            else:
+                background_bbox = None
+                if background_frame_step > 0 and frame_index % background_frame_step == 0:
+                    background_bbox = sample_background_bbox(frame.shape, reference_size, f"{sequence['name']}:{modality}:bg:{frame_key}")
+                    background_crop = crop_like_nanotrack(
+                        frame,
+                        background_bbox,
+                        crop_size=crop_size,
+                        exemplar_size=exemplar_size,
+                        context_amount=context_amount,
+                    )
+                    background_path = sequence_dir / f"{frame_key}.{background_track_key}.x.jpg"
+                    if overwrite or not background_path.exists():
+                        cv2.imwrite(str(background_path), background_crop)
+                    track_meta[background_track_key][frame_key] = [0.0, 0.0, float(background_bbox[2]), float(background_bbox[3])]
+                    counts["background"] += 1
+
+                if transition_absent_mask[frame_index]:
+                    if background_bbox is None:
+                        background_bbox = sample_background_bbox(
+                            frame.shape,
+                            reference_size,
+                            f"{sequence['name']}:{modality}:bg_transition:{frame_key}",
+                        )
+                    transition_crop = crop_like_nanotrack(
+                        frame,
+                        background_bbox,
+                        crop_size=crop_size,
+                        exemplar_size=exemplar_size,
+                        context_amount=context_amount,
+                    )
+                    transition_path = sequence_dir / f"{frame_key}.{transition_background_track_key}.x.jpg"
+                    if overwrite or not transition_path.exists():
+                        cv2.imwrite(str(transition_path), transition_crop)
+                    track_meta[transition_background_track_key][frame_key] = [
+                        0.0,
+                        0.0,
+                        float(background_bbox[2]),
+                        float(background_bbox[3]),
+                    ]
+                    counts["transition_background"] += 1
+
+            hard_negative_bbox = hard_negative_entries.get(frame_index)
+            if hard_negative_bbox is not None:
+                hard_negative_crop = crop_like_nanotrack(
                     frame,
-                    background_bbox,
+                    hard_negative_bbox,
                     crop_size=crop_size,
                     exemplar_size=exemplar_size,
                     context_amount=context_amount,
                 )
-                background_path = sequence_dir / f"{frame_key}.{background_track_key}.x.jpg"
-                if overwrite or not background_path.exists():
-                    cv2.imwrite(str(background_path), background_crop)
-                track_meta[background_track_key][frame_key] = [0.0, 0.0, float(background_bbox[2]), float(background_bbox[3])]
-                counts["background"] += 1
+                hard_negative_path = sequence_dir / f"{frame_key}.{hard_negative_track_key}.x.jpg"
+                if overwrite or not hard_negative_path.exists():
+                    cv2.imwrite(str(hard_negative_path), hard_negative_crop)
+                track_meta[hard_negative_track_key][frame_key] = [
+                    0.0,
+                    0.0,
+                    float(hard_negative_bbox[2]),
+                    float(hard_negative_bbox[3]),
+                ]
+                counts["hard_negative"] += 1
             frame_index += 1
     finally:
         cap.release()
@@ -358,6 +488,7 @@ def main() -> None:
     sequences = discover_sequences(source_root)
     if not sequences:
         raise RuntimeError(f"No Anti-UAV sequences found under {source_root}")
+    hard_negative_entries = collect_hard_negative_entries(args.hard_negative_errors)
 
     train_sequences, val_sequences = split_sequences([sequence["name"] for sequence in sequences], args.val_ratio)
     summary = {"source_root": str(source_root), "output_root": str(output_root), "sequence_count": len(sequences), "modalities": {}}
@@ -365,8 +496,8 @@ def main() -> None:
     for modality in args.modalities:
         train_meta = {}
         val_meta = {}
-        train_counts = {"positive": 0, "distractor": 0, "background": 0}
-        val_counts = {"positive": 0, "distractor": 0, "background": 0}
+        train_counts = {"positive": 0, "distractor": 0, "background": 0, "transition_background": 0, "hard_negative": 0}
+        val_counts = {"positive": 0, "distractor": 0, "background": 0, "transition_background": 0, "hard_negative": 0}
         split_manifest = {"train": [], "val": []}
         for sequence in sequences:
             if modality not in sequence["modalities"]:
@@ -382,6 +513,8 @@ def main() -> None:
                 min_box_size=args.min_box_size,
                 background_frame_step=max(0, args.background_frame_step),
                 distractor_frame_step=max(0, args.distractor_frame_step),
+                transition_window=max(0, args.transition_window),
+                hard_negative_entries=hard_negative_entries.get(sequence["name"]),
                 overwrite=args.overwrite,
             )
             if sequence["name"] in train_sequences:
@@ -433,9 +566,13 @@ def main() -> None:
             "train_positive_frames": train_counts["positive"],
             "train_distractor_frames": train_counts["distractor"],
             "train_background_frames": train_counts["background"],
+            "train_transition_background_frames": train_counts["transition_background"],
+            "train_hard_negative_frames": train_counts["hard_negative"],
             "val_positive_frames": val_counts["positive"],
             "val_distractor_frames": val_counts["distractor"],
             "val_background_frames": val_counts["background"],
+            "val_transition_background_frames": val_counts["transition_background"],
+            "val_hard_negative_frames": val_counts["hard_negative"],
         }
 
     summary_path = output_root / "summary.json"

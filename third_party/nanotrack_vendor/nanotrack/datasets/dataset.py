@@ -46,11 +46,18 @@ class SubDataset(object):
         self.videos = list(meta_data.keys())
         self.positive_tracks = {}
         self.negative_tracks = {}
+        self.transition_tracks = {}
+        self.transition_frame_window = max(0, int(getattr(cfg.DATASET, "TRANSITION_FRAME_WINDOW", 8)))
+        self.transition_template_prob = float(getattr(cfg.DATASET, "TRANSITION_TEMPLATE_PROB", 0.5))
         for video_name, tracks in meta_data.items():
             positive = [track_name for track_name in tracks if not track_name.startswith("__")]
             negative = [track_name for track_name in tracks if track_name.startswith("__")]
             if positive:
                 self.positive_tracks[video_name] = positive
+                self.transition_tracks[video_name] = {
+                    track_name: self._collect_transition_frames(tracks[track_name]["frames"], self.transition_frame_window)
+                    for track_name in positive
+                }
             if negative:
                 self.negative_tracks[video_name] = negative
         self.path_format = "{}.{}.x.jpg"
@@ -87,27 +94,78 @@ class SubDataset(object):
         frame = f"{frame:06d}"
         return self.root / video / self.path_format.format(frame, track), self.labels[video][track][frame]
 
+    @staticmethod
+    def _collect_transition_frames(frames, window):
+        if window <= 0 or not frames:
+            return []
+        segments = []
+        start = frames[0]
+        end = frames[0]
+        for frame in frames[1:]:
+            if frame > end + 1:
+                segments.append((start, end))
+                start = frame
+            end = frame
+        segments.append((start, end))
+        transition_frames = []
+        for frame in frames:
+            if any(abs(frame - seg_start) <= window or abs(frame - seg_end) <= window for seg_start, seg_end in segments):
+                transition_frames.append(frame)
+        return transition_frames
+
+    def _sample_template_frame(self, video_name, track, *, prefer_transition=False):
+        frames = self.labels[video_name][track]["frames"]
+        transition_frames = self.transition_tracks.get(video_name, {}).get(track, [])
+        if prefer_transition and transition_frames and np.random.random() < self.transition_template_prob:
+            return int(np.random.choice(transition_frames))
+        return int(np.random.choice(frames))
+
+    def _sample_negative_track(self, tracks):
+        distractor_tracks = [track for track in tracks if "neg" in track and "hard" not in track]
+        background_tracks = [track for track in tracks if "bg" in track and "transition" not in track]
+        transition_tracks = [track for track in tracks if "transition" in track]
+        hard_tracks = [track for track in tracks if "hard" in track]
+        category_specs = [
+            ("hard", hard_tracks, float(getattr(cfg.DATASET, "NEG_HARD_PROB", 0.25))),
+            ("transition", transition_tracks, float(getattr(cfg.DATASET, "NEG_TRANSITION_PROB", 0.25))),
+            ("background", background_tracks, float(getattr(cfg.DATASET, "NEG_BACKGROUND_PROB", 0.20))),
+        ]
+        used_weight = sum(weight for _, category_tracks, weight in category_specs if category_tracks)
+        fallback_weight = max(0.05, 1.0 - min(used_weight, 0.95))
+        category_specs.append(("distractor", distractor_tracks, fallback_weight))
+        available = [(category_tracks, weight) for _, category_tracks, weight in category_specs if category_tracks and weight > 0]
+        if not available:
+            return np.random.choice(tracks)
+
+        total_weight = sum(weight for _, weight in available)
+        choice = np.random.random() * total_weight
+        cumulative = 0.0
+        for category_tracks, weight in available:
+            cumulative += weight
+            if choice <= cumulative:
+                return np.random.choice(category_tracks)
+        return np.random.choice(available[-1][0])
+
     def get_positive_pair(self, index):
         video_name = self.videos[index]
         video = self.labels[video_name]
         track = np.random.choice(self.positive_tracks[video_name])
         frames = video[track]["frames"]
-        template_idx = np.random.randint(0, len(frames))
+        template_frame = self._sample_template_frame(video_name, track, prefer_transition=True)
+        template_idx = frames.index(template_frame)
         left = max(template_idx - self.frame_range, 0)
         right = min(template_idx + self.frame_range, len(frames) - 1) + 1
         search_range = frames[left:right]
-        template_frame = frames[template_idx]
         search_frame = np.random.choice(search_range)
         return self.get_image_anno(video_name, track, template_frame), self.get_image_anno(video_name, track, search_frame)
 
-    def get_random_target(self, index=-1, return_video=False):
+    def get_random_target(self, index=-1, return_video=False, prefer_transition=False):
         if index == -1:
             index = np.random.randint(0, self.num)
         video_name = self.videos[index]
         video = self.labels[video_name]
         track = np.random.choice(self.positive_tracks[video_name])
-        frames = video[track]["frames"]
-        frame = np.random.choice(frames)
+        frame = self._sample_template_frame(video_name, track, prefer_transition=prefer_transition)
         sample = self.get_image_anno(video_name, track, frame)
         return (video_name, sample) if return_video else sample
 
@@ -122,15 +180,7 @@ class SubDataset(object):
                 return self.get_random_target(index)
 
         tracks = self.negative_tracks.get(video_name, [])
-        distractor_tracks = [track for track in tracks if "neg" in track]
-        background_tracks = [track for track in tracks if "bg" in track]
-        background_prob = float(getattr(cfg.DATASET, "NEG_BACKGROUND_PROB", 0.35))
-        if distractor_tracks and background_tracks:
-            candidate_tracks = background_tracks if np.random.random() < background_prob else distractor_tracks
-        else:
-            candidate_tracks = distractor_tracks or background_tracks or tracks
-
-        track = np.random.choice(candidate_tracks)
+        track = self._sample_negative_track(tracks)
         frames = self.labels[video_name][track]["frames"]
         frame = np.random.choice(frames)
         return self.get_image_anno(video_name, track, frame)
@@ -200,7 +250,7 @@ class BANDataset(Dataset):
         gray = cfg.DATASET.GRAY and cfg.DATASET.GRAY > np.random.random()
         neg = cfg.DATASET.NEG and cfg.DATASET.NEG > np.random.random()
         if neg:
-            video_name, template = dataset.get_random_target(index, return_video=True)
+            video_name, template = dataset.get_random_target(index, return_video=True, prefer_transition=True)
             search = dataset.get_negative_search(index, preferred_video=video_name)
         else:
             template, search = dataset.get_positive_pair(index)

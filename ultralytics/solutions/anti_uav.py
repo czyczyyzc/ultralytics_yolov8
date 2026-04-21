@@ -623,9 +623,11 @@ class AntiUAVSystem:
         stale_search_low_score_streak: int = 8,
         stale_search_edge_margin_px: int = 8,
         refresh_override_confidence: float = 0.75,
+        refresh_override_continue_confidence: Optional[float] = None,
         refresh_override_consensus_frames: int = 2,
         refresh_override_stability_iou: float = 0.25,
         refresh_override_min_center_ratio: float = 3.0,
+        refresh_override_motion_center_ratio: float = 5.0,
         suspect_score_thresh: Optional[float] = None,
     ):
         self.detector = detector
@@ -657,9 +659,16 @@ class AntiUAVSystem:
         self.stale_search_low_score_streak = max(1, int(stale_search_low_score_streak))
         self.stale_search_edge_margin_px = max(1, int(stale_search_edge_margin_px))
         self.refresh_override_confidence = float(refresh_override_confidence)
+        default_continue_confidence = max(self.min_confidence, min(self.refresh_override_confidence, 0.60))
+        self.refresh_override_continue_confidence = (
+            default_continue_confidence
+            if refresh_override_continue_confidence is None
+            else max(float(refresh_override_continue_confidence), self.min_confidence)
+        )
         self.refresh_override_consensus_frames = max(1, int(refresh_override_consensus_frames))
         self.refresh_override_stability_iou = float(np.clip(refresh_override_stability_iou, 0.0, 1.0))
         self.refresh_override_min_center_ratio = max(0.0, float(refresh_override_min_center_ratio))
+        self.refresh_override_motion_center_ratio = max(0.0, float(refresh_override_motion_center_ratio))
         default_suspect_thresh = max(self.tracker_score_thresh + 0.10, 0.55)
         self.suspect_score_thresh = (
             default_suspect_thresh if suspect_score_thresh is None else max(float(suspect_score_thresh), self.tracker_score_thresh)
@@ -1082,22 +1091,30 @@ class AntiUAVSystem:
         association_bbox: Sequence[float],
     ) -> Optional[Detection]:
         """Track a stable far full-frame candidate while detector refresh is required."""
+        min_confidence = (
+            self.refresh_override_confidence
+            if self.refresh_override_candidate is None
+            else self.refresh_override_continue_confidence
+        )
         candidates = [
             detection
             for detection in detections
             if detection.source == "full_frame"
-            and detection.confidence >= self.refresh_override_confidence
+            and detection.confidence >= min_confidence
             and self._is_far_refresh_candidate(detection.bbox, association_bbox)
         ]
         if not candidates:
             self._reset_refresh_override()
             return None
 
-        selected = max(candidates, key=lambda det: det.confidence)
-        if (
-            self.refresh_override_candidate is not None
-            and _bbox_iou(selected.bbox, self.refresh_override_candidate.bbox) >= self.refresh_override_stability_iou
-        ):
+        selected = max(
+            candidates,
+            key=lambda det: (
+                1 if self._is_consistent_refresh_override_candidate(det.bbox) else 0,
+                det.confidence,
+            ),
+        )
+        if self._is_consistent_refresh_override_candidate(selected.bbox):
             self.refresh_override_streak += 1
         else:
             self.refresh_override_streak = 1
@@ -1109,6 +1126,24 @@ class AntiUAVSystem:
         if self._passes_association_gate(candidate_bbox, reference_bbox, strict=True):
             return False
         return _bbox_center_distance_ratio(candidate_bbox, reference_bbox) >= self.refresh_override_min_center_ratio
+
+    def _is_consistent_refresh_override_candidate(self, candidate_bbox: Sequence[float]) -> bool:
+        """Allow both stable and smoothly moving far candidates to build refresh consensus."""
+        if self.refresh_override_candidate is None:
+            return False
+
+        previous_bbox = self.refresh_override_candidate.bbox
+        if _bbox_iou(candidate_bbox, previous_bbox) >= self.refresh_override_stability_iou:
+            return True
+
+        center_ratio = _bbox_center_distance_ratio(candidate_bbox, previous_bbox)
+        area_change = _bbox_area_change_ratio(candidate_bbox, previous_bbox)
+        aspect_change = _bbox_aspect_change_ratio(candidate_bbox, previous_bbox)
+        return (
+            center_ratio <= self.refresh_override_motion_center_ratio
+            and area_change <= self.association_max_area_change
+            and aspect_change <= self.association_max_aspect_change
+        )
 
     def _should_force_full_frame_search(self) -> bool:
         """Drop a stale edge-locked track so the detector can re-enter global search mode."""

@@ -500,6 +500,54 @@ def test_refresh_override_allows_far_full_frame_consensus_hard_reacquire():
     assert system.refresh_override_streak == 0
 
 
+def test_refresh_override_accepts_motion_consistent_far_candidate_with_lower_followup_confidence():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(10, 20, 30, 40), confidence=0.95, class_id=0, class_name="drone")],
+            [
+                solutions.Detection(bbox=(110, 70, 138, 98), confidence=0.90, class_id=0, class_name="drone", source="full_frame"),
+            ],
+            [
+                solutions.Detection(bbox=(92, 68, 120, 96), confidence=0.66, class_id=0, class_name="drone", source="full_frame"),
+            ],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (False, None, 0.0),
+            (False, None, 0.0),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        manual_confirmation=True,
+        pending_frames=1,
+        min_confirm_detections=1,
+        refresh_override_confidence=0.75,
+        refresh_override_continue_confidence=0.60,
+        refresh_override_consensus_frames=2,
+        refresh_override_stability_iou=0.25,
+        refresh_override_min_center_ratio=2.5,
+        refresh_override_motion_center_ratio=5.0,
+        full_frame_fallback=False,
+    )
+
+    first = system.step(frame)
+    system.confirm_current_target(True, note="unit_test_confirm")
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "lost"
+    assert third.status == "reacquired"
+    assert third.bbox == (92.0, 68.0, 120.0, 96.0)
+    assert tracker.reinitialized[-1] == (92.0, 68.0, 120.0, 96.0)
+
+
 def test_confirmed_target_requires_detector_refresh_after_lost():
     frame = np.zeros((120, 160, 3), dtype=np.uint8)
     detector = DummyDetector(

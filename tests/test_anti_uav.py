@@ -57,18 +57,29 @@ class DummyDetector:
         return []
 
 
-def create_mini_anti_uav_sequence(root: Path, sequence_name: str, modality: str, boxes: list[list[float]]) -> Path:
+def create_mini_anti_uav_sequence(
+    root: Path,
+    sequence_name: str,
+    modality: str,
+    boxes: list[list[float]],
+    *,
+    video_stem: str | None = None,
+    label_stem: str | None = None,
+) -> Path:
     sequence_root = root / sequence_name
     sequence_root.mkdir(parents=True, exist_ok=True)
 
-    video_path = sequence_root / f"{modality}.mp4"
+    video_stem = video_stem or modality
+    label_stem = label_stem or f"{modality}_label"
+
+    video_path = sequence_root / f"{video_stem}.mp4"
     writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), 5.0, (64, 48))
     for frame_index in range(len(boxes)):
         frame = np.full((48, 64, 3), frame_index * 25, dtype=np.uint8)
         writer.write(frame)
     writer.release()
 
-    annotation_path = sequence_root / f"{modality}_label.json"
+    annotation_path = sequence_root / f"{label_stem}.json"
     annotation_path.write_text(json.dumps({"gt_rect": boxes}), encoding="utf-8")
     return sequence_root
 
@@ -703,6 +714,55 @@ def test_convert_anti_uav300_nanotrack_exports_expected_layout(tmp_path):
     assert "__bg__" in metadata["train_seq001"]
     assert "__bg_transition__" in metadata["train_seq001"]
     assert "__hardneg__" in metadata["train_seq001"]
+
+
+def test_convert_anti_uav300_nanotrack_supports_visible_infrared_train_layout(tmp_path):
+    source_root = tmp_path / "Anti-UAV300" / "train"
+    create_mini_anti_uav_sequence(
+        source_root,
+        "seq001",
+        "rgb",
+        [[10, 12, 8, 6], [11, 12, 8, 6], []],
+        video_stem="visible",
+        label_stem="visible",
+    )
+    create_mini_anti_uav_sequence(
+        source_root,
+        "seq001",
+        "ir",
+        [[13, 14, 7, 5], [], [14, 15, 7, 5]],
+        video_stem="infrared",
+        label_stem="infrared",
+    )
+
+    output_root = tmp_path / "nanotrack_export"
+    converter = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "convert_anti_uav300_nanotrack.py"
+    subprocess.run(
+        [
+            sys.executable,
+            str(converter),
+            "--source-root",
+            str(source_root),
+            "--output-root",
+            str(output_root),
+            "--modalities",
+            "rgb",
+            "ir",
+        ],
+        check=True,
+    )
+
+    rgb_train = json.loads((output_root / "rgb" / "train.json").read_text(encoding="utf-8"))
+    ir_train = json.loads((output_root / "ir" / "train.json").read_text(encoding="utf-8"))
+    rgb_manifest = json.loads((output_root / "rgb" / "split_manifest.json").read_text(encoding="utf-8"))
+    ir_manifest = json.loads((output_root / "ir" / "split_manifest.json").read_text(encoding="utf-8"))
+
+    assert "seq001" in rgb_train
+    assert "seq001" in ir_train
+    assert rgb_manifest["train"][0]["video"].endswith("visible.mp4")
+    assert rgb_manifest["train"][0]["label"].endswith("visible.json")
+    assert ir_manifest["train"][0]["video"].endswith("infrared.mp4")
+    assert ir_manifest["train"][0]["label"].endswith("infrared.json")
 
 
 def test_nanotrack_dataset_prefers_transition_templates_and_absent_search_tracks(tmp_path):

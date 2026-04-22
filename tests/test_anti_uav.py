@@ -878,6 +878,49 @@ def test_nanotrack_dataset_prefers_transition_templates_and_absent_search_tracks
             setattr(cfg.DATASET, key, value)
 
 
+def test_nanotrack_dataset_can_bias_positive_pairs_toward_fast_motion(tmp_path):
+    from nanotrack.core.config import cfg
+    from nanotrack.datasets.dataset import SubDataset
+
+    crop_root = tmp_path / "rgb" / "crop511" / "train_seq001"
+    crop_root.mkdir(parents=True)
+    frame = np.full((255, 255, 3), 127, dtype=np.uint8)
+    for frame_index in range(20):
+        cv2.imwrite(str(crop_root / f"{frame_index:06d}.00.x.jpg"), frame)
+
+    train_json = tmp_path / "rgb" / "train.json"
+    train_json.write_text(
+        json.dumps(
+            {
+                "train_seq001": {
+                    "00": {f"{frame_index:06d}": [100, 100, 40, 32] for frame_index in range(20)}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    original_values = {
+        "FAST_MOTION_PROB": getattr(cfg.DATASET, "FAST_MOTION_PROB", 0.0),
+        "FAST_MOTION_MIN_GAP": getattr(cfg.DATASET, "FAST_MOTION_MIN_GAP", 12),
+        "TRANSITION_TEMPLATE_PROB": getattr(cfg.DATASET, "TRANSITION_TEMPLATE_PROB", 0.5),
+    }
+    try:
+        cfg.DATASET.FAST_MOTION_PROB = 1.0
+        cfg.DATASET.FAST_MOTION_MIN_GAP = 8
+        cfg.DATASET.TRANSITION_TEMPLATE_PROB = 0.0
+
+        dataset = SubDataset("ANTI", tmp_path / "rgb" / "crop511", train_json, frame_range=19, num_use=-1, start_idx=0)
+        template, search = dataset.get_positive_pair(0)
+
+        template_frame = int(template[0].name.split(".")[0])
+        search_frame = int(search[0].name.split(".")[0])
+        assert abs(search_frame - template_frame) >= 8
+    finally:
+        for key, value in original_values.items():
+            setattr(cfg.DATASET, key, value)
+
+
 def test_nanotrack_val_eval_and_checkpoint_sweep_dry_run(tmp_path):
     source_root = tmp_path / "Anti-UAV300" / "train"
     create_mini_anti_uav_sequence(source_root, "seq001", "rgb", [[10, 12, 8, 6], [11, 12, 8, 6], [], [12, 13, 8, 6]])
@@ -892,6 +935,7 @@ def test_nanotrack_val_eval_and_checkpoint_sweep_dry_run(tmp_path):
     snapshot_dir = tmp_path / "snapshots"
     snapshot_dir.mkdir(parents=True)
     (snapshot_dir / "epoch_001.pth").write_bytes(b"fake")
+    (snapshot_dir / "epoch_020.pth").write_bytes(b"fake")
     (snapshot_dir / "best.pth").write_bytes(b"fake")
 
     subprocess.run(
@@ -948,6 +992,8 @@ def test_nanotrack_val_eval_and_checkpoint_sweep_dry_run(tmp_path):
             "rgb",
             "--split",
             "train",
+            "--min-checkpoint-epoch",
+            "10",
             "--include-best",
             "--dry-run",
             "--output-json",
@@ -956,8 +1002,9 @@ def test_nanotrack_val_eval_and_checkpoint_sweep_dry_run(tmp_path):
         check=True,
     )
     sweep_payload = json.loads(sweep_manifest.read_text(encoding="utf-8"))
-    assert any(path.endswith("epoch_001.pth") for path in sweep_payload["checkpoints"])
-    assert any(path.endswith("best.pth") for path in sweep_payload["checkpoints"])
+    assert not any(path.endswith("epoch_001.pth") for path in sweep_payload["checkpoints"])
+    assert any(path.endswith("epoch_020.pth") for path in sweep_payload["checkpoints"])
+    assert not any(path.endswith("best.pth") for path in sweep_payload["checkpoints"])
 
 
 def test_nanotrack_val_eval_composite_penalizes_absent_false_positives_more_heavily():
@@ -1002,6 +1049,14 @@ def test_nanotrack_checkpoint_sweep_prefers_hard_subset_within_overall_tolerance
     assert best["checkpoint"] == "epoch_025.pth"
     assert selection["strategy"] == "overall_then_hard_subset"
     assert selection["shortlist_count"] == 2
+
+
+def test_nanotrack_checkpoint_sweep_can_filter_early_epochs():
+    from scripts.anti_uav.nanotrack_checkpoint_sweep import checkpoint_epoch
+
+    assert checkpoint_epoch(Path("epoch_005.pth")) == 5
+    assert checkpoint_epoch(Path("epoch_025.pth")) == 25
+    assert checkpoint_epoch(Path("best.pth")) is None
 
 
 def test_nanotrack_checkpoint_sweep_can_pick_motion_based_hard_subset(tmp_path):

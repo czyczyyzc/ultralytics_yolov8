@@ -87,6 +87,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-sequences", type=int, default=0, help="Optional cap on the number of validation sequences.")
     parser.add_argument("--pattern", default="epoch_*.pth", help="Glob pattern for checkpoint sweep.")
+    parser.add_argument(
+        "--min-checkpoint-epoch",
+        type=int,
+        default=0,
+        help="Ignore epoch checkpoints older than this epoch number when sweeping. best/last are also skipped when this is set.",
+    )
     parser.add_argument("--include-best", action="store_true", help="Include best.pth when present.")
     parser.add_argument("--include-last", action="store_true", help="Include last.pth when present.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional output JSON.")
@@ -94,16 +100,32 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def checkpoint_epoch(path: Path) -> int | None:
+    """Extract the epoch number from an epoch_XXX checkpoint filename."""
+    stem = path.stem
+    if not stem.startswith("epoch_"):
+        return None
+    try:
+        return int(stem.split("_", 1)[1])
+    except ValueError:
+        return None
+
+
 def discover_checkpoints(args: argparse.Namespace) -> list[Path]:
     snapshot_dir = args.snapshot_dir.expanduser().resolve()
-    checkpoints = sorted(snapshot_dir.glob(args.pattern))
+    checkpoints = []
+    for path in sorted(snapshot_dir.glob(args.pattern)):
+        epoch = checkpoint_epoch(path)
+        if args.min_checkpoint_epoch and epoch is not None and epoch < args.min_checkpoint_epoch:
+            continue
+        checkpoints.append(path)
     if args.include_best:
         best_path = snapshot_dir / "best.pth"
-        if best_path.exists():
+        if best_path.exists() and args.min_checkpoint_epoch == 0:
             checkpoints.append(best_path)
     if args.include_last:
         last_path = snapshot_dir / "last.pth"
-        if last_path.exists():
+        if last_path.exists() and args.min_checkpoint_epoch == 0:
             checkpoints.append(last_path)
     unique = []
     seen = set()
@@ -257,6 +279,7 @@ def select_best_checkpoint(
         key=lambda item: (
             item["hard_aggregate"][hard_metric],
             item["aggregate"][metric],
+            item.get("checkpoint_epoch") or -1,
         ),
         reverse=True,
     )
@@ -301,6 +324,7 @@ def main() -> None:
         "hard_motion_top_k": args.hard_motion_top_k,
         "hard_motion_quantile": args.hard_motion_quantile,
         "hard_motion_min_present": args.hard_motion_min_present,
+        "min_checkpoint_epoch": args.min_checkpoint_epoch,
         "checkpoints": [str(path) for path in checkpoints],
         "sequence_names": [entry["name"] for entry in entries],
     }
@@ -332,6 +356,8 @@ def main() -> None:
         results.append(
             {
                 "checkpoint": str(checkpoint),
+                "checkpoint_epoch": checkpoint_epoch(checkpoint),
+                "checkpoint_name": checkpoint.name,
                 "aggregate": aggregate,
                 "hard_aggregate": hard_aggregate,
             }

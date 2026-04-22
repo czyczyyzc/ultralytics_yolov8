@@ -49,6 +49,8 @@ class SubDataset(object):
         self.transition_tracks = {}
         self.transition_frame_window = max(0, int(getattr(cfg.DATASET, "TRANSITION_FRAME_WINDOW", 8)))
         self.transition_template_prob = float(getattr(cfg.DATASET, "TRANSITION_TEMPLATE_PROB", 0.5))
+        self.fast_motion_prob = float(getattr(cfg.DATASET, "FAST_MOTION_PROB", 0.0))
+        self.fast_motion_min_gap = max(1, int(getattr(cfg.DATASET, "FAST_MOTION_MIN_GAP", 12)))
         for video_name, tracks in meta_data.items():
             positive = [track_name for track_name in tracks if not track_name.startswith("__")]
             negative = [track_name for track_name in tracks if track_name.startswith("__")]
@@ -156,7 +158,13 @@ class SubDataset(object):
         left = max(template_idx - self.frame_range, 0)
         right = min(template_idx + self.frame_range, len(frames) - 1) + 1
         search_range = frames[left:right]
-        search_frame = np.random.choice(search_range)
+        fast_motion_candidates = [
+            frame for frame in search_range if abs(int(frame) - int(template_frame)) >= self.fast_motion_min_gap
+        ]
+        if fast_motion_candidates and np.random.random() < self.fast_motion_prob:
+            search_frame = np.random.choice(fast_motion_candidates)
+        else:
+            search_frame = np.random.choice(search_range)
         return self.get_image_anno(video_name, track, template_frame), self.get_image_anno(video_name, track, search_frame)
 
     def get_random_target(self, index=-1, return_video=False, prefer_transition=False):

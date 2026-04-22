@@ -69,6 +69,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--videos-per-epoch", type=int, default=0, help="Override dataset videos per epoch. 0 uses preset.")
     parser.add_argument("--frame-range", type=int, default=30, help="Positive pair sampling range.")
     parser.add_argument("--base-lr", type=float, default=0.005, help="Base learning rate.")
+    parser.add_argument(
+        "--fast-motion-prob",
+        type=float,
+        default=0.0,
+        help="Probability of sampling a larger positive template/search gap inside the configured frame range.",
+    )
+    parser.add_argument(
+        "--fast-motion-min-gap",
+        type=int,
+        default=12,
+        help="Minimum frame gap used when fast-motion positive sampling is enabled.",
+    )
     parser.add_argument("--neg-ratio", type=float, default=0.35, help="Fraction of negative pairs.")
     parser.add_argument("--neg-same-seq-prob", type=float, default=0.75, help="Prefer same-sequence negatives with this probability.")
     parser.add_argument("--neg-background-prob", type=float, default=0.20, help="Within same-sequence negatives, plain absent-background sampling probability.")
@@ -180,6 +192,8 @@ DATASET:
     NEG_BACKGROUND_PROB: {args.neg_background_prob}
     NEG_TRANSITION_PROB: {args.neg_transition_prob}
     NEG_HARD_PROB: {args.neg_hard_prob}
+    FAST_MOTION_PROB: {args.fast_motion_prob}
+    FAST_MOTION_MIN_GAP: {args.fast_motion_min_gap}
     TRANSITION_TEMPLATE_PROB: {args.transition_template_prob}
     TRANSITION_FRAME_WINDOW: {args.transition_frame_window}
     GRAY: 0.0

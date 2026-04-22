@@ -23,6 +23,8 @@ NAME="${NAME:-nanotrack_${MODALITY}_${VARIANT}_anti_uav300}"
 RUN_ROOT="${RUN_ROOT:-${REPO_ROOT}/runs/anti_uav/${NAME}}"
 OVERWRITE_EXPORT="${OVERWRITE_EXPORT:-0}"
 SAVE_EVERY="${SAVE_EVERY:-5}"
+FRAME_RANGE="${FRAME_RANGE:-30}"
+BASE_LR="${BASE_LR:-0.005}"
 BACKGROUND_FRAME_STEP="${BACKGROUND_FRAME_STEP:-6}"
 DISTRACTOR_FRAME_STEP="${DISTRACTOR_FRAME_STEP:-2}"
 TRANSITION_WINDOW="${TRANSITION_WINDOW:-8}"
@@ -33,6 +35,8 @@ NEG_BACKGROUND_PROB="${NEG_BACKGROUND_PROB:-0.20}"
 NEG_TRANSITION_PROB="${NEG_TRANSITION_PROB:-0.25}"
 NEG_HARD_PROB="${NEG_HARD_PROB:-0.25}"
 TRANSITION_TEMPLATE_PROB="${TRANSITION_TEMPLATE_PROB:-0.50}"
+FAST_MOTION_PROB="${FAST_MOTION_PROB:-0.0}"
+FAST_MOTION_MIN_GAP="${FAST_MOTION_MIN_GAP:-12}"
 
 CONVERTER="${REPO_ROOT}/scripts/anti_uav/convert_anti_uav300_nanotrack.py"
 CONFIG_WRITER="${REPO_ROOT}/scripts/anti_uav/write_nanotrack_config.py"
@@ -100,11 +104,15 @@ fi
   --batch-size "${BATCH_SIZE}" \
   --num-workers "${NUM_WORKERS}" \
   --videos-per-epoch "${VIDEOS_PER_EPOCH}" \
+  --frame-range "${FRAME_RANGE}" \
+  --base-lr "${BASE_LR}" \
   --neg-ratio "${NEG_RATIO}" \
   --neg-same-seq-prob "${NEG_SAME_SEQ_PROB}" \
   --neg-background-prob "${NEG_BACKGROUND_PROB}" \
   --neg-transition-prob "${NEG_TRANSITION_PROB}" \
   --neg-hard-prob "${NEG_HARD_PROB}" \
+  --fast-motion-prob "${FAST_MOTION_PROB}" \
+  --fast-motion-min-gap "${FAST_MOTION_MIN_GAP}" \
   --transition-template-prob "${TRANSITION_TEMPLATE_PROB}" \
   --transition-frame-window "${TRANSITION_WINDOW}"
 

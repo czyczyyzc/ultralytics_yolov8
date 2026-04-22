@@ -33,6 +33,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--iou-threshold", type=float, default=0.5, help="IoU success threshold.")
     parser.add_argument("--center-threshold", type=float, default=20.0, help="Center precision threshold in pixels.")
     parser.add_argument("--metric", choices=("composite", "success_rate", "avg_iou", "precision", "recall"), default="composite", help="Ranking metric.")
+    parser.add_argument(
+        "--hard-sequence-patterns",
+        nargs="*",
+        default=[],
+        help="Optional sequence-name substrings for a hard subset used during final checkpoint selection.",
+    )
+    parser.add_argument(
+        "--hard-metric",
+        choices=("composite", "success_rate", "avg_iou", "precision", "recall"),
+        default="composite",
+        help="Metric used to rank checkpoints inside the hard-subset shortlist.",
+    )
+    parser.add_argument(
+        "--hard-overall-tolerance",
+        type=float,
+        default=0.02,
+        help="Only checkpoints within this absolute gap of the best overall metric enter the hard-subset shortlist.",
+    )
+    parser.add_argument(
+        "--hard-min-sequences",
+        type=int,
+        default=1,
+        help="Require at least this many matched hard-subset sequences before using the two-stage selector.",
+    )
     parser.add_argument("--max-sequences", type=int, default=0, help="Optional cap on the number of validation sequences.")
     parser.add_argument("--pattern", default="epoch_*.pth", help="Glob pattern for checkpoint sweep.")
     parser.add_argument("--include-best", action="store_true", help="Include best.pth when present.")
@@ -64,6 +88,71 @@ def discover_checkpoints(args: argparse.Namespace) -> list[Path]:
     return unique
 
 
+def _matches_hard_sequence(name: str, patterns: list[str]) -> bool:
+    """Return True when a sequence name matches any requested hard-subset pattern."""
+    if not patterns:
+        return False
+    lowered = name.lower()
+    return any(pattern.lower() in lowered for pattern in patterns if pattern)
+
+
+def select_best_checkpoint(
+    results: list[dict],
+    *,
+    metric: str,
+    hard_metric: str,
+    hard_overall_tolerance: float,
+    hard_min_sequences: int,
+) -> tuple[dict | None, dict]:
+    """Select the best checkpoint using overall ranking first, then a hard-subset tie-break shortlist."""
+    if not results:
+        return None, {"strategy": "no_results", "shortlist_count": 0}
+
+    sorted_results = sorted(results, key=lambda item: item["aggregate"][metric], reverse=True)
+    best_overall = sorted_results[0]
+    selection = {
+        "strategy": "overall_metric_only",
+        "best_overall_metric": best_overall["aggregate"][metric],
+        "shortlist_count": 0,
+        "hard_metric": hard_metric,
+        "hard_overall_tolerance": hard_overall_tolerance,
+        "hard_min_sequences": hard_min_sequences,
+    }
+
+    hard_eligible = []
+    for item in sorted_results:
+        hard_aggregate = item.get("hard_aggregate")
+        if not hard_aggregate:
+            continue
+        if hard_aggregate.get("sequence_count", 0) < hard_min_sequences:
+            continue
+        if best_overall["aggregate"][metric] - item["aggregate"][metric] > hard_overall_tolerance:
+            continue
+        hard_eligible.append(item)
+
+    if not hard_eligible:
+        return best_overall, selection
+
+    hard_eligible.sort(
+        key=lambda item: (
+            item["hard_aggregate"][hard_metric],
+            item["aggregate"][metric],
+        ),
+        reverse=True,
+    )
+    best_hard = hard_eligible[0]
+    selection.update(
+        {
+            "strategy": "overall_then_hard_subset",
+            "shortlist_count": len(hard_eligible),
+            "shortlist_checkpoints": [item["checkpoint"] for item in hard_eligible],
+            "selected_hard_metric": best_hard["hard_aggregate"][hard_metric],
+            "selected_overall_metric": best_hard["aggregate"][metric],
+        }
+    )
+    return best_hard, selection
+
+
 def main() -> None:
     args = parse_args()
     entries = resolve_split_sequences(
@@ -76,11 +165,17 @@ def main() -> None:
     if args.max_sequences:
         entries = entries[: args.max_sequences]
     checkpoints = discover_checkpoints(args)
+    hard_sequence_names = [entry["name"] for entry in entries if _matches_hard_sequence(entry["name"], args.hard_sequence_patterns)]
 
     manifest = {
         "snapshot_dir": str(args.snapshot_dir.expanduser().resolve()),
         "config": str(args.config.expanduser().resolve()),
         "metric": args.metric,
+        "hard_metric": args.hard_metric,
+        "hard_sequence_patterns": args.hard_sequence_patterns,
+        "hard_sequence_names": hard_sequence_names,
+        "hard_overall_tolerance": args.hard_overall_tolerance,
+        "hard_min_sequences": args.hard_min_sequences,
         "checkpoints": [str(path) for path in checkpoints],
         "sequence_names": [entry["name"] for entry in entries],
     }
@@ -107,10 +202,25 @@ def main() -> None:
             tracker.reset()
             sequence_results.append(evaluate_sequence(entry, tracker, tracker_args))
         aggregate = aggregate_results(sequence_results)
-        results.append({"checkpoint": str(checkpoint), "aggregate": aggregate})
+        hard_results = [result for result in sequence_results if _matches_hard_sequence(result["sequence"], args.hard_sequence_patterns)]
+        hard_aggregate = aggregate_results(hard_results) if hard_results else None
+        results.append(
+            {
+                "checkpoint": str(checkpoint),
+                "aggregate": aggregate,
+                "hard_aggregate": hard_aggregate,
+            }
+        )
 
     results.sort(key=lambda item: item["aggregate"][args.metric], reverse=True)
-    payload = {**manifest, "results": results, "best_checkpoint": results[0] if results else None}
+    best_checkpoint, selection = select_best_checkpoint(
+        results,
+        metric=args.metric,
+        hard_metric=args.hard_metric,
+        hard_overall_tolerance=args.hard_overall_tolerance,
+        hard_min_sequences=args.hard_min_sequences,
+    )
+    payload = {**manifest, "results": results, "selection": selection, "best_checkpoint": best_checkpoint}
     if args.output_json:
         write_json(args.output_json.expanduser().resolve(), payload)
     print(json.dumps(payload["best_checkpoint"], indent=2, ensure_ascii=False))

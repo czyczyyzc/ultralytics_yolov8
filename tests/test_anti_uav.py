@@ -311,6 +311,53 @@ def test_detector_contradiction_forces_hard_reacquire_when_tracker_false_positiv
     assert system.requires_detector_refresh is False
 
 
+def test_detector_contradiction_allows_high_score_non_edge_tracker_to_be_overridden():
+    frame = np.zeros((240, 320, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(96, 52, 136, 92), confidence=0.94, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(216, 56, 256, 96), confidence=0.93, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(218, 57, 258, 97), confidence=0.92, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (98, 52, 138, 92), 0.96),
+            (True, (100, 52, 140, 92), 0.97),
+            (True, (102, 52, 142, 92), 0.97),
+            (True, (104, 52, 144, 92), 0.97),
+        ]
+    )
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        detect_interval=1,
+        roi_redetect=False,
+        manual_confirmation=False,
+        detector_contradiction_consensus_frames=2,
+        detector_contradiction_confidence=0.8,
+        detector_contradiction_continue_confidence=0.75,
+        detector_contradiction_high_score_confidence=0.9,
+        detector_contradiction_high_score_continue_confidence=0.9,
+        detector_contradiction_min_center_ratio=2.0,
+    )
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+    fourth = system.step(frame)
+    fifth = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert third.status == "tracking"
+    assert fourth.status == "tracking"
+    assert fifth.status == "reacquired"
+    assert fifth.bbox == (218.0, 57.0, 258.0, 97.0)
+    assert tracker.reinitialized[-1] == (218.0, 57.0, 258.0, 97.0)
+
+
 def test_anti_uav_drops_target_after_too_many_misses():
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
     detector = DummyDetector([[solutions.Detection(bbox=(20, 20, 60, 60), confidence=0.9, class_id=0, class_name="drone")], [], []])
@@ -921,6 +968,40 @@ def test_nanotrack_val_eval_composite_penalizes_absent_false_positives_more_heav
 
     assert low_absent_fp > high_absent_fp
     assert round(low_absent_fp - high_absent_fp, 6) == round((0.35 - 0.05) * 0.40, 6)
+
+
+def test_nanotrack_checkpoint_sweep_prefers_hard_subset_within_overall_tolerance():
+    from scripts.anti_uav.nanotrack_checkpoint_sweep import select_best_checkpoint
+
+    results = [
+        {
+            "checkpoint": "epoch_005.pth",
+            "aggregate": {"composite": 0.60, "precision": 0.60},
+            "hard_aggregate": {"sequence_count": 1, "composite": 0.30, "precision": 0.30},
+        },
+        {
+            "checkpoint": "epoch_025.pth",
+            "aggregate": {"composite": 0.585, "precision": 0.585},
+            "hard_aggregate": {"sequence_count": 1, "composite": 0.52, "precision": 0.52},
+        },
+        {
+            "checkpoint": "epoch_040.pth",
+            "aggregate": {"composite": 0.54, "precision": 0.54},
+            "hard_aggregate": {"sequence_count": 1, "composite": 0.90, "precision": 0.90},
+        },
+    ]
+
+    best, selection = select_best_checkpoint(
+        results,
+        metric="composite",
+        hard_metric="composite",
+        hard_overall_tolerance=0.02,
+        hard_min_sequences=1,
+    )
+
+    assert best["checkpoint"] == "epoch_025.pth"
+    assert selection["strategy"] == "overall_then_hard_subset"
+    assert selection["shortlist_count"] == 2
 
 
 def test_train_nanotrack_local_smoke(tmp_path):

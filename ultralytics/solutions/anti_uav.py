@@ -635,6 +635,8 @@ class AntiUAVSystem:
         detector_contradiction_motion_center_ratio: float = 5.0,
         detector_contradiction_track_score_thresh: float = 0.85,
         detector_contradiction_edge_margin_px: int = 8,
+        detector_contradiction_high_score_confidence: float = 0.90,
+        detector_contradiction_high_score_continue_confidence: Optional[float] = None,
         suspect_score_thresh: Optional[float] = None,
     ):
         self.detector = detector
@@ -692,6 +694,18 @@ class AntiUAVSystem:
             self.tracker_score_thresh, float(detector_contradiction_track_score_thresh)
         )
         self.detector_contradiction_edge_margin_px = max(1, int(detector_contradiction_edge_margin_px))
+        self.detector_contradiction_high_score_confidence = max(
+            float(detector_contradiction_high_score_confidence), self.detector_contradiction_confidence
+        )
+        default_high_score_continue = max(
+            self.detector_contradiction_continue_confidence,
+            min(self.detector_contradiction_high_score_confidence, 0.90),
+        )
+        self.detector_contradiction_high_score_continue_confidence = (
+            default_high_score_continue
+            if detector_contradiction_high_score_continue_confidence is None
+            else max(float(detector_contradiction_high_score_continue_confidence), self.detector_contradiction_continue_confidence)
+        )
         default_suspect_thresh = max(self.tracker_score_thresh + 0.10, 0.55)
         self.suspect_score_thresh = (
             default_suspect_thresh if suspect_score_thresh is None else max(float(suspect_score_thresh), self.tracker_score_thresh)
@@ -1130,9 +1144,7 @@ class AntiUAVSystem:
         """Enable contradiction handling when the tracker looks stale despite still returning success."""
         if self.requires_detector_refresh or association_bbox is None or self.bbox is None:
             return False
-        if self.track_score <= self.detector_contradiction_track_score_thresh:
-            return True
-        return _bbox_near_frame_edge(self.bbox, self.last_frame_shape, self.detector_contradiction_edge_margin_px)
+        return True
 
     def _select_detector_contradiction(
         self,
@@ -1140,11 +1152,19 @@ class AntiUAVSystem:
         association_bbox: Sequence[float],
     ) -> Optional[Detection]:
         """Track repeated far full-frame detections that contradict the active tracker hypothesis."""
-        min_confidence = (
-            self.detector_contradiction_confidence
-            if self.detector_contradiction_candidate is None
-            else self.detector_contradiction_continue_confidence
-        )
+        elevated_threshold = self._requires_high_score_detector_contradiction()
+        if elevated_threshold:
+            min_confidence = (
+                self.detector_contradiction_high_score_confidence
+                if self.detector_contradiction_candidate is None
+                else self.detector_contradiction_high_score_continue_confidence
+            )
+        else:
+            min_confidence = (
+                self.detector_contradiction_confidence
+                if self.detector_contradiction_candidate is None
+                else self.detector_contradiction_continue_confidence
+            )
         candidates = [
             detection
             for detection in detections
@@ -1169,6 +1189,14 @@ class AntiUAVSystem:
             self.detector_contradiction_streak = 1
         self.detector_contradiction_candidate = selected
         return selected
+
+    def _requires_high_score_detector_contradiction(self) -> bool:
+        """Use a stricter contradiction threshold when the tracker still looks confident and is not edge-locked."""
+        if self.bbox is None:
+            return False
+        if self.track_score <= self.detector_contradiction_track_score_thresh:
+            return False
+        return not _bbox_near_frame_edge(self.bbox, self.last_frame_shape, self.detector_contradiction_edge_margin_px)
 
     def _select_refresh_override(
         self,

@@ -1004,6 +1004,93 @@ def test_nanotrack_checkpoint_sweep_prefers_hard_subset_within_overall_tolerance
     assert selection["shortlist_count"] == 2
 
 
+def test_nanotrack_checkpoint_sweep_can_pick_motion_based_hard_subset(tmp_path):
+    from scripts.anti_uav.nanotrack_checkpoint_sweep import resolve_hard_sequence_names
+
+    root = tmp_path / "Anti-UAV300" / "train"
+    slow = create_mini_anti_uav_sequence(
+        root,
+        "slow_seq",
+        "rgb",
+        [[10, 10, 8, 6], [11, 10, 8, 6], [12, 10, 8, 6], [13, 10, 8, 6], [14, 10, 8, 6]],
+    )
+    fast = create_mini_anti_uav_sequence(
+        root,
+        "fast_seq",
+        "rgb",
+        [[10, 10, 8, 6], [30, 10, 8, 6], [52, 10, 8, 6], [76, 10, 8, 6], [100, 10, 8, 6]],
+    )
+    medium = create_mini_anti_uav_sequence(
+        root,
+        "medium_seq",
+        "rgb",
+        [[10, 10, 8, 6], [16, 10, 8, 6], [23, 10, 8, 6], [31, 10, 8, 6], [40, 10, 8, 6]],
+    )
+
+    entries = [
+        {"name": "slow_seq", "label": str(slow / "rgb_label.json")},
+        {"name": "fast_seq", "label": str(fast / "rgb_label.json")},
+        {"name": "medium_seq", "label": str(medium / "rgb_label.json")},
+    ]
+    args = type(
+        "Args",
+        (),
+        {
+            "hard_sequence_mode": "motion",
+            "hard_sequence_patterns": [],
+            "hard_motion_top_k": 1,
+            "hard_motion_quantile": 0.9,
+            "hard_motion_min_present": 2,
+        },
+    )()
+
+    hard_names, hard_details = resolve_hard_sequence_names(entries, args)
+
+    assert hard_names == ["fast_seq"]
+    assert hard_details["fast_seq"]["motion_score"] > hard_details["medium_seq"]["motion_score"] > hard_details["slow_seq"]["motion_score"]
+    assert hard_details["fast_seq"]["selected_by"] == "motion"
+
+
+def test_nanotrack_checkpoint_sweep_can_union_pattern_and_motion_hard_subsets(tmp_path):
+    from scripts.anti_uav.nanotrack_checkpoint_sweep import resolve_hard_sequence_names
+
+    root = tmp_path / "Anti-UAV300" / "train"
+    steady = create_mini_anti_uav_sequence(
+        root,
+        "steady_seq",
+        "rgb",
+        [[10, 10, 8, 6], [11, 10, 8, 6], [12, 10, 8, 6], [13, 10, 8, 6]],
+    )
+    fast = create_mini_anti_uav_sequence(
+        root,
+        "fast_seq",
+        "rgb",
+        [[10, 10, 8, 6], [40, 10, 8, 6], [70, 10, 8, 6], [100, 10, 8, 6]],
+    )
+
+    entries = [
+        {"name": "steady_seq", "label": str(steady / "rgb_label.json")},
+        {"name": "fast_seq", "label": str(fast / "rgb_label.json")},
+    ]
+    args = type(
+        "Args",
+        (),
+        {
+            "hard_sequence_mode": "union",
+            "hard_sequence_patterns": ["steady"],
+            "hard_motion_top_k": 1,
+            "hard_motion_quantile": 0.9,
+            "hard_motion_min_present": 2,
+        },
+    )()
+
+    hard_names, hard_details = resolve_hard_sequence_names(entries, args)
+
+    assert hard_names == ["fast_seq", "steady_seq"]
+    assert hard_details["steady_seq"]["selected_by"] == "patterns"
+    assert hard_details["fast_seq"]["selected_by"] == "motion"
+
+
 def test_train_nanotrack_local_smoke(tmp_path):
     crop_root = tmp_path / "rgb" / "crop511" / "train_seq001"
     crop_root.mkdir(parents=True)

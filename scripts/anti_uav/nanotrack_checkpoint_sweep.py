@@ -5,14 +5,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
+
+import numpy as np
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.anti_uav.convert_anti_uav300_nanotrack import read_boxes
 from scripts.anti_uav.nanotrack_val_eval import parse_args as _unused  # noqa: F401
 from scripts.anti_uav.nanotrack_val_eval import resolve_split_sequences, write_json
 from scripts.anti_uav.nanotrack_val_eval import build_nanotrack, evaluate_sequence, aggregate_results
@@ -40,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional sequence-name substrings for a hard subset used during final checkpoint selection.",
     )
     parser.add_argument(
+        "--hard-sequence-mode",
+        choices=("patterns", "motion", "union"),
+        default="patterns",
+        help="How to construct the hard subset: explicit patterns, motion-ranked sequences, or the union of both.",
+    )
+    parser.add_argument(
         "--hard-metric",
         choices=("composite", "success_rate", "avg_iou", "precision", "recall"),
         default="composite",
@@ -56,6 +66,24 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Require at least this many matched hard-subset sequences before using the two-stage selector.",
+    )
+    parser.add_argument(
+        "--hard-motion-top-k",
+        type=int,
+        default=0,
+        help="When using motion-based hard subsets, keep the top-K highest-motion sequences. 0 disables motion selection.",
+    )
+    parser.add_argument(
+        "--hard-motion-quantile",
+        type=float,
+        default=0.9,
+        help="Motion quantile used to score each validation sequence when --hard-sequence-mode includes motion.",
+    )
+    parser.add_argument(
+        "--hard-motion-min-present",
+        type=int,
+        default=30,
+        help="Ignore sequences with fewer present frames than this when building the motion-based hard subset.",
     )
     parser.add_argument("--max-sequences", type=int, default=0, help="Optional cap on the number of validation sequences.")
     parser.add_argument("--pattern", default="epoch_*.pth", help="Glob pattern for checkpoint sweep.")
@@ -94,6 +122,98 @@ def _matches_hard_sequence(name: str, patterns: list[str]) -> bool:
         return False
     lowered = name.lower()
     return any(pattern.lower() in lowered for pattern in patterns if pattern)
+
+
+def _valid_box(box: list[float] | tuple[float, ...]) -> bool:
+    """Return True when the Anti-UAV bbox is present and has positive extent."""
+    return bool(box) and len(box) >= 4 and float(box[2]) > 0.0 and float(box[3]) > 0.0
+
+
+def _motion_score_from_boxes(
+    boxes: list[list[float]],
+    *,
+    quantile: float,
+    min_present_frames: int,
+) -> dict:
+    """Summarize per-sequence motion difficulty from Anti-UAV xywh labels."""
+    present_boxes = [box for box in boxes if _valid_box(box)]
+    if len(present_boxes) < max(min_present_frames, 2):
+        return {
+            "present_frames": len(present_boxes),
+            "motion_count": 0,
+            "motion_score": 0.0,
+            "motion_mean": 0.0,
+            "motion_max": 0.0,
+            "motion_quantile": quantile,
+        }
+
+    motions = []
+    previous = None
+    for box in boxes:
+        if not _valid_box(box):
+            previous = None
+            continue
+
+        x, y, w, h = [float(value) for value in box[:4]]
+        current = (x + w / 2.0, y + h / 2.0, w, h)
+        if previous is not None:
+            distance = math.hypot(current[0] - previous[0], current[1] - previous[1])
+            scale = max(math.hypot(previous[2], previous[3]), 1.0)
+            motions.append(distance / scale)
+        previous = current
+
+    if not motions:
+        return {
+            "present_frames": len(present_boxes),
+            "motion_count": 0,
+            "motion_score": 0.0,
+            "motion_mean": 0.0,
+            "motion_max": 0.0,
+            "motion_quantile": quantile,
+        }
+
+    motion_array = np.asarray(motions, dtype=np.float32)
+    return {
+        "present_frames": len(present_boxes),
+        "motion_count": len(motions),
+        "motion_score": float(np.quantile(motion_array, quantile)),
+        "motion_mean": float(motion_array.mean()),
+        "motion_max": float(motion_array.max()),
+        "motion_quantile": quantile,
+    }
+
+
+def resolve_hard_sequence_names(entries: list[dict], args: argparse.Namespace) -> tuple[list[str], dict[str, dict]]:
+    """Resolve hard-subset sequence names from explicit patterns and/or motion difficulty."""
+    hard_names = set()
+    hard_details: dict[str, dict] = {}
+
+    if args.hard_sequence_mode in {"patterns", "union"}:
+        for entry in entries:
+            if _matches_hard_sequence(entry["name"], args.hard_sequence_patterns):
+                hard_names.add(entry["name"])
+                hard_details.setdefault(entry["name"], {})["selected_by"] = "patterns"
+
+    if args.hard_sequence_mode in {"motion", "union"} and args.hard_motion_top_k > 0:
+        scored_entries = []
+        for entry in entries:
+            stats = _motion_score_from_boxes(
+                read_boxes(Path(entry["label"]).expanduser().resolve()),
+                quantile=args.hard_motion_quantile,
+                min_present_frames=args.hard_motion_min_present,
+            )
+            hard_details.setdefault(entry["name"], {}).update(stats)
+            if stats["motion_count"] <= 0:
+                continue
+            scored_entries.append((entry["name"], stats["motion_score"]))
+
+        scored_entries.sort(key=lambda item: (item[1], item[0]), reverse=True)
+        for name, _ in scored_entries[: args.hard_motion_top_k]:
+            hard_names.add(name)
+            selected_by = hard_details.setdefault(name, {}).get("selected_by")
+            hard_details[name]["selected_by"] = "union" if selected_by == "patterns" else "motion"
+
+    return sorted(hard_names), hard_details
 
 
 def select_best_checkpoint(
@@ -165,17 +285,22 @@ def main() -> None:
     if args.max_sequences:
         entries = entries[: args.max_sequences]
     checkpoints = discover_checkpoints(args)
-    hard_sequence_names = [entry["name"] for entry in entries if _matches_hard_sequence(entry["name"], args.hard_sequence_patterns)]
+    hard_sequence_names, hard_sequence_details = resolve_hard_sequence_names(entries, args)
 
     manifest = {
         "snapshot_dir": str(args.snapshot_dir.expanduser().resolve()),
         "config": str(args.config.expanduser().resolve()),
         "metric": args.metric,
+        "hard_sequence_mode": args.hard_sequence_mode,
         "hard_metric": args.hard_metric,
         "hard_sequence_patterns": args.hard_sequence_patterns,
         "hard_sequence_names": hard_sequence_names,
+        "hard_sequence_details": hard_sequence_details,
         "hard_overall_tolerance": args.hard_overall_tolerance,
         "hard_min_sequences": args.hard_min_sequences,
+        "hard_motion_top_k": args.hard_motion_top_k,
+        "hard_motion_quantile": args.hard_motion_quantile,
+        "hard_motion_min_present": args.hard_motion_min_present,
         "checkpoints": [str(path) for path in checkpoints],
         "sequence_names": [entry["name"] for entry in entries],
     }

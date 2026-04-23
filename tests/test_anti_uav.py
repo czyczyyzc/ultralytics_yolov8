@@ -1,5 +1,7 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
+import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -7,6 +9,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
 
 from ultralytics import solutions
 from scripts.anti_uav.train_nanotrack_local import parse_device_spec
@@ -1567,3 +1570,48 @@ def test_presence_pair_dataset_export_and_training_scripts(tmp_path):
     estimate = verifier.evaluate(frame, (10, 10, 24, 22), 0.9, previous_bbox=(10, 10, 24, 22), context={})
     assert 0.0 <= estimate.score <= 1.0
     assert 0.0 <= estimate.uncertainty <= 1.0
+
+
+def test_replay_and_perception_default_to_pair_head_edl_when_checkpoint_exists(tmp_path, monkeypatch):
+    feature_names = tuple(solutions.HeuristicPresenceVerifier.feature_names)
+    model = solutions.PairPresenceNet(
+        in_channels=2,
+        metadata_dim=len(feature_names),
+        hidden_dim=8,
+    ).model
+    checkpoint_path = tmp_path / "pair_presence_edl.pt"
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "feature_names": feature_names,
+            "hidden_dim": 8,
+            "patch_size": 32,
+            "loss_mode": "edl",
+            "use_metadata": True,
+        },
+        checkpoint_path,
+    )
+    monkeypatch.setenv("ANTI_UAV_DEFAULT_PRESENCE_MODEL", str(checkpoint_path))
+
+    replay_module_path = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "replay_eval.py"
+    replay_spec = importlib.util.spec_from_file_location("replay_eval_module", replay_module_path)
+    replay_module = importlib.util.module_from_spec(replay_spec)
+    assert replay_spec is not None and replay_spec.loader is not None
+    sys.modules[replay_spec.name] = replay_module
+    replay_spec.loader.exec_module(replay_module)
+
+    perception_module_path = (
+        Path(__file__).resolve().parents[1] / "examples" / "YOLOv8-Anti-UAV-Perception" / "anti_uav_perception.py"
+    )
+    perception_spec = importlib.util.spec_from_file_location("anti_uav_perception_module", perception_module_path)
+    perception_module = importlib.util.module_from_spec(perception_spec)
+    assert perception_spec is not None and perception_spec.loader is not None
+    sys.modules[perception_spec.name] = perception_module
+    perception_spec.loader.exec_module(perception_module)
+
+    args = argparse.Namespace(presence_verifier="", presence_model="", presence_device="")
+    replay_verifier = replay_module.build_presence_verifier(args)
+    perception_verifier = perception_module.build_presence_verifier(args)
+
+    assert isinstance(replay_verifier, solutions.PairROIPresenceVerifier)
+    assert isinstance(perception_verifier, solutions.PairROIPresenceVerifier)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import sys
@@ -18,6 +19,39 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ultralytics import YOLO, solutions
+
+
+DEFAULT_PRESENCE_MODEL_ENV = "ANTI_UAV_DEFAULT_PRESENCE_MODEL"
+DEFAULT_PRESENCE_MODEL_NAME = "pair_presence_edl.pt"
+
+
+def resolve_default_presence_model() -> Path | None:
+    """Find the current default pair-head presence verifier checkpoint."""
+    candidates: list[Path] = []
+    env_path = os.getenv(DEFAULT_PRESENCE_MODEL_ENV, "").strip()
+    if env_path:
+        candidates.append(Path(env_path).expanduser())
+
+    runs_root = ROOT / "runs" / "anti_uav"
+    preferred = runs_root / "presence_pair_trainonly24_a52f825_model" / DEFAULT_PRESENCE_MODEL_NAME
+    candidates.append(preferred)
+    if runs_root.exists():
+        dynamic = sorted(
+            runs_root.glob(f"presence_pair*_model/{DEFAULT_PRESENCE_MODEL_NAME}"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        candidates.extend(dynamic)
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return resolved
+    return None
 
 
 @dataclass
@@ -79,7 +113,7 @@ def parse_args() -> argparse.Namespace:
         "--presence-verifier",
         default="",
         choices=("", "heuristic", "mlp", "pair_head", "pair_head_edl"),
-        help="Optional lightweight presence verifier over tracker outputs.",
+        help="Optional lightweight presence verifier over tracker outputs. Defaults to pair_head_edl when a default checkpoint is available.",
     )
     parser.add_argument("--presence-model", default="", help="Optional MLPPresenceVerifier checkpoint path.")
     parser.add_argument("--presence-device", default="", help="Optional torch device for the presence verifier.")
@@ -92,7 +126,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--presence-uncertainty-thresh",
         type=float,
-        default=-1.0,
+        default=0.25,
         help="Optional uncertainty threshold for evidential presence verifiers. Negative disables it.",
     )
     parser.add_argument(
@@ -237,14 +271,21 @@ def build_tracker(args: argparse.Namespace):
 
 def build_presence_verifier(args: argparse.Namespace):
     """Instantiate an optional lightweight tracker-presence verifier."""
-    if not args.presence_verifier:
-        return None
-    if args.presence_verifier in {"mlp", "pair_head", "pair_head_edl"}:
-        if not args.presence_model:
-            raise ValueError("--presence-model is required when --presence-verifier mlp is selected.")
+    verifier_name = (args.presence_verifier or "").strip()
+    checkpoint_path = (args.presence_model or "").strip()
+    if not verifier_name:
+        default_checkpoint = resolve_default_presence_model()
+        if default_checkpoint is None:
+            return None
+        verifier_name = "pair_head_edl"
+        checkpoint_path = str(default_checkpoint)
+
+    if verifier_name in {"mlp", "pair_head", "pair_head_edl"}:
+        if not checkpoint_path:
+            raise ValueError("--presence-model is required when --presence-verifier is mlp/pair_head/pair_head_edl.")
         return solutions.build_presence_verifier(
-            args.presence_verifier,
-            checkpoint_path=args.presence_model,
+            verifier_name,
+            checkpoint_path=checkpoint_path,
             device=args.presence_device or None,
         )
     return solutions.build_presence_verifier("heuristic")

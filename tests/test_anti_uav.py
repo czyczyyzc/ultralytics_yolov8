@@ -1310,3 +1310,260 @@ def test_parse_nanotrack_device_spec():
     device, ids = parse_device_spec("cpu")
     assert str(device) == "cpu"
     assert ids == []
+
+
+def test_presence_verifier_soft_correction_preserves_anchor_until_hard_reinit():
+    bright = np.zeros((80, 120, 3), dtype=np.uint8)
+    dark = np.zeros((80, 120, 3), dtype=np.uint8)
+    cv2.rectangle(bright, (20, 20), (40, 40), (255, 255, 255), thickness=-1)
+
+    verifier = solutions.HeuristicPresenceVerifier(patch_scale=1.0, patch_size=16)
+    verifier.on_hard_reinit(bright, (20, 20, 40, 40))
+    before = verifier.evaluate(dark, (80, 20, 100, 40), 0.95, previous_bbox=(20, 20, 40, 40), context={})
+
+    verifier.on_hard_reinit(dark, (80, 20, 100, 40))
+    after = verifier.evaluate(dark, (80, 20, 100, 40), 0.95, previous_bbox=(80, 20, 100, 40), context={})
+
+    assert before.features["reference_similarity"] < 0.2
+    assert after.features["reference_similarity"] > 0.9
+
+
+def test_presence_verifier_forces_detector_refresh_even_with_high_track_score():
+    init_frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    drift_frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    cv2.rectangle(init_frame, (20, 20), (40, 40), (255, 255, 255), thickness=-1)
+
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(20, 20, 40, 40), confidence=0.96, class_id=0, class_name="drone")],
+            [],
+        ]
+    )
+    tracker = FakeTracker([(True, (90, 20, 110, 40), 0.96)])
+    verifier = solutions.HeuristicPresenceVerifier(patch_scale=1.0, patch_size=16)
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        presence_verifier=verifier,
+        presence_score_thresh=0.65,
+        presence_refresh_streak=1,
+        detect_interval=99,
+        manual_confirmation=False,
+    )
+
+    first = system.step(init_frame)
+    second = system.step(drift_frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert second.track_score == 0.96
+    assert second.presence_score < 0.65
+    assert system.requires_detector_refresh is True
+    assert detector.calls[1]["roi"] == (90.0, 20.0, 110.0, 40.0)
+    assert detector.calls[-1]["roi"] is None
+
+
+def test_presence_dataset_export_and_training_scripts(tmp_path):
+    feature_names = tuple(solutions.HeuristicPresenceVerifier.feature_names)
+    states_path = tmp_path / "states.jsonl"
+    annotation_path = tmp_path / "labels.json"
+    exported_path = tmp_path / "presence_dataset.jsonl"
+    checkpoint_path = tmp_path / "presence_mlp.pt"
+    history_path = tmp_path / "presence_history.json"
+    export_script = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "export_presence_verifier_dataset.py"
+    train_script = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "train_presence_verifier.py"
+
+    state_rows = [
+        {
+            "frame_index": 1,
+            "bbox": [10, 10, 30, 30],
+            "track_score": 0.92,
+            "presence_score": 0.88,
+            "presence_features": {name: 0.8 for name in feature_names},
+        },
+        {
+            "frame_index": 2,
+            "bbox": [50, 10, 70, 30],
+            "track_score": 0.95,
+            "presence_score": 0.25,
+            "presence_features": {name: 0.2 for name in feature_names},
+        },
+        {
+            "frame_index": 3,
+            "bbox": [15, 15, 35, 35],
+            "track_score": 0.85,
+            "presence_score": 0.15,
+            "presence_features": {name: 0.1 for name in feature_names},
+        },
+        {
+            "frame_index": 4,
+            "bbox": [14, 14, 34, 34],
+            "track_score": 0.90,
+            "presence_score": 0.84,
+            "presence_features": {name: 0.75 for name in feature_names},
+        },
+    ]
+    states_path.write_text("\n".join(json.dumps(row) for row in state_rows) + "\n", encoding="utf-8")
+    annotation_path.write_text(
+        json.dumps({"gt_rect": [[10, 10, 20, 20], [10, 10, 20, 20], [], [14, 14, 20, 20]]}),
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(export_script),
+            "--states-jsonl",
+            str(states_path),
+            "--annotations",
+            str(annotation_path),
+            "--dataset-format",
+            "anti-uav-json",
+            "--output-jsonl",
+            str(exported_path),
+        ],
+        check=True,
+    )
+    samples = [json.loads(line) for line in exported_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert [sample["label"] for sample in samples] == [1, 0, 0, 1]
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(train_script),
+            "--dataset-jsonl",
+            str(exported_path),
+            "--output",
+            str(checkpoint_path),
+            "--history-json",
+            str(history_path),
+            "--epochs",
+            "2",
+            "--batch-size",
+            "2",
+            "--val-ratio",
+            "0.5",
+        ],
+        check=True,
+    )
+    assert checkpoint_path.exists()
+    assert history_path.exists()
+
+    verifier = solutions.MLPPresenceVerifier(checkpoint_path, device="cpu", patch_scale=1.0, patch_size=16)
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    cv2.rectangle(frame, (10, 10), (30, 30), (255, 255, 255), thickness=-1)
+    verifier.on_hard_reinit(frame, (10, 10, 30, 30))
+    estimate = verifier.evaluate(frame, (10, 10, 30, 30), 0.9, previous_bbox=(10, 10, 30, 30), context={})
+    assert 0.0 <= estimate.score <= 1.0
+
+
+def test_presence_pair_dataset_export_and_training_scripts(tmp_path):
+    sequence_root = create_mini_anti_uav_sequence(
+        tmp_path / "Anti-UAV300" / "test-dev",
+        "seq_pair",
+        "rgb",
+        [[10, 12, 8, 6], [11, 12, 8, 6], [], [12, 13, 8, 6]],
+    )
+    video_path = sequence_root / "rgb.mp4"
+    annotation_path = sequence_root / "rgb_label.json"
+    states_path = tmp_path / "states_pair.jsonl"
+    export_root = tmp_path / "presence_pair_dataset"
+    checkpoint_path = tmp_path / "presence_pair_edl.pt"
+    history_path = tmp_path / "presence_pair_history.json"
+    export_script = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "export_presence_pair_dataset.py"
+    train_script = Path(__file__).resolve().parents[1] / "scripts" / "anti_uav" / "train_presence_pair_verifier.py"
+    feature_names = tuple(solutions.HeuristicPresenceVerifier.feature_names)
+
+    states = [
+        {
+            "frame_index": 1,
+            "status": "detected",
+            "bbox": [10, 12, 18, 18],
+            "track_score": 0.95,
+            "presence_score": 0.90,
+            "presence_uncertainty": 0.05,
+            "presence_features": {name: 0.8 for name in feature_names},
+        },
+        {
+            "frame_index": 2,
+            "status": "tracking",
+            "bbox": [11, 12, 19, 18],
+            "track_score": 0.92,
+            "presence_score": 0.85,
+            "presence_uncertainty": 0.08,
+            "presence_features": {name: 0.75 for name in feature_names},
+        },
+        {
+            "frame_index": 3,
+            "status": "tracking",
+            "bbox": [30, 30, 38, 38],
+            "track_score": 0.93,
+            "presence_score": 0.20,
+            "presence_uncertainty": 0.70,
+            "presence_features": {name: 0.15 for name in feature_names},
+        },
+        {
+            "frame_index": 4,
+            "status": "reacquired",
+            "bbox": [12, 13, 20, 19],
+            "track_score": 0.97,
+            "presence_score": 0.88,
+            "presence_uncertainty": 0.07,
+            "presence_features": {name: 0.78 for name in feature_names},
+        },
+    ]
+    states_path.write_text("\n".join(json.dumps(row) for row in states) + "\n", encoding="utf-8")
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(export_script),
+            "--video",
+            str(video_path),
+            "--annotations",
+            str(annotation_path),
+            "--states-jsonl",
+            str(states_path),
+            "--output-root",
+            str(export_root),
+            "--dataset-format",
+            "anti-uav-json",
+        ],
+        check=True,
+    )
+    manifest_path = export_root / "manifest.jsonl"
+    rows = [json.loads(line) for line in manifest_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert [row["label"] for row in rows] == [1, 1, 0, 1]
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(train_script),
+            "--manifest-jsonl",
+            str(manifest_path),
+            "--output",
+            str(checkpoint_path),
+            "--history-json",
+            str(history_path),
+            "--epochs",
+            "2",
+            "--batch-size",
+            "2",
+            "--val-ratio",
+            "0.5",
+            "--loss-mode",
+            "edl",
+        ],
+        check=True,
+    )
+    assert checkpoint_path.exists()
+    assert history_path.exists()
+
+    verifier = solutions.PairROIPresenceVerifier(checkpoint_path, device="cpu")
+    frame = np.zeros((48, 64, 3), dtype=np.uint8)
+    cv2.rectangle(frame, (10, 10), (24, 22), (255, 255, 255), thickness=-1)
+    verifier.on_hard_reinit(frame, (10, 10, 24, 22))
+    estimate = verifier.evaluate(frame, (10, 10, 24, 22), 0.9, previous_bbox=(10, 10, 24, 22), context={})
+    assert 0.0 <= estimate.score <= 1.0
+    assert 0.0 <= estimate.uncertainty <= 1.0

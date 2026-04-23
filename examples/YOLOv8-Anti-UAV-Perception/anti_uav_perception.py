@@ -28,6 +28,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nanotrack-config", default="", help="Optional NanoTrack config yaml path.")
     parser.add_argument("--nanotrack-snapshot", default="", help="Optional NanoTrack checkpoint path.")
     parser.add_argument("--nanotrack-device", default="", help="Optional NanoTrack torch device, for example cpu or 0.")
+    parser.add_argument(
+        "--presence-verifier",
+        default="",
+        choices=("", "heuristic", "mlp", "pair_head", "pair_head_edl"),
+        help="Optional lightweight presence verifier over tracker outputs.",
+    )
+    parser.add_argument("--presence-model", default="", help="Optional MLPPresenceVerifier checkpoint path.")
+    parser.add_argument("--presence-device", default="", help="Optional torch device for the presence verifier.")
+    parser.add_argument(
+        "--presence-score-thresh",
+        type=float,
+        default=0.45,
+        help="Presence score threshold below which tracking is treated as suspect.",
+    )
+    parser.add_argument(
+        "--presence-uncertainty-thresh",
+        type=float,
+        default=-1.0,
+        help="Optional uncertainty threshold for evidential presence verifiers. Negative disables it.",
+    )
+    parser.add_argument(
+        "--presence-refresh-streak",
+        type=int,
+        default=2,
+        help="Require this many low-presence frames before forcing detector refresh.",
+    )
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
     parser.add_argument("--conf", type=float, default=0.45, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
@@ -96,6 +122,21 @@ def build_tracker(args: argparse.Namespace):
     )
 
 
+def build_presence_verifier(args: argparse.Namespace):
+    """Instantiate an optional lightweight tracker-presence verifier."""
+    if not args.presence_verifier:
+        return None
+    if args.presence_verifier in {"mlp", "pair_head", "pair_head_edl"}:
+        if not args.presence_model:
+            raise ValueError("--presence-model is required when --presence-verifier mlp is selected.")
+        return solutions.build_presence_verifier(
+            args.presence_verifier,
+            checkpoint_path=args.presence_model,
+            device=args.presence_device or None,
+        )
+    return solutions.build_presence_verifier("heuristic")
+
+
 def maybe_handle_keypress(key: int, system: solutions.AntiUAVSystem) -> None:
     if key in {ord("c"), ord("C")}:
         system.confirm_current_target(True, note="operator_confirmed")
@@ -110,6 +151,10 @@ def main() -> None:
     system = solutions.AntiUAVSystem(
         detector,
         tracker=build_tracker(args),
+        presence_verifier=build_presence_verifier(args),
+        presence_score_thresh=args.presence_score_thresh,
+        presence_uncertainty_thresh=(None if args.presence_uncertainty_thresh < 0 else args.presence_uncertainty_thresh),
+        presence_refresh_streak=args.presence_refresh_streak,
         detect_interval=args.detect_interval,
         max_lost=args.max_lost,
         tracker_score_thresh=0.4,

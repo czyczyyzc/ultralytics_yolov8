@@ -63,6 +63,8 @@ class TargetState:
     bbox: Optional[Tuple[float, float, float, float]]
     confidence: float
     track_score: float
+    presence_score: float
+    presence_uncertainty: float
     lost_frames: int
     age: int
     frames_since_detection: int
@@ -76,6 +78,7 @@ class TargetState:
     detection_hits: int
     class_id: int = -1
     class_name: str = "target"
+    presence_features: Optional[Dict[str, float]] = None
 
     def as_dict(self) -> dict:
         """Return a JSON-serializable representation."""
@@ -83,6 +86,433 @@ class TargetState:
         if self.bbox is not None:
             payload["bbox"] = [float(v) for v in self.bbox]
         return payload
+
+
+@dataclass
+class PresenceEstimate:
+    """Presence-verifier output for the active track hypothesis."""
+
+    score: float
+    features: Dict[str, float]
+    uncertainty: float = 0.0
+
+
+class BasePresenceVerifier(ABC):
+    """Optional verifier that estimates whether the current tracker output still matches the target."""
+
+    name = "base"
+    feature_names: Tuple[str, ...] = ()
+
+    def __init__(self):
+        self.last_features: Dict[str, float] = {}
+
+    def reset(self) -> None:
+        """Forget any verifier-side runtime state."""
+        self.last_features = {}
+
+    def on_init(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Capture verifier state when a fresh target is initialized."""
+        del frame, bbox
+
+    def on_soft_correction(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Update runtime verifier state after a detector-driven bbox correction."""
+        del frame, bbox
+
+    def on_hard_reinit(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Refresh verifier state after a hard tracker reinitialization."""
+        self.on_init(frame, bbox)
+
+    @abstractmethod
+    def evaluate(
+        self,
+        frame: np.ndarray,
+        bbox: Sequence[float],
+        track_score: float,
+        *,
+        previous_bbox: Optional[Sequence[float]] = None,
+        context: Optional[Dict[str, float]] = None,
+    ) -> PresenceEstimate:
+        """Estimate whether the current tracker bbox still corresponds to the original target."""
+
+
+PRESENCE_FEATURE_NAMES: Tuple[str, ...] = (
+    "track_score",
+    "reference_similarity",
+    "previous_similarity",
+    "motion_ratio",
+    "area_change",
+    "aspect_change",
+    "edge_ratio",
+    "detection_gap",
+    "contradiction_signal",
+    "requires_refresh",
+    "assist_active",
+)
+
+
+class FeaturePresenceVerifier(BasePresenceVerifier):
+    """Common feature extractor for lightweight tracker-presence verification."""
+
+    name = "feature"
+    feature_names = PRESENCE_FEATURE_NAMES
+
+    def __init__(self, patch_scale: float = 1.2, patch_size: int = 32):
+        super().__init__()
+        self.patch_scale = max(1.0, float(patch_scale))
+        self.patch_size = max(8, int(patch_size))
+        self.reference_patch = None
+        self.previous_patch = None
+        self.previous_bbox = None
+
+    def reset(self) -> None:
+        """Clear verifier reference state."""
+        super().reset()
+        self.reference_patch = None
+        self.previous_patch = None
+        self.previous_bbox = None
+
+    def on_init(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Snapshot the detector-backed target appearance as the reference template."""
+        clipped = _clip_bbox(bbox, frame.shape)
+        patch = self._extract_feature_patch(frame, clipped)
+        self.reference_patch = patch
+        self.previous_patch = patch
+        self.previous_bbox = clipped
+
+    def on_soft_correction(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
+        """Refresh short-term motion state while preserving the original reference template."""
+        clipped = _clip_bbox(bbox, frame.shape)
+        self.previous_patch = self._extract_feature_patch(frame, clipped)
+        self.previous_bbox = clipped
+
+    def evaluate(
+        self,
+        frame: np.ndarray,
+        bbox: Sequence[float],
+        track_score: float,
+        *,
+        previous_bbox: Optional[Sequence[float]] = None,
+        context: Optional[Dict[str, float]] = None,
+    ) -> PresenceEstimate:
+        """Extract lightweight motion/appearance features for the current track hypothesis."""
+        context = context or {}
+        clipped = _clip_bbox(bbox, frame.shape)
+        current_patch = self._extract_feature_patch(frame, clipped)
+        reference_bbox = previous_bbox or self.previous_bbox or clipped
+        features = {
+            "track_score": float(np.clip(track_score, 0.0, 1.0)),
+            "reference_similarity": _patch_similarity(self.reference_patch, current_patch),
+            "previous_similarity": _patch_similarity(self.previous_patch, current_patch),
+            "motion_ratio": float(min(_bbox_center_distance_ratio(clipped, reference_bbox), 10.0) / 10.0),
+            "area_change": float(min(_bbox_area_change_ratio(clipped, reference_bbox), 10.0) / 10.0),
+            "aspect_change": float(min(_bbox_aspect_change_ratio(clipped, reference_bbox), 10.0) / 10.0),
+            "edge_ratio": _bbox_edge_ratio(clipped, frame.shape),
+            "detection_gap": float(
+                min(
+                    float(context.get("frames_since_detection", 0.0))
+                    / max(float(context.get("detect_interval", 1.0)) * 3.0, 1.0),
+                    1.0,
+                )
+            ),
+            "contradiction_signal": float(
+                min(
+                    float(context.get("detector_contradiction_streak", 0.0))
+                    / max(float(context.get("detector_contradiction_consensus_frames", 1.0)), 1.0),
+                    1.0,
+                )
+            ),
+            "requires_refresh": float(bool(context.get("requires_detector_refresh", False))),
+            "assist_active": float(bool(context.get("assist_active", False))),
+        }
+        for name in self.feature_names:
+            features.setdefault(name, 0.0)
+        self.previous_patch = current_patch
+        self.previous_bbox = clipped
+        self.last_features = features
+        return PresenceEstimate(score=self.score_from_features(features), features=features)
+
+    def score_from_features(self, features: Dict[str, float]) -> float:
+        """Convert a feature dict into a presence probability."""
+        raise NotImplementedError
+
+    def feature_vector(self, features: Dict[str, float]) -> np.ndarray:
+        """Vectorize features in a stable order for lightweight MLP inference."""
+        return np.asarray([float(features.get(name, 0.0)) for name in self.feature_names], dtype=np.float32)
+
+    def _extract_feature_patch(self, frame: np.ndarray, bbox: Sequence[float]) -> Optional[np.ndarray]:
+        """Extract a normalized grayscale patch used for cheap appearance comparisons."""
+        patch = _extract_patch(frame, bbox, self.patch_scale)
+        if patch.size == 0:
+            return None
+        gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY) if patch.ndim == 3 else patch
+        resized = cv2.resize(gray, (self.patch_size, self.patch_size), interpolation=cv2.INTER_AREA)
+        normalized = resized.astype(np.float32)
+        std = float(normalized.std())
+        if std < 1e-6:
+            return normalized / 255.0
+        return (normalized - float(normalized.mean())) / std
+
+
+class HeuristicPresenceVerifier(FeaturePresenceVerifier):
+    """Rule-based verifier used as the default lightweight implementation for Scheme A."""
+
+    name = "heuristic"
+
+    def score_from_features(self, features: Dict[str, float]) -> float:
+        """Blend motion and appearance cues into a conservative presence score."""
+        score = (
+            0.34 * features["track_score"]
+            + 0.23 * features["reference_similarity"]
+            + 0.17 * features["previous_similarity"]
+            + 0.09 * (1.0 - features["motion_ratio"])
+            + 0.06 * (1.0 - min(max(features["area_change"] - 0.1, 0.0), 1.0))
+            + 0.04 * (1.0 - min(max(features["aspect_change"] - 0.1, 0.0), 1.0))
+            + 0.03 * (1.0 - features["edge_ratio"])
+            + 0.02 * (1.0 - features["detection_gap"])
+            + 0.01 * (1.0 - features["contradiction_signal"])
+            + 0.01 * (1.0 - features["requires_refresh"])
+        )
+        return float(np.clip(score, 0.0, 1.0))
+
+
+class PresenceMLP:
+    """Tiny two-layer classifier used by the optional learned presence verifier."""
+
+    def __init__(self, in_features: int, hidden_dim: int = 32):
+        import torch.nn as nn
+
+        self.model = nn.Sequential(
+            nn.Linear(in_features, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, 2),
+        )
+
+    def state_dict(self):
+        """Expose state dict for saving."""
+        return self.model.state_dict()
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        """Load learned weights."""
+        self.model.load_state_dict(state_dict)
+
+
+class MLPPresenceVerifier(FeaturePresenceVerifier):
+    """Learned presence verifier over the lightweight Scheme A feature vector."""
+
+    name = "mlp"
+
+    def __init__(
+        self,
+        checkpoint_path: Union[str, Path],
+        *,
+        device: Optional[str] = None,
+        patch_scale: float = 1.2,
+        patch_size: int = 32,
+    ):
+        super().__init__(patch_scale=patch_scale, patch_size=patch_size)
+        checkpoint = Path(checkpoint_path).expanduser().resolve()
+        if not checkpoint.exists():
+            raise FileNotFoundError(f"Presence-verifier checkpoint not found: {checkpoint}")
+
+        self._torch = importlib.import_module("torch")
+        runtime_device = _parse_torch_device(self._torch, device)
+        payload = self._torch.load(str(checkpoint), map_location=runtime_device)
+        feature_names = tuple(payload.get("feature_names", self.feature_names))
+        if feature_names != self.feature_names:
+            raise ValueError(
+                "Presence-verifier feature_names mismatch. "
+                f"Expected {self.feature_names}, got {feature_names}"
+            )
+        hidden_dim = int(payload.get("hidden_dim", 32))
+        network = PresenceMLP(len(self.feature_names), hidden_dim=hidden_dim)
+        network.load_state_dict(payload["state_dict"])
+        self._network = network.model.to(runtime_device).eval()
+        self._runtime_device = runtime_device
+
+    def score_from_features(self, features: Dict[str, float]) -> float:
+        """Run the lightweight MLP and return the target-present probability."""
+        vector = self.feature_vector(features)
+        tensor = self._torch.from_numpy(vector).unsqueeze(0).to(self._runtime_device)
+        with self._torch.no_grad():
+            logits = self._network(tensor)
+            probability = self._torch.softmax(logits, dim=1)[0, 1].item()
+        return float(np.clip(probability, 0.0, 1.0))
+
+
+class PairPresenceNet:
+    """Small ROI verifier network over template/current patches plus optional metadata."""
+
+    def __init__(self, in_channels: int = 2, metadata_dim: int = 0, hidden_dim: int = 64):
+        import torch
+        import torch.nn as nn
+
+        class _PairPresenceNet(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.image_encoder = nn.Sequential(
+                    nn.Conv2d(in_channels, 16, kernel_size=3, stride=2, padding=1),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+                    nn.ReLU(inplace=True),
+                    nn.AdaptiveAvgPool2d(1),
+                )
+                self.metadata_encoder = (
+                    nn.Sequential(nn.Linear(metadata_dim, 32), nn.ReLU(inplace=True)) if metadata_dim > 0 else None
+                )
+                fused_dim = 64 + (32 if metadata_dim > 0 else 0)
+                self.classifier = nn.Sequential(
+                    nn.Linear(fused_dim, hidden_dim),
+                    nn.ReLU(inplace=True),
+                    nn.Linear(hidden_dim, 2),
+                )
+
+            def forward(self, image_pair, metadata=None):
+                image_features = self.image_encoder(image_pair).flatten(1)
+                if self.metadata_encoder is not None and metadata is not None:
+                    meta_features = self.metadata_encoder(metadata)
+                    image_features = torch.cat([image_features, meta_features], dim=1)
+                return self.classifier(image_features)
+
+        self.model = _PairPresenceNet()
+
+    def state_dict(self):
+        """Expose state dict for saving."""
+        return self.model.state_dict()
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        """Load learned weights."""
+        self.model.load_state_dict(state_dict)
+
+
+class PairROIPresenceVerifier(FeaturePresenceVerifier):
+    """Scheme B/C verifier: a small learned ROI head over template/current crops plus metadata."""
+
+    name = "pair_head"
+
+    def __init__(
+        self,
+        checkpoint_path: Union[str, Path],
+        *,
+        device: Optional[str] = None,
+        patch_scale: float = 1.2,
+        patch_size: Optional[int] = None,
+    ):
+        checkpoint = Path(checkpoint_path).expanduser().resolve()
+        if not checkpoint.exists():
+            raise FileNotFoundError(f"Presence-verifier checkpoint not found: {checkpoint}")
+
+        torch_module = importlib.import_module("torch")
+        runtime_device = _parse_torch_device(torch_module, device)
+        payload = torch_module.load(str(checkpoint), map_location=runtime_device)
+        stored_patch_size = int(payload.get("patch_size", patch_size or 64))
+        super().__init__(patch_scale=patch_scale, patch_size=stored_patch_size)
+        feature_names = tuple(payload.get("feature_names", self.feature_names))
+        if feature_names != self.feature_names:
+            raise ValueError(
+                "Presence-verifier feature_names mismatch. "
+                f"Expected {self.feature_names}, got {feature_names}"
+            )
+
+        self._torch = torch_module
+        self._runtime_device = runtime_device
+        self.loss_mode = str(payload.get("loss_mode", "ce")).lower()
+        self.use_metadata = bool(payload.get("use_metadata", True))
+        hidden_dim = int(payload.get("hidden_dim", 64))
+        metadata_dim = len(self.feature_names) if self.use_metadata else 0
+        network = PairPresenceNet(in_channels=2, metadata_dim=metadata_dim, hidden_dim=hidden_dim)
+        network.load_state_dict(payload["state_dict"])
+        self._network = network.model.to(runtime_device).eval()
+
+    def evaluate(
+        self,
+        frame: np.ndarray,
+        bbox: Sequence[float],
+        track_score: float,
+        *,
+        previous_bbox: Optional[Sequence[float]] = None,
+        context: Optional[Dict[str, float]] = None,
+    ) -> PresenceEstimate:
+        """Run the pair-head verifier and optionally expose evidential uncertainty."""
+        context = context or {}
+        clipped = _clip_bbox(bbox, frame.shape)
+        current_patch = self._extract_feature_patch(frame, clipped)
+        reference_bbox = previous_bbox or self.previous_bbox or clipped
+        features = {
+            "track_score": float(np.clip(track_score, 0.0, 1.0)),
+            "reference_similarity": _patch_similarity(self.reference_patch, current_patch),
+            "previous_similarity": _patch_similarity(self.previous_patch, current_patch),
+            "motion_ratio": float(min(_bbox_center_distance_ratio(clipped, reference_bbox), 10.0) / 10.0),
+            "area_change": float(min(_bbox_area_change_ratio(clipped, reference_bbox), 10.0) / 10.0),
+            "aspect_change": float(min(_bbox_aspect_change_ratio(clipped, reference_bbox), 10.0) / 10.0),
+            "edge_ratio": _bbox_edge_ratio(clipped, frame.shape),
+            "detection_gap": float(
+                min(
+                    float(context.get("frames_since_detection", 0.0))
+                    / max(float(context.get("detect_interval", 1.0)) * 3.0, 1.0),
+                    1.0,
+                )
+            ),
+            "contradiction_signal": float(
+                min(
+                    float(context.get("detector_contradiction_streak", 0.0))
+                    / max(float(context.get("detector_contradiction_consensus_frames", 1.0)), 1.0),
+                    1.0,
+                )
+            ),
+            "requires_refresh": float(bool(context.get("requires_detector_refresh", False))),
+            "assist_active": float(bool(context.get("assist_active", False))),
+        }
+        for name in self.feature_names:
+            features.setdefault(name, 0.0)
+        self.previous_patch = current_patch
+        self.previous_bbox = clipped
+        self.last_features = features
+
+        if self.reference_patch is None or current_patch is None:
+            return PresenceEstimate(score=0.0, features=features, uncertainty=1.0)
+
+        image_pair = np.stack([self.reference_patch, current_patch], axis=0).astype(np.float32, copy=False)
+        image_tensor = self._torch.from_numpy(image_pair).unsqueeze(0).to(self._runtime_device)
+        metadata_tensor = None
+        if self.use_metadata:
+            metadata = self.feature_vector(features)
+            metadata_tensor = self._torch.from_numpy(metadata).unsqueeze(0).to(self._runtime_device)
+
+        with self._torch.no_grad():
+            logits = self._network(image_tensor, metadata_tensor)
+            if self.loss_mode == "edl":
+                evidence = self._torch.nn.functional.softplus(logits)
+                alpha = evidence + 1.0
+                total_evidence = alpha.sum(dim=1, keepdim=True)
+                probability = (alpha / total_evidence)[0, 1].item()
+                uncertainty = min(float(2.0 / max(total_evidence.item(), 1e-6)), 1.0)
+            else:
+                probability = self._torch.softmax(logits, dim=1)[0, 1].item()
+                uncertainty = float(1.0 - abs(probability - 0.5) * 2.0)
+
+        return PresenceEstimate(
+            score=float(np.clip(probability, 0.0, 1.0)),
+            features=features,
+            uncertainty=float(np.clip(uncertainty, 0.0, 1.0)),
+        )
+
+
+def build_presence_verifier(name: str = "heuristic", **kwargs) -> BasePresenceVerifier:
+    """Instantiate a lightweight presence verifier."""
+    key = name.strip().lower()
+    if key == "heuristic":
+        return HeuristicPresenceVerifier(**kwargs)
+    if key == "mlp":
+        if not kwargs.get("checkpoint_path"):
+            raise ValueError("checkpoint_path is required for MLPPresenceVerifier.")
+        return MLPPresenceVerifier(**kwargs)
+    if key in {"pair_head", "pair_head_edl"}:
+        if not kwargs.get("checkpoint_path"):
+            raise ValueError("checkpoint_path is required for PairROIPresenceVerifier.")
+        return PairROIPresenceVerifier(**kwargs)
+    raise KeyError(f"Unknown presence verifier '{name}'. Available verifiers: heuristic, mlp, pair_head, pair_head_edl")
 
 
 class BaseSingleTargetTracker(ABC):
@@ -602,6 +1032,14 @@ class AntiUAVSystem:
         detector,
         *,
         tracker: Optional[Union[str, BaseSingleTargetTracker]] = None,
+        presence_verifier: Optional[Union[str, BasePresenceVerifier]] = None,
+        presence_model_path: Optional[Union[str, Path]] = None,
+        presence_device: Optional[str] = None,
+        presence_patch_scale: float = 1.2,
+        presence_patch_size: int = 32,
+        presence_score_thresh: float = 0.45,
+        presence_uncertainty_thresh: Optional[float] = None,
+        presence_refresh_streak: int = 2,
         detect_interval: int = 2,
         max_lost: int = 30,
         tracker_score_thresh: float = 0.4,
@@ -647,6 +1085,24 @@ class AntiUAVSystem:
                 else build_tracker(tracker)
             )
         self.tracker = tracker or TemplateMatchTracker(score_threshold=tracker_score_thresh)
+        if isinstance(presence_verifier, str):
+            verifier_kwargs = {
+                "patch_scale": presence_patch_scale,
+                "patch_size": presence_patch_size,
+            }
+            if presence_verifier.strip().lower() == "mlp":
+                verifier_kwargs["checkpoint_path"] = presence_model_path
+                verifier_kwargs["device"] = presence_device
+            elif presence_verifier.strip().lower() in {"pair_head", "pair_head_edl"}:
+                verifier_kwargs["checkpoint_path"] = presence_model_path
+                verifier_kwargs["device"] = presence_device
+            presence_verifier = build_presence_verifier(presence_verifier, **verifier_kwargs)
+        self.presence_verifier = presence_verifier
+        self.presence_score_thresh = float(np.clip(presence_score_thresh, 0.0, 1.0))
+        self.presence_uncertainty_thresh = (
+            None if presence_uncertainty_thresh is None else float(np.clip(presence_uncertainty_thresh, 0.0, 1.0))
+        )
+        self.presence_refresh_streak = max(1, int(presence_refresh_streak))
         self.detect_interval = max(1, detect_interval)
         self.max_lost = max(1, max_lost)
         self.tracker_score_thresh = tracker_score_thresh
@@ -722,6 +1178,8 @@ class AntiUAVSystem:
         self.bbox = None
         self.confidence = 0.0
         self.track_score = 0.0
+        self.presence_score = 0.0
+        self.presence_uncertainty = 0.0
         self.status = "searching"
         self.confirmation_state = "idle"
         self.alert_active = False
@@ -737,12 +1195,16 @@ class AntiUAVSystem:
         self.assist_frames_remaining = 0
         self.assist_disagreement_streak = 0
         self.low_score_streak = 0
+        self.presence_low_streak = 0
+        self.last_presence_features = {}
         self.refresh_override_streak = 0
         self.refresh_override_candidate = None
         self.force_hard_reacquire = False
         self.detector_contradiction_streak = 0
         self.detector_contradiction_candidate = None
         self.tracker.reset()
+        if self.presence_verifier is not None:
+            self.presence_verifier.reset()
 
     def step(self, frame: np.ndarray) -> TargetState:
         """
@@ -759,21 +1221,36 @@ class AntiUAVSystem:
         suspect_tracking = False
         self.last_frame_shape = frame.shape
         self.force_hard_reacquire = False
+        previous_bbox = self.bbox
 
         if self.bbox is not None:
             tracking_ok, tracked_bbox, track_score = self.tracker.update(frame)
             self.track_score = float(track_score)
             if tracking_ok and tracked_bbox is not None:
                 self.bbox = _clip_bbox(tracked_bbox, frame.shape)
+                self._update_presence_score(
+                    frame,
+                    self.bbox,
+                    previous_bbox=previous_bbox,
+                    assist_active=assist_active,
+                )
                 suspect_tracking = self.track_score < self.suspect_score_thresh
+                suspect_tracking = suspect_tracking or self.presence_score < self.presence_score_thresh
+                if self.presence_uncertainty_thresh is not None:
+                    suspect_tracking = suspect_tracking or self.presence_uncertainty >= self.presence_uncertainty_thresh
                 self.status = "tracking"
                 self.lost_frames = 0
                 self.age += 1
                 self.low_score_streak = 0 if self.track_score >= self.tracker_score_thresh else self.low_score_streak + 1
+                if self.presence_low_streak >= self.presence_refresh_streak:
+                    self.requires_detector_refresh = True
             else:
                 self.status = "lost"
                 self.lost_frames += 1
                 self.low_score_streak += 1
+                self.presence_score = 0.0
+                self.presence_uncertainty = 1.0
+                self.presence_low_streak += 1
                 if self.confirmation_state == "confirmed":
                     self.confirmation_state = "pending"
                     self.requires_detector_refresh = True
@@ -854,6 +1331,10 @@ class AntiUAVSystem:
             self.assist_frames_remaining = 0
             self.assist_disagreement_streak = 0
             self.low_score_streak = 0
+            self.presence_score = 0.0
+            self.presence_uncertainty = 0.0
+            self.presence_low_streak = 0
+            self.last_presence_features = {}
             self._reset_detector_contradiction()
             self._reset_refresh_override()
         elif detection_accepted:
@@ -891,6 +1372,8 @@ class AntiUAVSystem:
             bbox=self.bbox,
             confidence=self.confidence,
             track_score=self.track_score,
+            presence_score=self.presence_score,
+            presence_uncertainty=self.presence_uncertainty,
             lost_frames=self.lost_frames,
             age=self.age,
             frames_since_detection=self.frames_since_detection,
@@ -904,6 +1387,7 @@ class AntiUAVSystem:
             detection_hits=self.detection_hits,
             class_id=self.active_detection.class_id if self.active_detection else -1,
             class_name=self.active_detection.class_name if self.active_detection else "target",
+            presence_features=dict(self.last_presence_features) if self.last_presence_features else None,
         )
         if self.bbox is not None and self.assist_frames_remaining > 0 and not detection_accepted:
             self.assist_frames_remaining -= 1
@@ -943,6 +1427,8 @@ class AntiUAVSystem:
                 bbox=self.bbox,
                 confidence=self.confidence,
                 track_score=self.track_score,
+                presence_score=self.presence_score,
+                presence_uncertainty=self.presence_uncertainty,
                 lost_frames=self.lost_frames,
                 age=self.age,
                 frames_since_detection=self.frames_since_detection,
@@ -956,6 +1442,7 @@ class AntiUAVSystem:
                 detection_hits=self.detection_hits,
                 class_id=self.active_detection.class_id if self.active_detection else -1,
                 class_name=self.active_detection.class_name if self.active_detection else "target",
+                presence_features=dict(self.last_presence_features) if self.last_presence_features else None,
             )
 
         annotated = frame.copy()
@@ -965,7 +1452,9 @@ class AntiUAVSystem:
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
             label = (
                 f"{state.class_name} {state.status} {state.confirmation_state} "
-                f"det={state.confidence:.2f} trk={state.track_score:.2f} thr={state.threat_score:.2f}"
+                f"det={state.confidence:.2f} trk={state.track_score:.2f} prs={state.presence_score:.2f} "
+                f"unc={state.presence_uncertainty:.2f} "
+                f"thr={state.threat_score:.2f}"
             )
             cv2.putText(
                 annotated,
@@ -1025,19 +1514,67 @@ class AntiUAVSystem:
         self.last_detector_mode = "full_frame"
         return detections
 
+    def _update_presence_score(
+        self,
+        frame: np.ndarray,
+        bbox: Sequence[float],
+        *,
+        previous_bbox: Optional[Sequence[float]],
+        assist_active: bool,
+    ) -> None:
+        """Refresh the lightweight presence estimate for the active tracker hypothesis."""
+        if self.presence_verifier is None:
+            self.presence_score = float(np.clip(self.track_score, 0.0, 1.0))
+            self.presence_uncertainty = 0.0
+            self.last_presence_features = {}
+        else:
+            estimate = self.presence_verifier.evaluate(
+                frame,
+                bbox,
+                self.track_score,
+                previous_bbox=previous_bbox,
+                context={
+                    "assist_active": assist_active,
+                    "detect_interval": float(self.detect_interval),
+                    "detector_contradiction_consensus_frames": float(self.detector_contradiction_consensus_frames),
+                    "detector_contradiction_streak": float(self.detector_contradiction_streak),
+                    "frames_since_detection": float(self.frames_since_detection),
+                    "requires_detector_refresh": float(self.requires_detector_refresh),
+                },
+            )
+            self.presence_score = float(np.clip(estimate.score, 0.0, 1.0))
+            self.presence_uncertainty = float(np.clip(estimate.uncertainty, 0.0, 1.0))
+            self.last_presence_features = dict(estimate.features)
+
+        low_presence = self.presence_score < self.presence_score_thresh
+        if self.presence_uncertainty_thresh is not None:
+            low_presence = low_presence or self.presence_uncertainty >= self.presence_uncertainty_thresh
+        if not low_presence:
+            self.presence_low_streak = 0
+        else:
+            self.presence_low_streak += 1
+
     def _activate_detection(self, frame: np.ndarray, detection: Detection, handoff: str = "hard") -> None:
         """Promote a detector output into the active target with either soft correction or hard reinitialization."""
         self.active_detection = detection
         self.bbox = _clip_bbox(detection.bbox, frame.shape)
         self.confidence = float(detection.confidence)
         self.track_score = 1.0
+        self.presence_score = 1.0
+        self.presence_uncertainty = 0.0
+        self.presence_low_streak = 0
         if self.confirmation_state == "rejected":
             self.confirmation_state = "idle"
         if handoff == "soft":
             self.tracker.correct_bbox(frame, self.bbox)
+            if self.presence_verifier is not None:
+                self.presence_verifier.on_soft_correction(frame, self.bbox)
         else:
             self.tracker.reinit_from_detection(frame, self.bbox)
             self.assist_disagreement_streak = 0
+            if self.presence_verifier is not None:
+                self.presence_verifier.on_hard_reinit(frame, self.bbox)
+        self.last_presence_features = dict(getattr(self.presence_verifier, "last_features", {})) if self.presence_verifier else {}
 
     def _drop_target(self, frame: Optional[np.ndarray], note: str, emit_clear: bool = True) -> None:
         """Forget the current target and return to searching."""
@@ -1048,6 +1585,8 @@ class AntiUAVSystem:
         self.bbox = None
         self.confidence = 0.0
         self.track_score = 0.0
+        self.presence_score = 0.0
+        self.presence_uncertainty = 0.0
         self.status = "searching"
         self.age = 0
         self.lost_frames = 0
@@ -1057,12 +1596,16 @@ class AntiUAVSystem:
         self.requires_detector_refresh = False
         self.assist_disagreement_streak = 0
         self.low_score_streak = 0
+        self.presence_low_streak = 0
+        self.last_presence_features = {}
         self._reset_detector_contradiction()
         self._reset_refresh_override()
         self.confirmation_state = "idle"
         self.alert_active = False
         self.current_alert_id = 0
         self.tracker.reset()
+        if self.presence_verifier is not None:
+            self.presence_verifier.reset()
 
     def _resolve_detection_handoff(
         self,
@@ -1586,12 +2129,42 @@ def _bbox_aspect_change_ratio(box1: Sequence[float], box2: Sequence[float]) -> f
     return max(aspect1 / aspect2, aspect2 / aspect1)
 
 
+def _bbox_edge_ratio(bbox: Sequence[float], frame_shape: Tuple[int, ...]) -> float:
+    """Return how close a bbox sits to the nearest border, normalized to [0, 1]."""
+    height, width = frame_shape[:2]
+    x1, y1, x2, y2 = bbox
+    distances = (
+        max(float(x1), 0.0),
+        max(float(y1), 0.0),
+        max(float(width - x2), 0.0),
+        max(float(height - y2), 0.0),
+    )
+    min_distance = min(distances)
+    normalizer = max(min(width, height) * 0.1, 1.0)
+    return float(np.clip(1.0 - min_distance / normalizer, 0.0, 1.0))
+
+
 def _bbox_near_frame_edge(bbox: Sequence[float], frame_shape: Tuple[int, ...], margin_px: int) -> bool:
     """Return True when a bbox is anchored close to any image border."""
     height, width = frame_shape[:2]
     x1, y1, x2, y2 = bbox
     margin = max(float(margin_px), 0.0)
     return x1 <= margin or y1 <= margin or x2 >= width - margin or y2 >= height - margin
+
+
+def _patch_similarity(reference_patch: Optional[np.ndarray], current_patch: Optional[np.ndarray]) -> float:
+    """Return a bounded similarity score between two normalized appearance patches."""
+    if reference_patch is None or current_patch is None:
+        return 0.0
+    if reference_patch.shape != current_patch.shape:
+        return 0.0
+    reference = reference_patch.astype(np.float32, copy=False).reshape(-1)
+    current = current_patch.astype(np.float32, copy=False).reshape(-1)
+    denominator = float(np.linalg.norm(reference) * np.linalg.norm(current))
+    if denominator < 1e-6:
+        return 1.0 if np.allclose(reference, current) else 0.0
+    similarity = float(np.dot(reference, current) / denominator)
+    return float(np.clip((similarity + 1.0) * 0.5, 0.0, 1.0))
 
 
 register_tracker(TemplateMatchTracker.name, TemplateMatchTracker, overwrite=True)
@@ -1605,17 +2178,26 @@ __all__ = (
     "AntiUAVSystem",
     "AreaFilter",
     "AspectRatioFilter",
+    "BasePresenceVerifier",
     "BaseSingleTargetTracker",
     "BorderFilter",
     "Detection",
     "DetectionFilter",
+    "FeaturePresenceVerifier",
+    "HeuristicPresenceVerifier",
+    "MLPPresenceVerifier",
     "NanoTrackPyTracker",
     "OpenCVTracker",
     "PatchClassifierFilter",
+    "PairPresenceNet",
+    "PairROIPresenceVerifier",
+    "PresenceEstimate",
+    "PresenceMLP",
     "TargetState",
     "TemplateMatchTracker",
     "YOLODetectionAdapter",
     "available_trackers",
+    "build_presence_verifier",
     "build_tracker",
     "iter_tiles",
     "register_tracker",

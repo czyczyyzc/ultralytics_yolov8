@@ -1076,6 +1076,7 @@ class AntiUAVSystem:
         detector_contradiction_high_score_confidence: float = 0.90,
         detector_contradiction_high_score_continue_confidence: Optional[float] = None,
         suspect_score_thresh: Optional[float] = None,
+        detector_assist_policy: str = "granular",
     ):
         self.detector = detector
         if isinstance(tracker, str):
@@ -1166,6 +1167,10 @@ class AntiUAVSystem:
         self.suspect_score_thresh = (
             default_suspect_thresh if suspect_score_thresh is None else max(float(suspect_score_thresh), self.tracker_score_thresh)
         )
+        assist_key = detector_assist_policy.strip().lower()
+        if assist_key not in {"granular", "edtc_like"}:
+            raise ValueError("detector_assist_policy must be one of: granular, edtc_like")
+        self.detector_assist_policy = assist_key
         self.reset()
 
     def reset(self) -> None:
@@ -1212,6 +1217,9 @@ class AntiUAVSystem:
 
         The output is intentionally safe: it only exposes perception status and alert lifecycle records.
         """
+        if self.detector_assist_policy == "edtc_like":
+            return self._step_edtc_like(frame)
+
         self.frame_index += 1
         self.pending_events = []
         alert_emitted = False
@@ -1393,6 +1401,146 @@ class AntiUAVSystem:
             self.assist_frames_remaining -= 1
         return state
 
+    def _step_edtc_like(self, frame: np.ndarray) -> TargetState:
+        """
+        Alternate detector-assisted policy inspired by anti_uav_edtc_jit.
+
+        Behavior:
+        - detector owns search/acquire and reacquire
+        - tracker owns frame-to-frame continuity
+        - no periodic detector audit while tracking is healthy
+        - tracker uncertainty or failure immediately returns control to full-frame detector
+        """
+        self.frame_index += 1
+        self.pending_events = []
+        alert_emitted = False
+        self.last_frame_shape = frame.shape
+        self.last_detector_mode = "idle"
+        tracking_ok = False
+        should_detect = self.bbox is None
+        previous_bbox = self.bbox
+
+        if self.bbox is not None:
+            tracking_ok, tracked_bbox, track_score = self.tracker.update(frame)
+            self.track_score = float(track_score)
+            if tracking_ok and tracked_bbox is not None:
+                self.bbox = _clip_bbox(tracked_bbox, frame.shape)
+                self._update_presence_score(
+                    frame,
+                    self.bbox,
+                    previous_bbox=previous_bbox,
+                    assist_active=False,
+                )
+                tracker_uncertain = self.track_score < self.tracker_score_thresh
+                tracker_uncertain = tracker_uncertain or self.presence_score < self.presence_score_thresh
+                if self.presence_uncertainty_thresh is not None:
+                    tracker_uncertain = tracker_uncertain or self.presence_uncertainty >= self.presence_uncertainty_thresh
+                if tracker_uncertain:
+                    self.status = "lost"
+                    self.lost_frames += 1
+                    self.requires_detector_refresh = True
+                    should_detect = True
+                else:
+                    self.status = "tracking"
+                    self.age += 1
+                    self.lost_frames = 0
+                    self.frames_since_detection += 1
+                    self.confirmation_hits += 1
+                    self.low_score_streak = 0
+                    self.presence_low_streak = 0
+                    self._reset_detector_contradiction()
+                    self._reset_refresh_override()
+                    should_detect = False
+            else:
+                self.status = "lost"
+                self.lost_frames += 1
+                self.presence_score = 0.0
+                self.presence_uncertainty = 1.0
+                self.presence_low_streak += 1
+                self.requires_detector_refresh = True
+                should_detect = True
+
+        if should_detect:
+            detections = self._detect_full_frame_candidates(frame)
+            detection = self._select_detection_edtc_like(detections)
+            self.frames_since_detection = 0
+            if detection is not None:
+                had_track = previous_bbox is not None
+                self._activate_detection(frame, detection, handoff="hard")
+                self.status = "reacquired" if had_track else "detected"
+                self.age = self.age + 1 if had_track else 1
+                self.confirmation_hits = 1
+                self.detection_hits = 1
+                self.lost_frames = 0
+                self.low_score_streak = 0
+                self.presence_low_streak = 0
+                self.requires_detector_refresh = False
+                self.assist_frames_remaining = 0
+                self.assist_disagreement_streak = 0
+                self._reset_detector_contradiction()
+                self._reset_refresh_override()
+                if had_track and self.alert_active:
+                    self.confirmation_state = "confirmed"
+            else:
+                self._drop_target(frame, note="edtc_detector_miss")
+
+        if self.bbox is None:
+            self.confirmation_hits = 0
+            self.detection_hits = 0
+            self.requires_detector_refresh = False
+            self.assist_frames_remaining = 0
+            self.assist_disagreement_streak = 0
+            self.low_score_streak = 0
+            self.presence_score = 0.0
+            self.presence_uncertainty = 0.0
+            self.presence_low_streak = 0
+            self.last_presence_features = {}
+        threat_score = self._estimate_threat_score(frame.shape)
+        self.last_threat_score = threat_score
+        if self.bbox is not None:
+            if self.requires_detector_refresh:
+                self.confirmation_state = "pending"
+            elif self.manual_confirmation:
+                if (
+                    self.confirmation_hits >= self.pending_frames
+                    and self.detection_hits >= self.min_confirm_detections
+                    and self.confirmation_state in {"idle", "pending"}
+                ):
+                    self.confirmation_state = "pending"
+            elif (
+                self.confirmation_hits >= self.auto_confirm_frames
+                and self.detection_hits >= self.min_confirm_detections
+                and self.confirmation_state != "confirmed"
+            ):
+                event = self._confirm_current_target(note="auto_confirmed")
+                alert_emitted = event is not None
+        else:
+            self.confirmation_state = "idle"
+
+        return TargetState(
+            frame_index=self.frame_index,
+            status=self.status,
+            bbox=self.bbox,
+            confidence=self.confidence,
+            track_score=self.track_score,
+            presence_score=self.presence_score,
+            presence_uncertainty=self.presence_uncertainty,
+            lost_frames=self.lost_frames,
+            age=self.age,
+            frames_since_detection=self.frames_since_detection,
+            threat_score=threat_score,
+            confirmation_state=self.confirmation_state,
+            alert_id=self.current_alert_id if self.alert_active else 0,
+            alert_active=self.alert_active,
+            alert_emitted=alert_emitted,
+            detector_mode=self.last_detector_mode,
+            confirmation_hits=self.confirmation_hits,
+            detection_hits=self.detection_hits,
+            class_id=self.active_detection.class_id if self.active_detection else -1,
+            class_name=self.active_detection.class_name if self.active_detection else "target",
+            presence_features=dict(self.last_presence_features) if self.last_presence_features else None,
+        )
+
     def confirm_current_target(self, accepted: bool, note: str = "manual_review") -> Optional[AlertEvent]:
         """
         Apply a human confirmation decision to the current target.
@@ -1513,6 +1661,14 @@ class AntiUAVSystem:
         detections = detect_fn(frame, roi=None, prefer_roi=False)
         self.last_detector_mode = "full_frame"
         return detections
+
+    def _detect_full_frame_candidates(self, frame: np.ndarray) -> List[Detection]:
+        """Run a detector pass that always uses the full frame."""
+        self.last_detector_mode = "full_frame"
+        detect_fn = getattr(self.detector, "detect", None)
+        if detect_fn is None:
+            return self.detector(frame)
+        return detect_fn(frame, roi=None, prefer_roi=False)
 
     def _update_presence_score(
         self,
@@ -1638,6 +1794,13 @@ class AntiUAVSystem:
             self.assist_disagreement_streak = 0
             return "hard"
         return "soft"
+
+    def _select_detection_edtc_like(self, detections: Sequence[Detection]) -> Optional[Detection]:
+        """Simple detector selection for the edtc-like policy: detector boxes initialize/reinitialize directly."""
+        filtered = [d for d in detections if d.confidence >= self.min_confidence]
+        if not filtered:
+            return None
+        return max(filtered, key=lambda det: det.confidence)
 
     def _select_detection(
         self,

@@ -92,6 +92,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.45, help="Detector confidence threshold.")
     parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
     parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
+    parser.add_argument(
+        "--detector-assist-policy",
+        default="granular",
+        choices=("granular", "edtc_like"),
+        help="Detector-assisted tracking policy. 'granular' uses the current multi-stage fusion logic, while 'edtc_like' mimics anti_uav_edtc_jit style detect/search and track/until-uncertain switching.",
+    )
     parser.add_argument("--detect-interval", type=int, default=2, help="Run detector every N frames while tracking.")
     parser.add_argument("--max-lost", type=int, default=30, help="Frames to wait before dropping a lost target.")
     parser.add_argument(
@@ -195,6 +201,7 @@ def main() -> None:
         detector,
         tracker=build_tracker(args),
         presence_verifier=build_presence_verifier(args),
+        detector_assist_policy=args.detector_assist_policy,
         presence_score_thresh=args.presence_score_thresh,
         presence_uncertainty_thresh=(None if args.presence_uncertainty_thresh < 0 else args.presence_uncertainty_thresh),
         presence_refresh_streak=args.presence_refresh_streak,

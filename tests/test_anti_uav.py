@@ -60,6 +60,27 @@ class DummyDetector:
         return []
 
 
+class FakePresenceVerifier(solutions.BasePresenceVerifier):
+    def __init__(self, responses):
+        super().__init__()
+        self.responses = list(responses)
+        self.soft_corrections = []
+        self.hard_reinits = []
+
+    def on_soft_correction(self, frame, bbox):
+        del frame
+        self.soft_corrections.append(tuple(bbox))
+
+    def on_hard_reinit(self, frame, bbox):
+        del frame
+        self.hard_reinits.append(tuple(bbox))
+
+    def evaluate(self, frame, bbox, track_score, *, previous_bbox=None, context=None):
+        del frame, bbox, track_score, previous_bbox, context
+        score, uncertainty = self.responses.pop(0) if self.responses else (1.0, 0.0)
+        return solutions.PresenceEstimate(score=score, uncertainty=uncertainty, features={})
+
+
 def create_mini_anti_uav_sequence(
     root: Path,
     sequence_name: str,
@@ -1365,6 +1386,77 @@ def test_presence_verifier_forces_detector_refresh_even_with_high_track_score():
     assert system.requires_detector_refresh is True
     assert detector.calls[1]["roi"] == (90.0, 20.0, 110.0, 40.0)
     assert detector.calls[-1]["roi"] is None
+
+
+def test_edtc_like_policy_only_redetects_on_tracker_uncertainty():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(20, 20, 40, 40), confidence=0.96, class_id=0, class_name="drone")],
+            [solutions.Detection(bbox=(80, 25, 100, 45), confidence=0.97, class_id=0, class_name="drone")],
+        ]
+    )
+    tracker = FakeTracker(
+        [
+            (True, (21, 20, 41, 40), 0.95),
+            (True, (82, 25, 102, 45), 0.94),
+        ]
+    )
+    verifier = FakePresenceVerifier([(0.92, 0.05), (0.20, 0.60)])
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        presence_verifier=verifier,
+        detector_assist_policy="edtc_like",
+        presence_score_thresh=0.45,
+        presence_uncertainty_thresh=0.25,
+        manual_confirmation=False,
+        detect_interval=1,
+    )
+
+    first = system.step(frame)
+    second = system.step(frame)
+    third = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "tracking"
+    assert third.status == "reacquired"
+    assert len(detector.calls) == 2
+    assert all(call["roi"] is None for call in detector.calls)
+    assert tracker.reinitialized[-1] == (80.0, 25.0, 100.0, 45.0)
+    assert verifier.hard_reinits[-1] == (80.0, 25.0, 100.0, 45.0)
+
+
+def test_edtc_like_policy_drops_to_search_when_detector_cannot_reacquire():
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    detector = DummyDetector(
+        [
+            [solutions.Detection(bbox=(20, 20, 40, 40), confidence=0.96, class_id=0, class_name="drone")],
+            [],
+        ]
+    )
+    tracker = FakeTracker([(True, (90, 20, 110, 40), 0.97)])
+    verifier = FakePresenceVerifier([(0.10, 0.70)])
+
+    system = solutions.AntiUAVSystem(
+        detector,
+        tracker=tracker,
+        presence_verifier=verifier,
+        detector_assist_policy="edtc_like",
+        presence_score_thresh=0.45,
+        presence_uncertainty_thresh=0.25,
+        manual_confirmation=False,
+        detect_interval=1,
+    )
+
+    first = system.step(frame)
+    second = system.step(frame)
+
+    assert first.status == "detected"
+    assert second.status == "searching"
+    assert second.bbox is None
+    assert system.alert_active is False
 
 
 def test_presence_dataset_export_and_training_scripts(tmp_path):

@@ -65,8 +65,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--presence-verifier",
         default="",
-        choices=("", "heuristic", "mlp", "pair_head", "pair_head_edl"),
-        help="Optional lightweight presence verifier over tracker outputs. Defaults to pair_head_edl when a default checkpoint is available.",
+        choices=("", "none", "heuristic", "mlp", "pair_head", "pair_head_edl"),
+        help="Optional lightweight presence verifier over tracker outputs. Defaults to pair_head_edl when a default checkpoint is available; use 'none' to disable it explicitly.",
     )
     parser.add_argument("--presence-model", default="", help="Optional MLPPresenceVerifier checkpoint path.")
     parser.add_argument("--presence-device", default="", help="Optional torch device for the presence verifier.")
@@ -160,6 +160,8 @@ def build_presence_verifier(args: argparse.Namespace):
     """Instantiate an optional lightweight tracker-presence verifier."""
     verifier_name = (args.presence_verifier or "").strip()
     checkpoint_path = (args.presence_model or "").strip()
+    if verifier_name.lower() == "none":
+        return None
     if not verifier_name:
         default_checkpoint = resolve_default_presence_model()
         if default_checkpoint is None:

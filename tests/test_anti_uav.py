@@ -1615,3 +1615,7 @@ def test_replay_and_perception_default_to_pair_head_edl_when_checkpoint_exists(t
 
     assert isinstance(replay_verifier, solutions.PairROIPresenceVerifier)
     assert isinstance(perception_verifier, solutions.PairROIPresenceVerifier)
+
+    none_args = argparse.Namespace(presence_verifier="none", presence_model="", presence_device="")
+    assert replay_module.build_presence_verifier(none_args) is None
+    assert perception_module.build_presence_verifier(none_args) is None

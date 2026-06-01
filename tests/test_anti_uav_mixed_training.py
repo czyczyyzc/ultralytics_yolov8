@@ -90,3 +90,23 @@ def test_merge_nanotrack_datasets(tmp_path):
     merged = json.loads((output_root / "train.json").read_text(encoding="utf-8"))
     assert {"seq_a", "seq_b"} <= set(merged)
     assert (output_root / "crop511" / "seq_a").is_symlink()
+
+
+def test_convert_anti_uav300_supports_train_layout(tmp_path):
+    source_root = tmp_path / "train"
+    sequence_dir = source_root / "seq_0001"
+    sequence_dir.mkdir(parents=True)
+    frame = np.full((32, 32, 3), 255, dtype=np.uint8)
+    writer = cv2.VideoWriter(str(sequence_dir / "visible.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 1.0, (32, 32))
+    writer.write(frame)
+    writer.release()
+    (sequence_dir / "visible.json").write_text(json.dumps({"gt_rect": [[4, 6, 12, 10]]}), encoding="utf-8")
+    output_root = tmp_path / "yolo"
+    script = ROOT / "scripts" / "anti_uav" / "convert_anti_uav300.py"
+    subprocess.run(
+        [sys.executable, str(script), "--source-root", str(source_root), "--output-root", str(output_root), "--modalities", "rgb"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (output_root / "train_rgb.txt").exists() or (output_root / "val_rgb.txt").exists()

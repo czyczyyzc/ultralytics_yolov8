@@ -15,6 +15,10 @@ DEFAULT_SOURCE_ROOT = Path("/mnt/chenziye/datasets/anti_uav/Anti-UAV300")
 DEFAULT_OUTPUT_ROOT = Path("/mnt/chenziye/datasets/anti_uav/anti_uav300_yolo")
 ALLOWED_VIDEO_SUFFIXES = (".mp4", ".avi", ".mov", ".mpg", ".mpeg")
 MODALITIES = ("rgb", "ir")
+MODALITY_STEMS = {
+    "rgb": ("RGB", "rgb", "visible"),
+    "ir": ("IR", "ir", "infrared"),
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,9 +35,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def discover_sequences(source_root: Path) -> list[dict]:
-    """Find Anti-UAV sequence directories with RGB/IR videos and labels."""
+    """Find Anti-UAV sequence directories across legacy and train-only layouts."""
     sequences = {}
-    for json_path in source_root.rglob("*_label.json"):
+    for json_path in source_root.rglob("*.json"):
+        modality = infer_modality_from_label(json_path)
+        if modality is None:
+            continue
         sequence_dir = json_path.parent
         key = str(sequence_dir.relative_to(source_root))
         entry = sequences.setdefault(
@@ -44,11 +51,7 @@ def discover_sequences(source_root: Path) -> list[dict]:
                 "modalities": {},
             },
         )
-        stem = json_path.stem.replace("_label", "")
-        modality = stem.lower()
-        if modality not in MODALITIES:
-            continue
-        video_path = find_video_for_modality(sequence_dir, stem)
+        video_path = find_video_for_modality(sequence_dir, modality, label_stem=json_path.stem)
         if video_path is None:
             continue
         entry["modalities"][modality] = {
@@ -58,12 +61,34 @@ def discover_sequences(source_root: Path) -> list[dict]:
     return [item for _, item in sorted(sequences.items()) if item["modalities"]]
 
 
-def find_video_for_modality(sequence_dir: Path, stem: str) -> Path | None:
-    """Find the matching video file for a modality."""
-    for suffix in ALLOWED_VIDEO_SUFFIXES:
-        candidate = sequence_dir / f"{stem}{suffix}"
-        if candidate.exists():
-            return candidate
+def infer_modality_from_label(label_path: Path) -> str | None:
+    """Infer rgb/ir modality from a label filename."""
+    stem = label_path.stem
+    base_stem = stem[:-6] if stem.lower().endswith("_label") else stem
+    normalized = base_stem.lower()
+    for modality, aliases in MODALITY_STEMS.items():
+        if normalized in {alias.lower() for alias in aliases}:
+            return modality
+    return None
+
+
+def find_video_for_modality(sequence_dir: Path, modality: str, label_stem: str | None = None) -> Path | None:
+    """Find the matching video file for a modality across legacy and train-only layouts."""
+    candidate_stems = []
+    if label_stem:
+        base_stem = label_stem[:-6] if label_stem.lower().endswith("_label") else label_stem
+        candidate_stems.append(base_stem)
+    candidate_stems.extend(MODALITY_STEMS.get(modality, ()))
+
+    seen = set()
+    for stem in candidate_stems:
+        if stem in seen:
+            continue
+        seen.add(stem)
+        for suffix in ALLOWED_VIDEO_SUFFIXES:
+            candidate = sequence_dir / f"{stem}{suffix}"
+            if candidate.exists():
+                return candidate
     return None
 
 

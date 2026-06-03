@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.001, help="Confidence threshold used before metric accumulation.")
     parser.add_argument("--metric-conf", type=float, default=0.25, help="Confidence threshold for point precision/recall.")
     parser.add_argument("--nms-iou", type=float, default=0.45, help="NMS IoU threshold.")
+    parser.add_argument("--max-det", type=int, default=300, help="Maximum detections kept per image after NMS.")
     parser.add_argument("--limit", type=int, default=0, help="Optional image cap.")
     parser.add_argument("--output-json", type=Path, default=None, help="Optional output summary JSON.")
     return parser.parse_args()
@@ -202,6 +203,9 @@ def main() -> None:
             gt_by_image[image_index] = labels
             boxes, class_ids, scores = backend.infer(image)
             boxes, class_ids, scores = apply_classwise_nms(boxes, class_ids, scores, args.nms_iou)
+            if args.max_det > 0 and scores.shape[0] > args.max_det:
+                keep = scores.argsort()[::-1][: args.max_det]
+                boxes, class_ids, scores = boxes[keep], class_ids[keep], scores[keep]
             for box, class_id, score in zip(boxes, class_ids, scores):
                 predictions.append(
                     {

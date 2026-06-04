@@ -323,7 +323,7 @@ def main() -> None:
         "image_root": str(args.image_root),
         "split": args.split,
         "model": args.model,
-        "args": vars(args),
+        "args": {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
         "aggregate": aggregate_metrics(sequence_summaries),
         "sequence_summaries": sequence_summaries,
         "failures": failures,

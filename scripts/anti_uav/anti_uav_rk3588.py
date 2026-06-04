@@ -969,6 +969,8 @@ class NanoTrackRKNNLiteTracker:
         self.initialized = False
         self._tracker = None
         self._head_t_in = None
+        self._patch_uint8_buffers: dict[int, np.ndarray] = {}
+        self._patch_float_buffers: dict[int, np.ndarray] = {}
         self._load_modules()
         self._tracker = self._build_tracker()
         self.reset()
@@ -1087,8 +1089,8 @@ class NanoTrackRKNNLiteTracker:
         score = float(outputs.get("best_score", 0.0))
         return score >= self.score_threshold, clipped, score
 
-    @staticmethod
     def _get_subwindow_nhwc_float(
+        self,
         image: np.ndarray,
         pos: Sequence[float],
         model_sz: int,
@@ -1131,9 +1133,29 @@ class NanoTrackRKNNLiteTracker:
         else:
             patch = image[int(context_ymin) : int(context_ymax + 1), int(context_xmin) : int(context_xmax + 1), :]
 
-        if int(model_sz) != int(original_sz):
-            patch = cv2.resize(patch, (int(model_sz), int(model_sz)))
-        return np.ascontiguousarray(patch[np.newaxis, :, :, :], dtype=np.float32)
+        model_sz = int(model_sz)
+        if model_sz != int(original_sz):
+            resized = self._get_patch_uint8_buffer(model_sz)
+            cv2.resize(patch, (model_sz, model_sz), dst=resized, interpolation=cv2.INTER_LINEAR)
+            patch = resized
+
+        batch = self._get_patch_float_buffer(model_sz)
+        batch[0, :, :, :] = patch
+        return batch
+
+    def _get_patch_uint8_buffer(self, model_sz: int) -> np.ndarray:
+        buffer = self._patch_uint8_buffers.get(model_sz)
+        if buffer is None:
+            buffer = np.empty((model_sz, model_sz, 3), dtype=np.uint8)
+            self._patch_uint8_buffers[model_sz] = buffer
+        return buffer
+
+    def _get_patch_float_buffer(self, model_sz: int) -> np.ndarray:
+        buffer = self._patch_float_buffers.get(model_sz)
+        if buffer is None:
+            buffer = np.empty((1, model_sz, model_sz, 3), dtype=np.float32)
+            self._patch_float_buffers[model_sz] = buffer
+        return buffer
 
     def _track_fast(self, frame: np.ndarray) -> dict[str, Any]:
         """Low-copy NanoTrack update path matching upstream track() math."""

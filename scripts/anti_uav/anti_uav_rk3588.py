@@ -74,6 +74,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.35, help="Detector confidence threshold.")
     parser.add_argument("--nms-iou", type=float, default=0.45, help="Detection NMS IoU threshold.")
     parser.add_argument(
+        "--detector-preprocess-backend",
+        default="python",
+        choices=("auto", "python", "cpp", "rga"),
+        help="Letterbox preprocess backend. Use rga/cpp explicitly to try rk_letterbox_preprocess.so.",
+    )
+    parser.add_argument(
+        "--detector-preprocess-lib",
+        default="",
+        help="Optional rk_letterbox_preprocess shared library path for --detector-preprocess-backend cpp/rga/auto.",
+    )
+    parser.add_argument(
         "--detector-pre-nms-topk",
         type=int,
         default=300,
@@ -290,6 +301,123 @@ class LetterboxRGBPreprocessor:
             dst=self.canvas[top : top + resized_h, left : left + resized_w],
         )
         return self.canvas, ratio, dw, dh
+
+
+def resolve_cpp_preprocess_lib(raw: str = "") -> Path | None:
+    candidates: list[Path] = []
+    if raw:
+        candidates.append(Path(raw).expanduser())
+    candidates.extend(
+        [
+            ROOT / "build" / "rk_letterbox_preprocess.so",
+            ROOT / "scripts" / "anti_uav" / "rk_letterbox_preprocess.so",
+            Path("/home/orangepi/ultralytics_yolov8/build/rk_letterbox_preprocess.so"),
+        ]
+    )
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.exists():
+            return resolved
+    return None
+
+
+class CppLetterboxRGBPreprocessor:
+    """ctypes wrapper around RGA/OpenCV C++ BGR->RGB letterbox preprocess."""
+
+    BACKEND_NAMES = {0: "none", 1: "rga", 2: "opencv"}
+
+    def __init__(
+        self,
+        input_hw: tuple[int, int],
+        library_path: Path,
+        *,
+        pad_color: tuple[int, int, int] = (0, 0, 0),
+        fallback: Optional[LetterboxRGBPreprocessor] = None,
+        prefer_rga: bool = False,
+        require_rga: bool = False,
+    ):
+        self.input_hw = input_hw
+        self.pad_color = pad_color
+        self.canvas = np.empty((input_hw[0], input_hw[1], 3), dtype=np.uint8)
+        self.fallback = fallback
+        self.prefer_rga = bool(prefer_rga)
+        self.library_path = library_path.expanduser().resolve()
+        self.library = ctypes.CDLL(str(self.library_path))
+        self.function = self.library.rk_letterbox_preprocess_bgr_to_rgb_u8
+        self.function.restype = ctypes.c_int
+        self.function.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_int),
+        ]
+        has_rga = getattr(self.library, "rk_letterbox_preprocess_has_rga", None)
+        self.has_rga = bool(has_rga() if callable(has_rga) else False)
+        has_opencv = getattr(self.library, "rk_letterbox_preprocess_has_opencv", None)
+        self.has_opencv = bool(has_opencv() if callable(has_opencv) else False)
+        if require_rga and not self.has_rga:
+            raise RuntimeError(f"Preprocess library was built without RGA support: {self.library_path}")
+        self.backend_counts = defaultdict(int)
+        self.last_backend = "none"
+
+    def __call__(self, image_bgr: np.ndarray) -> tuple[np.ndarray, float, float, float]:
+        if (
+            image_bgr.dtype != np.uint8
+            or image_bgr.ndim != 3
+            or image_bgr.shape[2] != 3
+            or image_bgr.strides[1] != 3
+            or image_bgr.strides[2] != 1
+        ):
+            if self.fallback is None:
+                image_bgr = np.ascontiguousarray(image_bgr, dtype=np.uint8)
+            else:
+                self.last_backend = "python_fallback"
+                self.backend_counts[self.last_backend] += 1
+                return self.fallback(image_bgr)
+
+        source_h, source_w = image_bgr.shape[:2]
+        target_h, target_w = self.input_hw
+        ratio = ctypes.c_float(0.0)
+        dw = ctypes.c_float(0.0)
+        dh = ctypes.c_float(0.0)
+        backend_id = ctypes.c_int(0)
+        ret = self.function(
+            ctypes.c_void_p(int(image_bgr.ctypes.data)),
+            ctypes.c_int(int(source_h)),
+            ctypes.c_int(int(source_w)),
+            ctypes.c_int(int(image_bgr.strides[0])),
+            ctypes.c_void_p(int(self.canvas.ctypes.data)),
+            ctypes.c_int(int(target_h)),
+            ctypes.c_int(int(target_w)),
+            ctypes.c_int(int(self.pad_color[0])),
+            ctypes.c_int(int(self.pad_color[1])),
+            ctypes.c_int(int(self.pad_color[2])),
+            ctypes.c_int(1 if self.prefer_rga else 0),
+            ctypes.byref(ratio),
+            ctypes.byref(dw),
+            ctypes.byref(dh),
+            ctypes.byref(backend_id),
+        )
+        if ret != 0:
+            if self.fallback is not None:
+                self.last_backend = f"python_fallback_ret{ret}"
+                self.backend_counts[self.last_backend] += 1
+                return self.fallback(image_bgr)
+            raise RuntimeError(f"C++ letterbox preprocess failed with code {ret}")
+        self.last_backend = self.BACKEND_NAMES.get(int(backend_id.value), f"backend_{backend_id.value}")
+        self.backend_counts[self.last_backend] += 1
+        return self.canvas, float(ratio.value), float(dw.value), float(dh.value)
 
 
 def undo_letterbox(boxes: np.ndarray, ratio: float, dw: float, dh: float, image_shape: tuple[int, int]) -> np.ndarray:
@@ -648,6 +776,8 @@ class YoloBoardBackend:
         *,
         nms_iou: float = 0.45,
         max_det: int = 128,
+        preprocess_backend: str = "python",
+        preprocess_lib: str = "",
         postprocess_backend: str = "auto",
         postprocess_lib: str = "",
         timer: Optional[TimingAccumulator] = None,
@@ -658,7 +788,25 @@ class YoloBoardBackend:
         self.nms_iou = float(nms_iou)
         self.max_det = int(max_det)
         self.timer = timer
-        self.preprocessor = LetterboxRGBPreprocessor(input_hw, pad_color=(0, 0, 0))
+        self.preprocess_backend = preprocess_backend
+        python_preprocessor = LetterboxRGBPreprocessor(input_hw, pad_color=(0, 0, 0))
+        self.preprocessor = python_preprocessor
+        if preprocess_backend in {"auto", "cpp", "rga"}:
+            cpp_preprocess_lib = resolve_cpp_preprocess_lib(preprocess_lib)
+            if cpp_preprocess_lib is not None:
+                self.preprocessor = CppLetterboxRGBPreprocessor(
+                    input_hw,
+                    cpp_preprocess_lib,
+                    pad_color=(0, 0, 0),
+                    fallback=python_preprocessor if preprocess_backend == "auto" else None,
+                    prefer_rga=preprocess_backend in {"auto", "rga"},
+                    require_rga=preprocess_backend == "rga",
+                )
+            elif preprocess_backend in {"cpp", "rga"}:
+                raise FileNotFoundError(
+                    "C++ detector preprocess requested, but rk_letterbox_preprocess.so was not found. "
+                    "Run scripts/anti_uav/build_rk_letterbox_preprocess.sh on the target board or pass --detector-preprocess-lib."
+                )
         self.postprocess_backend = postprocess_backend
         self.cpp_postprocessor: CppYoloV8PostProcessor | None = None
         if postprocess_backend in {"auto", "cpp"}:
@@ -790,6 +938,8 @@ class BoardYoloDetectionAdapter:
         nms_iou: float,
         pre_nms_topk: int = 300,
         max_det: int = 128,
+        preprocess_backend: str = "python",
+        preprocess_lib: str = "",
         postprocess_backend: str = "auto",
         postprocess_lib: str = "",
         enable_roi: bool = True,
@@ -803,6 +953,8 @@ class BoardYoloDetectionAdapter:
             conf_thresh=conf,
             nms_iou=nms_iou,
             max_det=max_det,
+            preprocess_backend=preprocess_backend,
+            preprocess_lib=preprocess_lib,
             postprocess_backend=postprocess_backend,
             postprocess_lib=postprocess_lib,
             timer=timer,
@@ -1659,6 +1811,8 @@ def main() -> None:
             nms_iou=args.nms_iou,
             pre_nms_topk=args.detector_pre_nms_topk,
             max_det=args.detector_max_det,
+            preprocess_backend=args.detector_preprocess_backend,
+            preprocess_lib=args.detector_preprocess_lib,
             postprocess_backend=args.detector_postprocess_backend,
             postprocess_lib=args.detector_postprocess_lib,
             enable_roi=not args.disable_roi_redetect,
@@ -1836,6 +1990,9 @@ def main() -> None:
             presence_total_ms = float(measured_totals_ms.get("presence_total_ms", 0.0))
             recorder_total = float(measured_totals_ms.get("recorder_total_ms", 0.0))
             other_total_ms = max(sum(frame_times_ms) - detector_total_ms - tracker_total_ms - presence_total_ms - recorder_total, 0.0)
+            detector_impl = getattr(detector, "detector", detector)
+            detector_backend = getattr(detector_impl, "backend", None)
+            preprocess_impl = getattr(detector_backend, "preprocessor", None)
             summary = {
                 "source": args.source,
                 "tracker": args.tracker,
@@ -1843,6 +2000,11 @@ def main() -> None:
                 "presence_verifier": verifier_name or "none",
                 "presence_model": str(presence_model_path) if presence_model_path is not None else "",
                 "model": str(model_path),
+                "detector_preprocess_backend_requested": args.detector_preprocess_backend,
+                "detector_preprocess_backend_actual": preprocess_impl.__class__.__name__ if preprocess_impl is not None else "",
+                "detector_preprocess_library": str(getattr(preprocess_impl, "library_path", "")),
+                "detector_preprocess_has_rga": bool(getattr(preprocess_impl, "has_rga", False)),
+                "detector_preprocess_backend_counts": dict(getattr(preprocess_impl, "backend_counts", {})),
                 "async_reader": bool(args.async_reader),
                 "reader_queue_size": int(args.reader_queue_size),
                 "measured_frames": measured_frames,

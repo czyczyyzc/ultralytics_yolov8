@@ -233,6 +233,52 @@ def letterbox(image: np.ndarray, new_shape: tuple[int, int], pad_color: tuple[in
     return image, ratio, dw, dh
 
 
+class LetterboxRGBPreprocessor:
+    """Reusable BGR->letterboxed-RGB preprocessor for RKNN detector input."""
+
+    def __init__(self, input_hw: tuple[int, int], pad_color: tuple[int, int, int] = (0, 0, 0)):
+        self.input_hw = input_hw
+        self.pad_color = pad_color
+        self.canvas = np.empty((input_hw[0], input_hw[1], 3), dtype=np.uint8)
+        self._resize_bgr_cache: dict[tuple[int, int], np.ndarray] = {}
+
+    def _get_resize_buffer(self, height: int, width: int) -> np.ndarray:
+        key = (height, width)
+        bgr = self._resize_bgr_cache.get(key)
+        if bgr is None:
+            bgr = np.empty((height, width, 3), dtype=np.uint8)
+            self._resize_bgr_cache[key] = bgr
+        return bgr
+
+    def __call__(self, image_bgr: np.ndarray) -> tuple[np.ndarray, float, float, float]:
+        source_h, source_w = image_bgr.shape[:2]
+        target_h, target_w = self.input_hw
+        ratio = min(target_h / source_h, target_w / source_w)
+        resized_w = int(round(source_w * ratio))
+        resized_h = int(round(source_h * ratio))
+        dw = (target_w - resized_w) / 2.0
+        dh = (target_h - resized_h) / 2.0
+        left = int(round(dw - 0.1))
+        top = int(round(dh - 0.1))
+
+        if self.pad_color == (0, 0, 0):
+            self.canvas.fill(0)
+        else:
+            self.canvas[:, :] = self.pad_color
+
+        if source_w == resized_w and source_h == resized_h:
+            resized_bgr = image_bgr
+        else:
+            resized_bgr = self._get_resize_buffer(resized_h, resized_w)
+            cv2.resize(image_bgr, (resized_w, resized_h), dst=resized_bgr, interpolation=cv2.INTER_LINEAR)
+        cv2.cvtColor(
+            resized_bgr,
+            cv2.COLOR_BGR2RGB,
+            dst=self.canvas[top : top + resized_h, left : left + resized_w],
+        )
+        return self.canvas, ratio, dw, dh
+
+
 def undo_letterbox(boxes: np.ndarray, ratio: float, dw: float, dh: float, image_shape: tuple[int, int]) -> np.ndarray:
     boxes = boxes.copy()
     boxes[:, [0, 2]] -= dw
@@ -599,6 +645,7 @@ class YoloBoardBackend:
         self.nms_iou = float(nms_iou)
         self.max_det = int(max_det)
         self.timer = timer
+        self.preprocessor = LetterboxRGBPreprocessor(input_hw, pad_color=(0, 0, 0))
         self.postprocess_backend = postprocess_backend
         self.cpp_postprocessor: CppYoloV8PostProcessor | None = None
         if postprocess_backend in {"auto", "cpp"}:
@@ -677,11 +724,8 @@ class YoloBoardBackend:
 
     def infer(self, image_bgr: np.ndarray):
         start = perf_counter()
-        padded, ratio, dw, dh = letterbox(image_bgr, self.input_hw, pad_color=(0, 0, 0))
+        rgb, ratio, dw, dh = self.preprocessor(image_bgr)
         timer_add(self.timer, "detector_preprocess_letterbox_ms", start)
-        start = perf_counter()
-        rgb = cv2.cvtColor(padded, cv2.COLOR_BGR2RGB)
-        timer_add(self.timer, "detector_preprocess_color_ms", start)
         start = perf_counter()
         if self.kind == ".rknn":
             outputs = self._infer_rknn(rgb)

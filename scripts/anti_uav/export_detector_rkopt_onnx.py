@@ -12,7 +12,7 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--weights", type=Path, required=True, help="YOLO detector checkpoint, for example best.pt.")
-    parser.add_argument("--imgsz", type=int, default=640, help="Square detector export size.")
+    parser.add_argument("--imgsz", default="640", help="Detector export size. Use N for square or H,W for rectangular.")
     parser.add_argument("--output", type=Path, default=None, help="Optional output ONNX path.")
     parser.add_argument("--opset", type=int, default=12, help="ONNX opset. RKNN YOLOv8 examples use opset 12.")
     parser.add_argument("--device", default="cpu", help="Export device.")
@@ -24,6 +24,15 @@ def parse_args() -> argparse.Namespace:
         help="Do not fail when the exported graph does not look like a 6/9-output RK-optimized YOLOv8 graph.",
     )
     return parser.parse_args()
+
+
+def parse_imgsz(value: str) -> int | tuple[int, int]:
+    parts = [int(part.strip()) for part in str(value).split(",") if part.strip()]
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    raise ValueError(f"Expected --imgsz as N or H,W, got: {value}")
 
 
 def onnx_output_shapes(onnx_path: Path) -> list[list[int | str | None]]:
@@ -83,6 +92,7 @@ def main() -> None:
     weights = args.weights.expanduser().resolve()
     if not weights.exists():
         raise FileNotFoundError(f"Detector checkpoint not found: {weights}")
+    imgsz = parse_imgsz(args.imgsz)
 
     from ultralytics import YOLO
 
@@ -90,7 +100,7 @@ def main() -> None:
     exported = Path(
         model.export(
             format="rknn",
-            imgsz=args.imgsz,
+            imgsz=imgsz,
             batch=1,
             device=args.device,
             opset=args.opset,
@@ -116,7 +126,7 @@ def main() -> None:
     metadata = {
         "source_weights": str(weights),
         "onnx": str(output_path),
-        "imgsz": args.imgsz,
+        "imgsz": list(imgsz) if isinstance(imgsz, tuple) else imgsz,
         "format": "rknn_yolov8_rkopt",
         "layout": "branch-major NCHW bbox/class/score_sum outputs; DFL and NMS run in runtime postprocess",
         "output_shapes": shapes,

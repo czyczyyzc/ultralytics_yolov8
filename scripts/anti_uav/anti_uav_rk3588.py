@@ -9,10 +9,12 @@ import ctypes
 import importlib.util
 import json
 import os
+import queue
 import sys
+import threading
 from pathlib import Path
 from time import perf_counter
-from typing import Iterable, Iterator, Optional, Sequence
+from typing import Any, Iterable, Iterator, Optional, Sequence
 
 import cv2
 import numpy as np
@@ -35,6 +37,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nanotrack-tback", default="", help="NanoTrack template-backbone RKNN path.")
     parser.add_argument("--nanotrack-xback", default="", help="NanoTrack search-backbone RKNN path.")
     parser.add_argument("--nanotrack-head", default="", help="NanoTrack head RKNN path.")
+    parser.add_argument(
+        "--disable-nanotrack-fast-path",
+        action="store_true",
+        help="Use the upstream NanoTrack update path instead of the low-copy timed fast path.",
+    )
     parser.add_argument(
         "--presence-verifier",
         default="",
@@ -109,6 +116,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-frames", type=int, default=0, help="Optional frame cap, 0 means unlimited.")
     parser.add_argument("--warmup-frames", type=int, default=10, help="Warmup frames excluded from FPS statistics.")
     parser.add_argument("--benchmark-json", default="", help="Optional JSON summary path for end-to-end FPS.")
+    parser.add_argument(
+        "--async-reader",
+        action="store_true",
+        help="Decode/read frames on a background thread so CPU decode can overlap NPU inference.",
+    )
+    parser.add_argument("--reader-queue-size", type=int, default=4, help="Frame queue size for --async-reader.")
     parser.add_argument("--disable-annotate", action="store_true", help="Skip drawing overlays to reduce benchmark overhead.")
     parser.add_argument("--show", action="store_true", help="Show annotated frames.")
     return parser.parse_args()
@@ -941,6 +954,8 @@ class NanoTrackRKNNLiteTracker:
         xback_path: Optional[Path] = None,
         head_path: Optional[Path] = None,
         score_threshold: float = 0.25,
+        timer: Optional[TimingAccumulator] = None,
+        fast_path: bool = True,
     ):
         self.anti_uav = anti_uav_module
         self.nanotrack_root = nanotrack_root
@@ -949,8 +964,11 @@ class NanoTrackRKNNLiteTracker:
         self.xback_path = (xback_path or nanotrack_root / "weights" / "track_backbone_X.rknn").expanduser().resolve()
         self.head_path = (head_path or nanotrack_root / "weights" / "head.rknn").expanduser().resolve()
         self.score_threshold = float(score_threshold)
+        self.timer = timer
+        self.fast_path = bool(fast_path)
         self.initialized = False
         self._tracker = None
+        self._head_t_in = None
         self._load_modules()
         self._tracker = self._build_tracker()
         self.reset()
@@ -974,6 +992,7 @@ class NanoTrackRKNNLiteTracker:
 
     def _clear_tracker_state(self) -> None:
         self.initialized = False
+        self._head_t_in = None
         if self._tracker is None:
             return
         for attr_name in ("center_pos", "size", "channel_average", "Toutput", "Xoutput"):
@@ -1011,6 +1030,7 @@ class NanoTrackRKNNLiteTracker:
         h_z = tracker.size[1] + self._cfg.TRACK.CONTEXT_AMOUNT * np.sum(tracker.size)
         s_z = round(np.sqrt(w_z * h_z))
         tracker.channel_average = np.mean(frame, axis=(0, 1))
+        start = perf_counter()
         z_crop = tracker.get_subwindow(
             frame,
             tracker.center_pos,
@@ -1018,8 +1038,14 @@ class NanoTrackRKNNLiteTracker:
             s_z,
             tracker.channel_average,
         )
+        timer_add(self.timer, "nanotrack_template_crop_ms", start)
+        start = perf_counter()
         back_T_in = z_crop.transpose((0, 2, 3, 1))
+        timer_add(self.timer, "nanotrack_template_prepare_ms", start)
+        start = perf_counter()
         tracker.Toutput = tracker.rknn_Tback.inference(inputs=[back_T_in])
+        timer_add(self.timer, "nanotrack_tback_ms", start)
+        self._head_t_in = np.ascontiguousarray(tracker.Toutput[0].transpose((0, 2, 3, 1)))
         self.initialized = True
 
     def _apply_runtime_bbox(self, frame: np.ndarray, bbox: Sequence[float]) -> None:
@@ -1052,7 +1078,7 @@ class NanoTrackRKNNLiteTracker:
     def update(self, frame: np.ndarray):
         if not self.initialized:
             return False, None, 0.0
-        outputs = self._tracker.track(frame)
+        outputs = self._track_fast(frame) if self.fast_path else self._tracker.track(frame)
         bbox = outputs.get("bbox")
         if bbox is None:
             return False, None, 0.0
@@ -1060,6 +1086,124 @@ class NanoTrackRKNNLiteTracker:
         clipped = self.anti_uav._clip_bbox((x, y, x + width, y + height), frame.shape)
         score = float(outputs.get("best_score", 0.0))
         return score >= self.score_threshold, clipped, score
+
+    @staticmethod
+    def _get_subwindow_nhwc_float(
+        image: np.ndarray,
+        pos: Sequence[float],
+        model_sz: int,
+        original_sz: int,
+        avg_chans: Sequence[float],
+    ) -> np.ndarray:
+        """Equivalent to upstream get_subwindow(), but returns RKNN-ready NHWC."""
+        if isinstance(pos, float):
+            pos = [pos, pos]
+        sz = int(original_sz)
+        image_shape = image.shape
+        context_center = (original_sz + 1) / 2
+        context_xmin = np.floor(float(pos[0]) - context_center + 0.5)
+        context_xmax = context_xmin + sz - 1
+        context_ymin = np.floor(float(pos[1]) - context_center + 0.5)
+        context_ymax = context_ymin + sz - 1
+        left_pad = int(max(0.0, -context_xmin))
+        top_pad = int(max(0.0, -context_ymin))
+        right_pad = int(max(0.0, context_xmax - image_shape[1] + 1))
+        bottom_pad = int(max(0.0, context_ymax - image_shape[0] + 1))
+
+        context_xmin += left_pad
+        context_xmax += left_pad
+        context_ymin += top_pad
+        context_ymax += top_pad
+
+        rows, cols, channels = image.shape
+        if any((top_pad, bottom_pad, left_pad, right_pad)):
+            padded = np.zeros((rows + top_pad + bottom_pad, cols + left_pad + right_pad, channels), dtype=np.uint8)
+            padded[top_pad : top_pad + rows, left_pad : left_pad + cols, :] = image
+            if top_pad:
+                padded[0:top_pad, left_pad : left_pad + cols, :] = avg_chans
+            if bottom_pad:
+                padded[rows + top_pad :, left_pad : left_pad + cols, :] = avg_chans
+            if left_pad:
+                padded[:, 0:left_pad, :] = avg_chans
+            if right_pad:
+                padded[:, cols + left_pad :, :] = avg_chans
+            patch = padded[int(context_ymin) : int(context_ymax + 1), int(context_xmin) : int(context_xmax + 1), :]
+        else:
+            patch = image[int(context_ymin) : int(context_ymax + 1), int(context_xmin) : int(context_xmax + 1), :]
+
+        if int(model_sz) != int(original_sz):
+            patch = cv2.resize(patch, (int(model_sz), int(model_sz)))
+        return np.ascontiguousarray(patch[np.newaxis, :, :, :], dtype=np.float32)
+
+    def _track_fast(self, frame: np.ndarray) -> dict[str, Any]:
+        """Low-copy NanoTrack update path matching upstream track() math."""
+        tracker = self._tracker
+        cfg = self._cfg
+
+        start = perf_counter()
+        w_z = tracker.size[0] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(tracker.size)
+        h_z = tracker.size[1] + cfg.TRACK.CONTEXT_AMOUNT * np.sum(tracker.size)
+        s_z = np.sqrt(w_z * h_z)
+        scale_z = cfg.TRACK.EXEMPLAR_SIZE / s_z
+        s_x = s_z * (cfg.TRACK.INSTANCE_SIZE / cfg.TRACK.EXEMPLAR_SIZE)
+        timer_add(self.timer, "nanotrack_update_setup_ms", start)
+
+        start = perf_counter()
+        x_crop = self._get_subwindow_nhwc_float(
+            frame,
+            tracker.center_pos,
+            cfg.TRACK.INSTANCE_SIZE,
+            round(s_x),
+            tracker.channel_average,
+        )
+        timer_add(self.timer, "nanotrack_crop_ms", start)
+
+        start = perf_counter()
+        tracker.Xoutput = tracker.rknn_Xback.inference(inputs=[x_crop])
+        timer_add(self.timer, "nanotrack_xback_ms", start)
+
+        start = perf_counter()
+        head_t_in = self._head_t_in
+        if head_t_in is None:
+            head_t_in = np.ascontiguousarray(tracker.Toutput[0].transpose((0, 2, 3, 1)))
+            self._head_t_in = head_t_in
+        head_x_in = np.ascontiguousarray(tracker.Xoutput[0].transpose((0, 2, 3, 1)))
+        timer_add(self.timer, "nanotrack_head_prepare_ms", start)
+
+        start = perf_counter()
+        outputs = tracker.rknn_Head.inference(inputs=[head_t_in, head_x_in])
+        timer_add(self.timer, "nanotrack_head_ms", start)
+
+        start = perf_counter()
+        score = tracker._convert_score_numpy(outputs[0])
+        pred_bbox = tracker._convert_bbox_numpy(outputs[1], tracker.points)
+
+        def change(r):
+            return np.maximum(r, 1.0 / r)
+
+        def sz(width, height):
+            pad = (width + height) * 0.5
+            return np.sqrt((width + pad) * (height + pad))
+
+        s_c = change(sz(pred_bbox[2, :], pred_bbox[3, :]) / (sz(tracker.size[0] * scale_z, tracker.size[1] * scale_z)))
+        r_c = change((tracker.size[0] / tracker.size[1]) / (pred_bbox[2, :] / pred_bbox[3, :]))
+        penalty = np.exp(-(r_c * s_c - 1) * cfg.TRACK.PENALTY_K)
+        pscore = penalty * score
+        pscore = pscore * (1 - cfg.TRACK.WINDOW_INFLUENCE) + tracker.window * cfg.TRACK.WINDOW_INFLUENCE
+        best_idx = int(np.argmax(pscore))
+        bbox = pred_bbox[:, best_idx] / scale_z
+        lr = penalty[best_idx] * score[best_idx] * cfg.TRACK.LR
+        cx = bbox[0] + tracker.center_pos[0]
+        cy = bbox[1] + tracker.center_pos[1]
+        width = tracker.size[0] * (1 - lr) + bbox[2] * lr
+        height = tracker.size[1] * (1 - lr) + bbox[3] * lr
+        cx, cy, width, height = tracker._bbox_clip(cx, cy, width, height, frame.shape[:2])
+        tracker.center_pos = np.array([cx, cy])
+        tracker.size = np.array([width, height])
+        bbox = [cx - width / 2, cy - height / 2, width, height]
+        best_score = score[best_idx]
+        timer_add(self.timer, "nanotrack_postprocess_ms", start)
+        return {"bbox": bbox, "best_score": best_score}
 
     def release(self) -> None:
         self._release_tracker_instance(self._tracker)
@@ -1397,6 +1541,67 @@ def iter_frames(source: str, repeat_image: int = 1) -> Iterator[tuple[str, np.nd
         capture.release()
 
 
+def iter_frames_timed(source: str, repeat_image: int = 1) -> Iterator[tuple[str, np.ndarray, float]]:
+    iterator = iter_frames(source, repeat_image=repeat_image)
+    try:
+        while True:
+            start = perf_counter()
+            try:
+                name, frame = next(iterator)
+            except StopIteration:
+                return
+            read_ms = (perf_counter() - start) * 1000.0
+            yield name, frame, read_ms
+    finally:
+        close_iterator = getattr(iterator, "close", None)
+        if callable(close_iterator):
+            close_iterator()
+
+
+def iter_frames_async(
+    source: str,
+    repeat_image: int = 1,
+    queue_size: int = 4,
+) -> Iterator[tuple[str, np.ndarray, float]]:
+    frame_queue: queue.Queue[object] = queue.Queue(maxsize=max(1, int(queue_size)))
+    stop_event = threading.Event()
+    sentinel = object()
+
+    def put_item(item: object) -> bool:
+        while not stop_event.is_set():
+            try:
+                frame_queue.put(item, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def worker() -> None:
+        try:
+            for item in iter_frames_timed(source, repeat_image=repeat_image):
+                if not put_item(item):
+                    break
+        except BaseException as exc:  # pragma: no cover - board/runtime diagnostics
+            put_item(exc)
+        finally:
+            put_item(sentinel)
+
+    thread = threading.Thread(target=worker, name="anti_uav_frame_reader", daemon=True)
+    thread.start()
+    try:
+        while True:
+            item = frame_queue.get()
+            if item is sentinel:
+                break
+            if isinstance(item, BaseException):
+                raise item
+            name, frame, read_ms = item
+            yield name, frame, float(read_ms)
+    finally:
+        stop_event.set()
+        thread.join(timeout=1.0)
+
+
 def open_writer(path: Path, frame_shape: tuple[int, int, int], fps: float = 30.0):
     path.parent.mkdir(parents=True, exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -1452,6 +1657,8 @@ def main() -> None:
             xback_path=Path(args.nanotrack_xback).expanduser().resolve() if args.nanotrack_xback else None,
             head_path=Path(args.nanotrack_head).expanduser().resolve() if args.nanotrack_head else None,
             score_threshold=args.tracker_score_thresh,
+            timer=timer,
+            fast_path=not args.disable_nanotrack_fast_path,
         )
     tracker = TimedTracker(tracker_impl, timer)
 
@@ -1523,16 +1730,29 @@ def main() -> None:
     last_annotated = None
     should_annotate = not args.disable_annotate or args.show or save_output is not None
     frame_times_ms: list[float] = []
+    reader_times_ms: list[float] = []
     measured_frames = 0
+    total_frames_seen = 0
     measured_totals_ms = defaultdict(float)
     measured_counts = defaultdict(int)
+    measured_wall_start: float | None = None
+    measured_wall_end: float | None = None
+    loop_start = perf_counter()
+    frame_iterator = (
+        iter_frames_async(args.source, repeat_image=args.repeat_image, queue_size=args.reader_queue_size)
+        if args.async_reader
+        else iter_frames_timed(args.source, repeat_image=args.repeat_image)
+    )
 
     try:
-        for frame_index, (_, frame) in enumerate(iter_frames(args.source, repeat_image=args.repeat_image), start=1):
+        for frame_index, (_, frame, read_ms) in enumerate(frame_iterator, start=1):
             if args.max_frames > 0 and frame_index > args.max_frames:
                 break
+            total_frames_seen = frame_index
             timer_before = dict(timer.totals_ms)
             counts_before = dict(timer.counts)
+            if frame_index > args.warmup_frames and measured_wall_start is None:
+                measured_wall_start = perf_counter()
             start = perf_counter()
             state = system.step(frame)
             events = system.drain_alerts()
@@ -1544,6 +1764,7 @@ def main() -> None:
             end = perf_counter()
             if frame_index > args.warmup_frames:
                 frame_times_ms.append((end - start) * 1000.0)
+                reader_times_ms.append(float(read_ms))
                 measured_frames += 1
                 for key, value in timer.totals_ms.items():
                     measured_totals_ms[key] += value - timer_before.get(key, 0.0)
@@ -1569,15 +1790,25 @@ def main() -> None:
                 if writer is None:
                     writer = open_writer(save_output, annotated.shape)
                 writer.write(annotated)
+            if frame_index > args.warmup_frames:
+                measured_wall_end = perf_counter()
 
         if save_output is not None and save_image and last_annotated is not None:
             save_output.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(save_output), last_annotated)
 
         if args.benchmark_json:
+            loop_end = perf_counter()
             benchmark_path = Path(args.benchmark_json).expanduser().resolve()
             benchmark_path.parent.mkdir(parents=True, exist_ok=True)
             mean_ms = float(sum(frame_times_ms) / len(frame_times_ms)) if frame_times_ms else 0.0
+            reader_mean_ms = float(sum(reader_times_ms) / len(reader_times_ms)) if reader_times_ms else 0.0
+            measured_wall_ms = (
+                (measured_wall_end - measured_wall_start) * 1000.0
+                if measured_wall_start is not None and measured_wall_end is not None
+                else 0.0
+            )
+            loop_wall_ms = (loop_end - loop_start) * 1000.0
             detector_total_ms = float(measured_totals_ms.get("detector_total_ms", 0.0))
             tracker_total_ms = float(measured_totals_ms.get("tracker_total_ms", 0.0))
             presence_total_ms = float(measured_totals_ms.get("presence_total_ms", 0.0))
@@ -1590,13 +1821,24 @@ def main() -> None:
                 "presence_verifier": verifier_name or "none",
                 "presence_model": str(presence_model_path) if presence_model_path is not None else "",
                 "model": str(model_path),
+                "async_reader": bool(args.async_reader),
+                "reader_queue_size": int(args.reader_queue_size),
                 "measured_frames": measured_frames,
+                "total_frames_seen": total_frames_seen,
                 "warmup_frames": args.warmup_frames,
                 "mean_ms": mean_ms,
                 "p50_ms": percentile(frame_times_ms, 0.50),
                 "p95_ms": percentile(frame_times_ms, 0.95),
                 "max_ms": max(frame_times_ms) if frame_times_ms else 0.0,
                 "fps_mean": 1000.0 / mean_ms if mean_ms > 0 else 0.0,
+                "wall_measured_ms": measured_wall_ms,
+                "wall_fps_measured": measured_frames * 1000.0 / measured_wall_ms if measured_wall_ms > 0 else 0.0,
+                "wall_all_ms": loop_wall_ms,
+                "wall_fps_all": total_frames_seen * 1000.0 / loop_wall_ms if loop_wall_ms > 0 else 0.0,
+                "reader_decode_mean_ms": reader_mean_ms,
+                "reader_decode_p50_ms": percentile(reader_times_ms, 0.50),
+                "reader_decode_p95_ms": percentile(reader_times_ms, 0.95),
+                "reader_decode_fps": 1000.0 / reader_mean_ms if reader_mean_ms > 0 else 0.0,
                 "detector_mean_ms_per_frame": detector_total_ms / max(measured_frames, 1),
                 "detector_mean_ms_per_call": detector_total_ms / max(measured_counts.get("detector_call_ms", 0), 1),
                 "detector_calls": int(measured_counts.get("detector_call_ms", 0)),
@@ -1634,6 +1876,18 @@ def main() -> None:
                     }
                 },
                 "tracker_mean_ms_per_frame": tracker_total_ms / max(measured_frames, 1),
+                "nanotrack_fast_path": bool(args.tracker == "nanotrack_rknn" and not args.disable_nanotrack_fast_path),
+                "nanotrack_detail_mean_ms": {
+                    key.removeprefix("nanotrack_").removesuffix("_ms"): float(value)
+                    / max(measured_counts.get(key, 0), 1)
+                    for key, value in sorted(measured_totals_ms.items())
+                    if key.startswith("nanotrack_") and key.endswith("_ms")
+                },
+                "nanotrack_detail_calls": {
+                    key.removeprefix("nanotrack_").removesuffix("_ms"): int(measured_counts.get(key, 0))
+                    for key in sorted(measured_counts)
+                    if key.startswith("nanotrack_") and key.endswith("_ms")
+                },
                 "tracker_init_mean_ms": float(measured_totals_ms.get("tracker_init_ms", 0.0)) / max(measured_counts.get("tracker_init_ms", 0), 1),
                 "tracker_init_calls": int(measured_counts.get("tracker_init_ms", 0)),
                 "tracker_reset_mean_ms": float(measured_totals_ms.get("tracker_reset_ms", 0.0)) / max(measured_counts.get("tracker_reset_ms", 0), 1),
@@ -1663,6 +1917,9 @@ def main() -> None:
             benchmark_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             print(json.dumps(summary, indent=2, ensure_ascii=False))
     finally:
+        close_iterator = getattr(frame_iterator, "close", None)
+        if callable(close_iterator):
+            close_iterator()
         if writer is not None:
             writer.release()
         recorder.close()

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+import ctypes
 import importlib.util
 import json
 import os
@@ -65,6 +66,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-class-names", default="", help="Optional allowlist of detector classes.")
     parser.add_argument("--conf", type=float, default=0.35, help="Detector confidence threshold.")
     parser.add_argument("--nms-iou", type=float, default=0.45, help="Detection NMS IoU threshold.")
+    parser.add_argument(
+        "--detector-pre-nms-topk",
+        type=int,
+        default=300,
+        help="Keep only top-K detector candidates before NMS; 0 disables the cap.",
+    )
+    parser.add_argument(
+        "--detector-max-det",
+        type=int,
+        default=128,
+        help="Maximum detections kept after detector NMS; 0 disables the cap.",
+    )
+    parser.add_argument(
+        "--detector-postprocess-backend",
+        default="auto",
+        choices=("auto", "python", "cpp"),
+        help="Postprocess backend for RKOPT YOLOv8 multi-output models.",
+    )
+    parser.add_argument(
+        "--detector-postprocess-lib",
+        default="",
+        help="Optional rk_yolov8_postprocess shared library path for --detector-postprocess-backend cpp/auto.",
+    )
     parser.add_argument(
         "--detector-assist-policy",
         default="edtc_like",
@@ -143,6 +167,11 @@ class TimingAccumulator:
 
     def count(self, key: str) -> int:
         return int(self.counts.get(key, 0))
+
+
+def timer_add(timer: Optional[TimingAccumulator], key: str, start: float) -> None:
+    if timer is not None:
+        timer.add(key, (perf_counter() - start) * 1000.0)
 
 
 def parse_hw(value: str) -> tuple[int, int]:
@@ -260,6 +289,23 @@ def box_process(position: np.ndarray, input_hw: tuple[int, int]) -> np.ndarray:
     return np.concatenate((box_xy * stride, box_xy2 * stride), axis=1)
 
 
+def dfl_selected_numpy(logits: np.ndarray) -> np.ndarray:
+    """Decode DFL logits for selected grid cells only."""
+    logits = np.asarray(logits, dtype=np.float32)
+    if logits.ndim != 2:
+        raise ValueError(f"Expected selected DFL logits as C,K, got {logits.shape}")
+    channels, count = logits.shape
+    bins = channels // 4
+    if bins <= 0:
+        raise ValueError(f"Invalid DFL channel count for YOLOv8 bbox output: {logits.shape}")
+    values = logits.reshape(4, bins, count)
+    values = values - np.max(values, axis=1, keepdims=True)
+    exp_values = np.exp(values)
+    probs = exp_values / np.sum(exp_values, axis=1, keepdims=True)
+    acc = np.arange(bins, dtype=np.float32).reshape(1, bins, 1)
+    return (probs * acc).sum(axis=1)
+
+
 def flatten_branch(branch: np.ndarray) -> np.ndarray:
     channels = branch.shape[1]
     branch = branch.transpose(0, 2, 3, 1)
@@ -319,28 +365,58 @@ def group_model_zoo_outputs(outputs: Sequence[np.ndarray]) -> list[tuple[np.ndar
 
 
 def decode_model_zoo_outputs(outputs: Sequence[np.ndarray], input_hw: tuple[int, int], conf_thresh: float):
-    boxes, classes_conf, score_sums = [], [], []
+    """Decode RKOPT YOLOv8 outputs using model-zoo-style early grid filtering."""
+    decoded_boxes: list[np.ndarray] = []
+    decoded_class_ids: list[np.ndarray] = []
+    decoded_scores: list[np.ndarray] = []
     for box_logits, class_conf, score_sum in group_model_zoo_outputs(outputs):
-        boxes.append(box_process(box_logits.astype(np.float32), input_hw))
-        classes_conf.append(class_conf.astype(np.float32))
-        if score_sum is None:
-            score_sums.append(np.ones_like(class_conf[:, :1, :, :], dtype=np.float32))
+        box_logits = box_logits.astype(np.float32, copy=False)
+        class_conf = class_conf.astype(np.float32, copy=False)
+        grid_h, grid_w = box_logits.shape[2:4]
+        class_map = class_conf[0]
+        if class_map.shape[0] == 1:
+            class_ids_map = np.zeros((grid_h, grid_w), dtype=np.int32)
+            class_scores_map = class_map[0]
         else:
-            score_sums.append(score_sum[:, :1, :, :].astype(np.float32))
+            class_ids_map = np.argmax(class_map, axis=0).astype(np.int32)
+            class_scores_map = np.take_along_axis(class_map, class_ids_map[None], axis=0)[0]
+        if score_sum is None:
+            score_sum_map = np.ones((grid_h, grid_w), dtype=np.float32)
+        else:
+            score_sum_map = score_sum[0, 0].astype(np.float32, copy=False)
 
-    boxes = np.concatenate([flatten_branch(item) for item in boxes], axis=0)
-    classes_conf = np.concatenate([flatten_branch(item) for item in classes_conf], axis=0)
-    score_sums = np.concatenate([flatten_branch(item) for item in score_sums], axis=0).reshape(-1)
+        # Match rknn_model_zoo C postprocess: score_sum is a fast pre-filter,
+        # while final confidence remains max class confidence. For our
+        # single-class detector, multiplying them would square the score.
+        keep = (score_sum_map >= conf_thresh) & (class_scores_map >= conf_thresh)
+        if not np.any(keep):
+            continue
 
-    class_ids = np.argmax(classes_conf, axis=1)
-    class_scores = np.max(classes_conf, axis=1)
-    # Match rknn_model_zoo C postprocess: score_sum is a fast pre-filter, while
-    # the final confidence remains the max class confidence. Multiplying them
-    # would square scores for single-class detectors because score_sum == class.
-    keep = (score_sums >= conf_thresh) & (class_scores >= conf_thresh)
-    if not np.any(keep):
+        ys, xs = np.nonzero(keep)
+        logits = box_logits[0, :, ys, xs]
+        if logits.shape[0] != box_logits.shape[1]:
+            logits = logits.T
+        distances = dfl_selected_numpy(logits)
+        stride_x = float(input_hw[1]) / float(grid_w)
+        stride_y = float(input_hw[0]) / float(grid_h)
+        xs_f = xs.astype(np.float32) + 0.5
+        ys_f = ys.astype(np.float32) + 0.5
+        boxes = np.stack(
+            (
+                (xs_f - distances[0]) * stride_x,
+                (ys_f - distances[1]) * stride_y,
+                (xs_f + distances[2]) * stride_x,
+                (ys_f + distances[3]) * stride_y,
+            ),
+            axis=1,
+        ).astype(np.float32)
+        decoded_boxes.append(boxes)
+        decoded_class_ids.append(class_ids_map[ys, xs].astype(np.int32, copy=False))
+        decoded_scores.append(class_scores_map[ys, xs].astype(np.float32, copy=False))
+
+    if not decoded_boxes:
         return np.empty((0, 4), dtype=np.float32), np.empty((0,), dtype=np.int32), np.empty((0,), dtype=np.float32)
-    return boxes[keep], class_ids[keep].astype(np.int32), class_scores[keep].astype(np.float32)
+    return np.concatenate(decoded_boxes, axis=0), np.concatenate(decoded_class_ids, axis=0), np.concatenate(decoded_scores, axis=0)
 
 
 def decode_ultralytics_output(output: np.ndarray, conf_thresh: float):
@@ -375,13 +451,165 @@ def decode_ultralytics_output(output: np.ndarray, conf_thresh: float):
     return boxes.astype(np.float32), class_ids, scores
 
 
+def bbox_iou_vector(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    if boxes.size == 0:
+        return np.empty((0,), dtype=np.float32)
+    lt = np.maximum(box[:2], boxes[:, :2])
+    rb = np.minimum(box[2:], boxes[:, 2:])
+    wh = np.clip(rb - lt, 0.0, None)
+    inter = wh[:, 0] * wh[:, 1]
+    box_area = max(float((box[2] - box[0]) * (box[3] - box[1])), 0.0)
+    areas = np.clip(boxes[:, 2] - boxes[:, 0], 0.0, None) * np.clip(boxes[:, 3] - boxes[:, 1], 0.0, None)
+    return inter / np.clip(box_area + areas - inter, 1e-6, None)
+
+
+def nms_boxes_numpy(boxes: np.ndarray, scores: np.ndarray, iou_thresh: float) -> np.ndarray:
+    if boxes.size == 0:
+        return np.empty((0,), dtype=np.int64)
+    order = scores.argsort()[::-1]
+    keep: list[int] = []
+    while order.size:
+        index = int(order[0])
+        keep.append(index)
+        if order.size == 1:
+            break
+        ious = bbox_iou_vector(boxes[index], boxes[order[1:]])
+        order = order[1:][ious <= iou_thresh]
+    return np.asarray(keep, dtype=np.int64)
+
+
+def apply_classwise_nms_numpy(
+    boxes: np.ndarray,
+    class_ids: np.ndarray,
+    scores: np.ndarray,
+    iou_thresh: float,
+) -> np.ndarray:
+    if boxes.size == 0:
+        return np.empty((0,), dtype=np.int64)
+    kept: list[int] = []
+    for class_id in np.unique(class_ids):
+        indices = np.where(class_ids == class_id)[0]
+        local_keep = nms_boxes_numpy(boxes[indices], scores[indices], iou_thresh)
+        kept.extend(indices[local_keep].tolist())
+    return np.asarray(sorted(kept, key=lambda idx: float(scores[idx]), reverse=True), dtype=np.int64)
+
+
+def resolve_cpp_postprocess_lib(raw: str = "") -> Path | None:
+    candidates: list[Path] = []
+    if raw:
+        candidates.append(Path(raw).expanduser())
+    candidates.extend(
+        [
+            ROOT / "build" / "rk_yolov8_postprocess.so",
+            ROOT / "scripts" / "anti_uav" / "rk_yolov8_postprocess.so",
+            Path("/home/orangepi/ultralytics_yolov8/build/rk_yolov8_postprocess.so"),
+        ]
+    )
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.exists():
+            return resolved
+    return None
+
+
+class CppYoloV8PostProcessor:
+    """ctypes wrapper around the lightweight C++ RKOPT YOLOv8 postprocess."""
+
+    def __init__(self, library_path: Path):
+        self.library_path = library_path.expanduser().resolve()
+        self.library = ctypes.CDLL(str(self.library_path))
+        self.function = self.library.rk_yolov8_postprocess_float
+        self.function.restype = ctypes.c_int
+
+    @staticmethod
+    def _void_ptr(array: np.ndarray | None) -> ctypes.c_void_p:
+        if array is None:
+            return ctypes.c_void_p(0)
+        return ctypes.c_void_p(int(array.ctypes.data))
+
+    def __call__(
+        self,
+        branches: Sequence[tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]],
+        input_hw: tuple[int, int],
+        conf_thresh: float,
+        nms_iou: float,
+        max_det: int,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if len(branches) != 3:
+            raise ValueError(f"C++ YOLOv8 postprocess expects 3 branches, got {len(branches)}")
+
+        arrays = []
+        args = []
+        for box, cls, score_sum in branches:
+            box_arr = np.ascontiguousarray(box[0], dtype=np.float32)
+            cls_arr = np.ascontiguousarray(cls[0], dtype=np.float32)
+            score_arr = None if score_sum is None else np.ascontiguousarray(score_sum[0, 0], dtype=np.float32)
+            arrays.extend([box_arr, cls_arr, score_arr])
+            args.extend(
+                [
+                    self._void_ptr(box_arr),
+                    self._void_ptr(cls_arr),
+                    self._void_ptr(score_arr),
+                    ctypes.c_int(int(box_arr.shape[0])),
+                    ctypes.c_int(int(cls_arr.shape[0])),
+                    ctypes.c_int(int(box_arr.shape[1])),
+                    ctypes.c_int(int(box_arr.shape[2])),
+                ]
+            )
+
+        cap = int(max_det) if max_det > 0 else 512
+        out_boxes = np.empty((cap, 4), dtype=np.float32)
+        out_classes = np.empty((cap,), dtype=np.int32)
+        out_scores = np.empty((cap,), dtype=np.float32)
+        count = self.function(
+            *args,
+            ctypes.c_int(int(input_hw[0])),
+            ctypes.c_int(int(input_hw[1])),
+            ctypes.c_float(float(conf_thresh)),
+            ctypes.c_float(float(nms_iou)),
+            ctypes.c_int(int(max_det)),
+            self._void_ptr(out_boxes),
+            self._void_ptr(out_classes),
+            self._void_ptr(out_scores),
+        )
+        if count < 0:
+            raise RuntimeError(f"C++ YOLOv8 postprocess failed with code {count}")
+        count = min(int(count), cap)
+        return out_boxes[:count].copy(), out_classes[:count].copy(), out_scores[:count].copy()
+
+
 class YoloBoardBackend:
     """Small detector wrapper for RKNN or ONNXRuntime."""
 
-    def __init__(self, model_path: Path, input_hw: tuple[int, int], conf_thresh: float):
+    def __init__(
+        self,
+        model_path: Path,
+        input_hw: tuple[int, int],
+        conf_thresh: float,
+        *,
+        nms_iou: float = 0.45,
+        max_det: int = 128,
+        postprocess_backend: str = "auto",
+        postprocess_lib: str = "",
+        timer: Optional[TimingAccumulator] = None,
+    ):
         self.model_path = model_path
         self.input_hw = input_hw
         self.conf_thresh = conf_thresh
+        self.nms_iou = float(nms_iou)
+        self.max_det = int(max_det)
+        self.timer = timer
+        self.postprocess_backend = postprocess_backend
+        self.cpp_postprocessor: CppYoloV8PostProcessor | None = None
+        if postprocess_backend in {"auto", "cpp"}:
+            cpp_lib = resolve_cpp_postprocess_lib(postprocess_lib)
+            if cpp_lib is not None:
+                self.cpp_postprocessor = CppYoloV8PostProcessor(cpp_lib)
+            elif postprocess_backend == "cpp":
+                raise FileNotFoundError(
+                    "C++ detector postprocess requested, but rk_yolov8_postprocess.so was not found. "
+                    "Run scripts/anti_uav/build_rk_yolov8_postprocess.sh on the target board or pass --detector-postprocess-lib."
+                )
         self.kind = model_path.suffix.lower()
         self.rknn_input_mode: Optional[str] = None
         if self.kind == ".rknn":
@@ -448,20 +676,41 @@ class YoloBoardBackend:
         raise RuntimeError(f"RKNN inference failed for all input layouts, last error: {last_error}")
 
     def infer(self, image_bgr: np.ndarray):
+        start = perf_counter()
         padded, ratio, dw, dh = letterbox(image_bgr, self.input_hw, pad_color=(0, 0, 0))
+        timer_add(self.timer, "detector_preprocess_letterbox_ms", start)
+        start = perf_counter()
         rgb = cv2.cvtColor(padded, cv2.COLOR_BGR2RGB)
+        timer_add(self.timer, "detector_preprocess_color_ms", start)
+        start = perf_counter()
         if self.kind == ".rknn":
             outputs = self._infer_rknn(rgb)
         else:
             tensor = rgb.transpose(2, 0, 1).astype(np.float32)[None] / 255.0
             outputs = self.runtime.run(None, {self.input_name: tensor})
+        timer_add(self.timer, "detector_inference_ms", start)
 
+        start = perf_counter()
         outputs = [np.asarray(output) for output in outputs]
+        timer_add(self.timer, "detector_output_array_ms", start)
+        start = perf_counter()
         if len(outputs) == 1:
             boxes, class_ids, scores = decode_ultralytics_output(outputs[0], self.conf_thresh)
+        elif self.cpp_postprocessor is not None:
+            branches = group_model_zoo_outputs(outputs)
+            boxes, class_ids, scores = self.cpp_postprocessor(
+                branches,
+                self.input_hw,
+                self.conf_thresh,
+                self.nms_iou,
+                self.max_det,
+            )
         else:
             boxes, class_ids, scores = decode_model_zoo_outputs(outputs, self.input_hw, self.conf_thresh)
+        timer_add(self.timer, "detector_decode_ms", start)
+        start = perf_counter()
         boxes = undo_letterbox(boxes, ratio, dw, dh, image_bgr.shape[:2])
+        timer_add(self.timer, "detector_undo_letterbox_ms", start)
         return boxes, class_ids, scores
 
     def release(self) -> None:
@@ -482,16 +731,33 @@ class BoardYoloDetectionAdapter:
         target_class_names: Optional[Iterable[str]],
         conf: float,
         nms_iou: float,
+        pre_nms_topk: int = 300,
+        max_det: int = 128,
+        postprocess_backend: str = "auto",
+        postprocess_lib: str = "",
         enable_roi: bool = True,
         roi_expand: float = 2.5,
+        timer: Optional[TimingAccumulator] = None,
     ):
         self.anti_uav = anti_uav_module
-        self.backend = YoloBoardBackend(model_path, input_hw=input_hw, conf_thresh=conf)
+        self.backend = YoloBoardBackend(
+            model_path,
+            input_hw=input_hw,
+            conf_thresh=conf,
+            nms_iou=nms_iou,
+            max_det=max_det,
+            postprocess_backend=postprocess_backend,
+            postprocess_lib=postprocess_lib,
+            timer=timer,
+        )
         self.class_names = list(class_names or [])
         self.target_class_names = {name.lower() for name in target_class_names} if target_class_names else None
         self.nms_iou = nms_iou
+        self.pre_nms_topk = int(pre_nms_topk)
+        self.max_det = int(max_det)
         self.enable_roi = enable_roi
         self.roi_expand = roi_expand
+        self.timer = timer
         self.filters = [
             anti_uav_module.AreaFilter(min_area_px=16),
             anti_uav_module.AspectRatioFilter(min_ratio=0.25, max_ratio=4.0),
@@ -505,38 +771,83 @@ class BoardYoloDetectionAdapter:
         candidates = []
         if roi is not None and self.enable_roi:
             roi_box = self.anti_uav._expand_bbox(roi, frame.shape, self.roi_expand)
-            candidates.extend(self._predict_crop(frame, roi_box, "roi"))
-            if prefer_roi and candidates:
+            roi_candidates = self._predict_crop(frame, roi_box, "roi")
+            candidates.append(roi_candidates)
+            if prefer_roi and roi_candidates[2].size:
                 return self._postprocess(frame, candidates)
         full_box = (0.0, 0.0, float(frame.shape[1]), float(frame.shape[0]))
-        candidates.extend(self._predict_crop(frame, full_box, "full_frame"))
+        candidates.append(self._predict_crop(frame, full_box, "full_frame"))
         return self._postprocess(frame, candidates)
 
     def _predict_crop(self, frame: np.ndarray, crop_box: Sequence[float], source: str):
         x1, y1, x2, y2 = [int(value) for value in self.anti_uav._clip_bbox(crop_box, frame.shape)]
         crop = frame[y1:y2, x1:x2]
         if crop.size == 0:
-            return []
-        boxes, class_ids, scores = self.backend.infer(crop)
-        detections = []
-        for box, class_id, score in zip(boxes, class_ids, scores):
-            class_name = self.class_names[class_id] if 0 <= class_id < len(self.class_names) else f"class_{class_id}"
-            if self.target_class_names and class_name.lower() not in self.target_class_names:
-                continue
-            detections.append(
-                self.anti_uav.Detection(
-                    bbox=(float(x1 + box[0]), float(y1 + box[1]), float(x1 + box[2]), float(y1 + box[3])),
-                    confidence=float(score),
-                    class_id=int(class_id),
-                    class_name=class_name,
-                    source=source,
-                )
+            return (
+                np.empty((0, 4), dtype=np.float32),
+                np.empty((0,), dtype=np.int32),
+                np.empty((0,), dtype=np.float32),
+                np.empty((0,), dtype=object),
             )
-        return detections
+        boxes, class_ids, scores = self.backend.infer(crop)
+        if boxes.size:
+            boxes = boxes.copy()
+            boxes[:, [0, 2]] += float(x1)
+            boxes[:, [1, 3]] += float(y1)
+        sources = np.full((scores.shape[0],), source, dtype=object)
+        return boxes, class_ids, scores, sources
 
     def _postprocess(self, frame: np.ndarray, detections):
-        kept = self.anti_uav._nms_detections(detections, iou_threshold=self.nms_iou)
-        return [item for item in kept if all(rule.keep(item, frame) for rule in self.filters)]
+        start = perf_counter()
+        non_empty = [item for item in detections if item[2].size]
+        if not non_empty:
+            timer_add(self.timer, "detector_array_pack_ms", start)
+            return []
+        boxes = np.concatenate([item[0] for item in non_empty], axis=0)
+        class_ids = np.concatenate([item[1] for item in non_empty], axis=0)
+        scores = np.concatenate([item[2] for item in non_empty], axis=0)
+        sources = np.concatenate([item[3] for item in non_empty], axis=0)
+
+        if self.target_class_names:
+            target_keep = []
+            for class_id in class_ids:
+                class_name = self.class_names[class_id] if 0 <= class_id < len(self.class_names) else f"class_{class_id}"
+                target_keep.append(class_name.lower() in self.target_class_names)
+            keep_mask = np.asarray(target_keep, dtype=bool)
+            boxes, class_ids, scores, sources = boxes[keep_mask], class_ids[keep_mask], scores[keep_mask], sources[keep_mask]
+            if not scores.size:
+                timer_add(self.timer, "detector_array_pack_ms", start)
+                return []
+        timer_add(self.timer, "detector_array_pack_ms", start)
+
+        start = perf_counter()
+        if self.pre_nms_topk > 0 and scores.shape[0] > self.pre_nms_topk:
+            keep = np.argpartition(scores, -self.pre_nms_topk)[-self.pre_nms_topk :]
+            boxes, class_ids, scores, sources = boxes[keep], class_ids[keep], scores[keep], sources[keep]
+        timer_add(self.timer, "detector_pre_nms_topk_ms", start)
+
+        start = perf_counter()
+        keep = apply_classwise_nms_numpy(boxes, class_ids, scores, self.nms_iou)
+        if self.max_det > 0 and keep.shape[0] > self.max_det:
+            keep = keep[: self.max_det]
+        boxes, class_ids, scores, sources = boxes[keep], class_ids[keep], scores[keep], sources[keep]
+        timer_add(self.timer, "detector_nms_ms", start)
+
+        start = perf_counter()
+        kept = []
+        for box, class_id, score, source in zip(boxes, class_ids, scores, sources):
+            class_name = self.class_names[class_id] if 0 <= class_id < len(self.class_names) else f"class_{class_id}"
+            detection = self.anti_uav.Detection(
+                bbox=(float(box[0]), float(box[1]), float(box[2]), float(box[3])),
+                confidence=float(score),
+                class_id=int(class_id),
+                class_name=class_name,
+                source=str(source),
+            )
+            if all(rule.keep(detection, frame) for rule in self.filters):
+                kept.append(detection)
+        timer_add(self.timer, "detector_object_filter_ms", start)
+        return kept
 
     def release(self) -> None:
         self.backend.release()
@@ -1075,7 +1386,12 @@ def main() -> None:
             target_class_names=target_class_names,
             conf=args.conf,
             nms_iou=args.nms_iou,
+            pre_nms_topk=args.detector_pre_nms_topk,
+            max_det=args.detector_max_det,
+            postprocess_backend=args.detector_postprocess_backend,
+            postprocess_lib=args.detector_postprocess_lib,
             enable_roi=not args.disable_roi_redetect,
+            timer=timer,
         ),
         timer,
     )
@@ -1246,6 +1562,33 @@ def main() -> None:
                 "detector_roi_mean_ms": float(measured_totals_ms.get("detector_roi_ms", 0.0))
                 / max(measured_counts.get("detector_roi_ms", 0), 1),
                 "detector_roi_calls": int(measured_counts.get("detector_roi_ms", 0)),
+                "detector_detail_mean_ms": {
+                    key.removeprefix("detector_").removesuffix("_ms"): float(value)
+                    / max(measured_counts.get(key, 0), 1)
+                    for key, value in sorted(measured_totals_ms.items())
+                    if key.startswith("detector_")
+                    and key.endswith("_ms")
+                    and key
+                    not in {
+                        "detector_total_ms",
+                        "detector_call_ms",
+                        "detector_full_frame_ms",
+                        "detector_roi_ms",
+                    }
+                },
+                "detector_detail_calls": {
+                    key.removeprefix("detector_").removesuffix("_ms"): int(measured_counts.get(key, 0))
+                    for key in sorted(measured_counts)
+                    if key.startswith("detector_")
+                    and key.endswith("_ms")
+                    and key
+                    not in {
+                        "detector_total_ms",
+                        "detector_call_ms",
+                        "detector_full_frame_ms",
+                        "detector_roi_ms",
+                    }
+                },
                 "tracker_mean_ms_per_frame": tracker_total_ms / max(measured_frames, 1),
                 "tracker_init_mean_ms": float(measured_totals_ms.get("tracker_init_ms", 0.0)) / max(measured_counts.get("tracker_init_ms", 0), 1),
                 "tracker_init_calls": int(measured_counts.get("tracker_init_ms", 0)),

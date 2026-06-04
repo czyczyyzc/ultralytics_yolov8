@@ -190,7 +190,12 @@ def main() -> None:
     if not images:
         raise FileNotFoundError(f"No images found from: {args.images}")
 
-    backend = YoloBoardBackend(args.model.expanduser().resolve(), input_hw=parse_hw(args.input_size), conf_thresh=args.conf)
+    backend = YoloBoardBackend(
+        args.model.expanduser().resolve(),
+        input_hw=parse_hw(args.input_size),
+        conf_thresh=args.conf,
+        postprocess_backend="python",
+    )
     predictions: list[dict] = []
     gt_by_image: dict[int, list[dict]] = {}
     failures: list[dict] = []

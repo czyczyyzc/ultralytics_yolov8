@@ -120,7 +120,7 @@ train_detector() {
   PROJECT="${PROJECT}" \
   NAME="${NAME}" \
   PYTHON_BIN="${PYTHON_BIN}" \
-  "${TRAIN_SCRIPT}"
+  bash "${TRAIN_SCRIPT}"
 }
 
 detector_weights() {

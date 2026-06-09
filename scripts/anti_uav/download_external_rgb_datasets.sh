@@ -21,7 +21,7 @@ download_gdrive() {
     return 1
   fi
   echo "[gdown] ${file_id} -> ${output_dir}"
-  gdown --fuzzy "https://drive.google.com/open?id=${file_id}" -O "${output_dir}/"
+  gdown "${file_id}" -O "${output_dir}/"
   touch "${marker}"
 }
 

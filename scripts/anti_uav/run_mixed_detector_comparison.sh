@@ -36,6 +36,7 @@ TRACK_LIMIT="${TRACK_LIMIT:-0}"
 ANTI_TRACK_SPLIT="${ANTI_TRACK_SPLIT:-test-dev}"
 TRACKER="${TRACKER:-nanotrack}"
 NANOTRACK_ROOT="${NANOTRACK_ROOT:-${REPO_ROOT}/third_party/nanotrack_vendor}"
+NANOTRACK_CONFIG="${NANOTRACK_CONFIG:-${REPO_ROOT}/runs/anti_uav/nanotrack_rgb_v2_anti_uav300_8gpu_absentaware_trainonly_907a622/config.yaml}"
 NANOTRACK_SNAPSHOT="${NANOTRACK_SNAPSHOT:-${REPO_ROOT}/runs/anti_uav/nanotrack_rgb_v2_anti_uav300_8gpu_absentaware_trainonly_907a622/snapshots/epoch_025.pth}"
 PRESENCE_MODEL="${PRESENCE_MODEL:-${REPO_ROOT}/runs/anti_uav/presence_pair_trainonly24_a52f825_model/pair_presence_edl.pt}"
 
@@ -203,6 +204,7 @@ build_tracker_args() {
   if [[ "${TRACKER}" == "nanotrack" ]]; then
     tracker_common_args+=(
       --nanotrack-root "${NANOTRACK_ROOT}"
+      --nanotrack-config "${NANOTRACK_CONFIG}"
       --nanotrack-snapshot "${NANOTRACK_SNAPSHOT}"
       --nanotrack-device "${EVAL_DEVICE}"
     )

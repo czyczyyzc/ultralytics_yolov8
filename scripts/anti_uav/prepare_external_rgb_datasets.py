@@ -480,12 +480,13 @@ def discover_records(args: argparse.Namespace) -> tuple[list[FrameRecord], dict[
                 records.extend(load_video_records(root, "halmstad_drone_detection", args.val_ratio, args.frame_step, args.negative_frame_step, args.max_video_frames))
             notes["datasets"][dataset] = {"records": len(records) - before, "roots": [str(root) for root in roots[:4]]}
         elif dataset == "aod4":
-            roots = [path for path in raw_root.rglob("*") if path.is_dir() and "aod" in path.name.lower()]
+            roots = [raw_root / "aod4"] if (raw_root / "aod4").exists() else []
+            roots = roots or [path for path in raw_root.iterdir() if path.is_dir() and "aod" in path.name.lower()]
             roots = roots or [raw_root]
             before = len(records)
-            for root in roots[:4]:
+            for root in roots[:1]:
                 records.extend(load_aod4_records(root))
-            notes["datasets"][dataset] = {"records": len(records) - before, "roots": [str(root) for root in roots[:4]]}
+            notes["datasets"][dataset] = {"records": len(records) - before, "roots": [str(root) for root in roots[:1]]}
         elif dataset == "generic-yolo":
             before = len(records)
             records.extend(load_static_image_records(raw_root, "generic_yolo", args.val_ratio))

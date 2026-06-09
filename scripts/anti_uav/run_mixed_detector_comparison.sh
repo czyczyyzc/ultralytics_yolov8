@@ -140,8 +140,20 @@ run_yolo_val() {
   local out_dir="${EVAL_ROOT}/detection_only/${dataset_name}"
   mkdir -p "${out_dir}"
   run_python - <<PY
+import json
 from pathlib import Path
 from ultralytics import YOLO
+
+def clean(value):
+    if isinstance(value, dict):
+        return {str(k): clean(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [clean(v) for v in value]
+    if hasattr(value, "item"):
+        return value.item()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 model = YOLO(r"${weights}")
 metrics = model.val(
@@ -154,6 +166,16 @@ metrics = model.val(
     exist_ok=True,
 )
 Path(r"${out_dir}/metrics.txt").write_text(str(metrics) + "\\n", encoding="utf-8")
+summary = {
+    "dataset": r"${dataset_name}",
+    "weights": r"${weights}",
+    "data": r"${data_yaml}",
+    "imgsz": int("${IMGSZ}"),
+    "results_dict": clean(getattr(metrics, "results_dict", {})),
+    "speed": clean(getattr(metrics, "speed", {})),
+    "fitness": clean(getattr(metrics, "fitness", None)),
+}
+Path(r"${out_dir}/metrics.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\\n", encoding="utf-8")
 PY
 }
 

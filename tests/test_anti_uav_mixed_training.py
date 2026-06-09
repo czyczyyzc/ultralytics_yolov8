@@ -131,10 +131,11 @@ def test_merge_nanotrack_datasets(tmp_path):
 def test_prepare_external_rgb_static_and_video(tmp_path):
     raw_root = tmp_path / "raw"
     dut_root = raw_root / "dut_anti_uav" / "train"
-    dut_root.mkdir(parents=True)
+    (dut_root / "img").mkdir(parents=True)
+    (dut_root / "xml").mkdir(parents=True)
     image = np.full((64, 96, 3), 255, dtype=np.uint8)
-    cv2.imwrite(str(dut_root / "dut_img.jpg"), image)
-    (dut_root / "dut_img.xml").write_text(
+    cv2.imwrite(str(dut_root / "img" / "dut_img.jpg"), image)
+    (dut_root / "xml" / "dut_img.xml").write_text(
         """
         <annotation>
           <object>
@@ -145,6 +146,13 @@ def test_prepare_external_rgb_static_and_video(tmp_path):
         """,
         encoding="utf-8",
     )
+    tracking_dir = raw_root / "dut_anti_uav" / "extracted" / "Anti-UAV-Tracking-V0" / "video01"
+    gt_dir = raw_root / "dut_anti_uav" / "extracted" / "Anti-UAV-Tracking-V0GT"
+    tracking_dir.mkdir(parents=True)
+    gt_dir.mkdir(parents=True)
+    cv2.imwrite(str(tracking_dir / "00001.jpg"), image)
+    cv2.imwrite(str(tracking_dir / "00002.jpg"), image)
+    (gt_dir / "video01_gt.txt").write_text("10 12 20 16\n11 12 20 16\n", encoding="utf-8")
 
     halmstad_root = raw_root / "halmstad_drone_detection"
     halmstad_root.mkdir(parents=True)
@@ -169,6 +177,8 @@ def test_prepare_external_rgb_static_and_video(tmp_path):
             "--datasets",
             "dut",
             "halmstad",
+            "--frame-step",
+            "1",
             "--negative-frame-step",
             "1",
         ],
@@ -177,13 +187,13 @@ def test_prepare_external_rgb_static_and_video(tmp_path):
         text=True,
     )
     summary = json.loads(result.stdout)
-    assert summary["yolo"]["positive"] == 1
+    assert summary["yolo"]["positive"] == 3
     assert summary["yolo"]["hard_negative"] == 1
     assert (output_yolo / "ExternalRGBDrone.yaml").exists()
     label_files = list((output_yolo / "labels").rglob("*.txt"))
-    assert len(label_files) == 2
+    assert len(label_files) == 4
     assert any(path.read_text(encoding="utf-8").strip() for path in label_files)
-    assert not list((output_nano / "rgb" / "crop511").rglob("*.jpg"))
+    assert list((output_nano / "rgb" / "crop511").rglob("*.jpg"))
 
 
 def test_convert_anti_uav300_supports_train_layout(tmp_path):

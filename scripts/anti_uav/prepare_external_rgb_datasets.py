@@ -170,6 +170,8 @@ def find_annotation_for_image(image_path: Path) -> Path | None:
     candidates = [
         image_path.with_suffix(".xml"),
         image_path.with_suffix(".txt"),
+        image_path.parent.parent / "xml" / f"{image_path.stem}.xml",
+        image_path.parent.parent / "XML" / f"{image_path.stem}.xml",
         image_path.parent.parent / "Annotations" / f"{image_path.stem}.xml",
         image_path.parent.parent / "annotations" / f"{image_path.stem}.xml",
         image_path.parent.parent / "labels" / f"{image_path.stem}.txt",
@@ -193,13 +195,16 @@ def label_kind(text: str) -> str:
 def load_static_image_records(root: Path, dataset_name: str, val_ratio: float) -> list[FrameRecord]:
     records: list[FrameRecord] = []
     for image_path in image_paths(root):
+        lowered_parts = {part.lower() for part in image_path.parts}
+        if "anti-uav-tracking-v0" in lowered_parts or "_external_rgb_frames" in lowered_parts:
+            continue
+        ann_path = find_annotation_for_image(image_path)
+        if ann_path is None:
+            continue
         frame = cv2.imread(str(image_path))
         if frame is None:
             continue
         height, width = frame.shape[:2]
-        ann_path = find_annotation_for_image(image_path)
-        if ann_path is None:
-            continue
         if ann_path.suffix.lower() == ".xml":
             raw_boxes = parse_voc_xml(ann_path)
         else:
@@ -330,6 +335,65 @@ def load_video_records(root: Path, dataset_name: str, val_ratio: float, frame_st
     return records
 
 
+def parse_xywh_gt(path: Path) -> list[tuple[float, float, float, float] | None]:
+    boxes: list[tuple[float, float, float, float] | None] = []
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        values = [float(part) for part in line.replace(",", " ").split() if is_number(part)]
+        if len(values) < 4:
+            boxes.append(None)
+            continue
+        x, y, w, h = values[:4]
+        boxes.append((x, y, x + w, y + h) if w > 0 and h > 0 else None)
+    return boxes
+
+
+def load_image_sequence_records(root: Path, dataset_name: str, val_ratio: float, frame_step: int, max_video_frames: int) -> list[FrameRecord]:
+    records: list[FrameRecord] = []
+    for tracking_root in root.rglob("Anti-UAV-Tracking-V0"):
+        if not tracking_root.is_dir():
+            continue
+        gt_root = tracking_root.with_name(f"{tracking_root.name}GT")
+        if not gt_root.exists():
+            continue
+        for sequence_dir in sorted(path for path in tracking_root.iterdir() if path.is_dir()):
+            gt_path = gt_root / f"{sequence_dir.name}_gt.txt"
+            if not gt_path.exists():
+                continue
+            boxes = parse_xywh_gt(gt_path)
+            images = sorted(path for path in sequence_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES)
+            sequence_name = safe_name(dataset_name, tracking_root.name, sequence_dir.name)
+            split = infer_split(sequence_dir, stable_split(sequence_name, val_ratio))
+            kept = 0
+            for position, image_path in enumerate(images):
+                frame_number = int(image_path.stem) if image_path.stem.isdigit() else position + 1
+                frame_index = frame_number - 1
+                if frame_index % max(1, frame_step) != 0:
+                    continue
+                if max_video_frames and kept >= max_video_frames:
+                    break
+                if frame_index < 0 or frame_index >= len(boxes) or boxes[frame_index] is None:
+                    continue
+                frame = cv2.imread(str(image_path))
+                if frame is None:
+                    continue
+                height, width = frame.shape[:2]
+                clamped = clamp_box(boxes[frame_index], width, height)
+                if clamped is None:
+                    continue
+                records.append(
+                    FrameRecord(
+                        dataset=dataset_name,
+                        split=split,
+                        image_path=image_path,
+                        boxes_xyxy=(clamped,),
+                        sequence_name=sequence_name,
+                        frame_index=frame_index,
+                    )
+                )
+                kept += 1
+    return records
+
+
 def discover_records(args: argparse.Namespace) -> tuple[list[FrameRecord], dict[str, object]]:
     raw_root = args.raw_root.expanduser().resolve()
     records: list[FrameRecord] = []
@@ -344,6 +408,7 @@ def discover_records(args: argparse.Namespace) -> tuple[list[FrameRecord], dict[
             before = len(records)
             for root in roots[:4]:
                 records.extend(load_static_image_records(root, "dut_anti_uav", args.val_ratio))
+                records.extend(load_image_sequence_records(root, "dut_anti_uav", args.val_ratio, args.frame_step, args.max_video_frames))
                 records.extend(load_video_records(root, "dut_anti_uav", args.val_ratio, args.frame_step, args.negative_frame_step, args.max_video_frames))
             notes["datasets"][dataset] = {"records": len(records) - before, "roots": [str(root) for root in roots[:4]]}
         elif dataset == "halmstad":

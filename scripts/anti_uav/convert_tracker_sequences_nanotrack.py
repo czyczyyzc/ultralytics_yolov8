@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -26,7 +27,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, default=DEFAULT_SOURCE_ROOT, help="tracker_sequences root containing train/val sequence folders.")
     parser.add_argument("--image-root", type=Path, default=DEFAULT_IMAGE_ROOT, help="Fallback image root used when frames.txt absolute paths are not valid.")
+    parser.add_argument(
+        "--sequence-root",
+        type=Path,
+        action="append",
+        default=[],
+        help="Sequence parent root containing <sequence>/frames and groundtruth.txt folders. Can be repeated.",
+    )
     parser.add_argument("--output-root", type=Path, required=True, help="Output NanoTrack dataset root.")
+    parser.add_argument("--val-ratio", type=float, default=0.2, help="Validation split ratio used with --sequence-root.")
     parser.add_argument("--crop-size", type=int, default=511)
     parser.add_argument("--exemplar-size", type=int, default=127)
     parser.add_argument("--context-amount", type=float, default=0.5)
@@ -57,24 +66,69 @@ def load_groundtruth(path: Path) -> list[list[float]]:
     return boxes
 
 
-def convert_split(split_dir: Path, split: str, image_root: Path, output_root: Path, crop_size: int, exemplar_size: int, context_amount: float, overwrite: bool) -> tuple[dict, int]:
+def read_frame_paths(sequence_dir: Path, image_root: Path, split: str) -> list[Path]:
+    frames_path = sequence_dir / "frames.txt"
+    if frames_path.exists():
+        return [
+            remap_frame_path(line.strip(), image_root, split)
+            for line in frames_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    frames_dir = sequence_dir / "frames"
+    if frames_dir.exists():
+        extensions = {".jpg", ".jpeg", ".png", ".bmp"}
+        return sorted(path.resolve() for path in frames_dir.iterdir() if path.is_file() and path.suffix.lower() in extensions)
+
+    raise FileNotFoundError(f"Missing frames.txt or frames/ in {sequence_dir}")
+
+
+def stable_is_val(name: str, val_ratio: float) -> bool:
+    ratio = min(max(float(val_ratio), 0.0), 1.0)
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()
+    value = int(digest[:8], 16) / 0xFFFFFFFF
+    return value < ratio
+
+
+def collect_sequence_dirs(sequence_roots: list[Path], val_ratio: float) -> tuple[list[tuple[str, Path]], list[tuple[str, Path]]]:
+    train: list[tuple[str, Path]] = []
+    val: list[tuple[str, Path]] = []
+    for sequence_root in sequence_roots:
+        if not sequence_root.exists():
+            raise FileNotFoundError(f"Sequence root does not exist: {sequence_root}")
+        prefix = sequence_root.parent.name
+        for sequence_dir in sorted(path for path in sequence_root.iterdir() if path.is_dir()):
+            video_name = f"{prefix}__{sequence_dir.name}"
+            target = val if stable_is_val(video_name, val_ratio) else train
+            target.append((video_name, sequence_dir))
+    return train, val
+
+
+def convert_sequences(
+    sequences: list[tuple[str, Path]],
+    split: str,
+    image_root: Path,
+    output_root: Path,
+    crop_size: int,
+    exemplar_size: int,
+    context_amount: float,
+    overwrite: bool,
+) -> tuple[dict, int]:
     crop_root = output_root / "rgb" / "crop511"
     crop_root.mkdir(parents=True, exist_ok=True)
     meta: dict[str, dict[str, dict[str, list[float]]]] = {}
     positive_frames = 0
-    for sequence_dir in sorted(path for path in split_dir.iterdir() if path.is_dir()):
-        frames_path = sequence_dir / "frames.txt"
+    for video_name, sequence_dir in sequences:
         groundtruth_path = sequence_dir / "groundtruth.txt"
-        if not frames_path.exists() or not groundtruth_path.exists():
+        if not groundtruth_path.exists():
             continue
-        frame_paths = [remap_frame_path(line.strip(), image_root, split) for line in frames_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        frame_paths = read_frame_paths(sequence_dir, image_root, split)
         boxes = load_groundtruth(groundtruth_path)
         if not frame_paths or not boxes:
             continue
         if len(frame_paths) != len(boxes):
             raise ValueError(f"Frame/groundtruth count mismatch in {sequence_dir}: {len(frame_paths)} vs {len(boxes)}")
 
-        video_name = sequence_dir.name
         target_dir = crop_root / video_name
         target_dir.mkdir(parents=True, exist_ok=True)
         track_key = "00"
@@ -101,22 +155,49 @@ def convert_split(split_dir: Path, split: str, image_root: Path, output_root: Pa
     return meta, positive_frames
 
 
+def convert_split(split_dir: Path, split: str, image_root: Path, output_root: Path, crop_size: int, exemplar_size: int, context_amount: float, overwrite: bool) -> tuple[dict, int]:
+    if not split_dir.exists():
+        return {}, 0
+    sequences = [(sequence_dir.name, sequence_dir) for sequence_dir in sorted(path for path in split_dir.iterdir() if path.is_dir())]
+    return convert_sequences(sequences, split, image_root, output_root, crop_size, exemplar_size, context_amount, overwrite)
+
+
 def main() -> None:
     args = parse_args()
     source_root = args.source_root.expanduser().resolve()
     image_root = args.image_root.expanduser().resolve()
+    sequence_roots = [path.expanduser().resolve() for path in args.sequence_root]
     output_root = args.output_root.expanduser().resolve()
 
-    if not source_root.exists():
+    if not source_root.exists() and not sequence_roots:
         raise FileNotFoundError(f"tracker_sequences root does not exist: {source_root}")
-    if not image_root.exists():
+    if not image_root.exists() and not sequence_roots:
         raise FileNotFoundError(f"image root does not exist: {image_root}")
 
-    summary = {"source_root": str(source_root), "image_root": str(image_root), "output_root": str(output_root), "modalities": {"rgb": {}}}
+    summary = {
+        "source_root": str(source_root),
+        "sequence_roots": [str(path) for path in sequence_roots],
+        "image_root": str(image_root),
+        "output_root": str(output_root),
+        "modalities": {"rgb": {}},
+    }
     modality_root = output_root / "rgb"
     modality_root.mkdir(parents=True, exist_ok=True)
-    train_meta, train_frames = convert_split(source_root / "train", "train", image_root, output_root, args.crop_size, args.exemplar_size, args.context_amount, args.overwrite)
-    val_meta, val_frames = convert_split(source_root / "val", "val", image_root, output_root, args.crop_size, args.exemplar_size, args.context_amount, args.overwrite)
+    if sequence_roots:
+        train_sequences, val_sequences = collect_sequence_dirs(sequence_roots, args.val_ratio)
+        train_meta, train_frames = convert_sequences(
+            train_sequences, "train", image_root, output_root, args.crop_size, args.exemplar_size, args.context_amount, args.overwrite
+        )
+        val_meta, val_frames = convert_sequences(
+            val_sequences, "val", image_root, output_root, args.crop_size, args.exemplar_size, args.context_amount, args.overwrite
+        )
+    else:
+        train_meta, train_frames = convert_split(
+            source_root / "train", "train", image_root, output_root, args.crop_size, args.exemplar_size, args.context_amount, args.overwrite
+        )
+        val_meta, val_frames = convert_split(
+            source_root / "val", "val", image_root, output_root, args.crop_size, args.exemplar_size, args.context_amount, args.overwrite
+        )
 
     (modality_root / "train.json").write_text(json.dumps(train_meta, indent=2, ensure_ascii=False), encoding="utf-8")
     (modality_root / "val.json").write_text(json.dumps(val_meta, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -88,6 +88,39 @@ def test_convert_tracker_sequences_nanotrack(tmp_path):
     assert crop_files
 
 
+def test_convert_tracker_sequences_nanotrack_sequence_roots(tmp_path):
+    sequence_root = tmp_path / "asset_a" / "sequences"
+    seq_dir = sequence_root / "seq_0001"
+    frames_dir = seq_dir / "frames"
+    frames_dir.mkdir(parents=True)
+    frame = np.full((64, 64, 3), 255, dtype=np.uint8)
+    for index in range(2):
+        cv2.imwrite(str(frames_dir / f"{index:06d}.jpg"), frame)
+    (seq_dir / "groundtruth.txt").write_text("10,12,20,16\n11,13,20,16\n", encoding="utf-8")
+
+    output_root = tmp_path / "nanotrack"
+    script = ROOT / "scripts" / "anti_uav" / "convert_tracker_sequences_nanotrack.py"
+    subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--sequence-root",
+            str(sequence_root),
+            "--output-root",
+            str(output_root),
+            "--val-ratio",
+            "0",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    train_json = json.loads((output_root / "rgb" / "train.json").read_text(encoding="utf-8"))
+    assert "asset_a__seq_0001" in train_json
+    crop_files = list((output_root / "rgb" / "crop511" / "asset_a__seq_0001").glob("*.jpg"))
+    assert len(crop_files) == 2
+
+
 def test_batch_tracker_sequence_eval_reads_frames_dir(tmp_path):
     seq_dir = tmp_path / "sequences" / "seq_0001"
     frames_dir = seq_dir / "frames"

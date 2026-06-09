@@ -280,6 +280,17 @@ def aggregate_metrics(sequence_summaries: list[dict]) -> dict:
     return replay_eval_batch_aggregate(sequence_summaries)
 
 
+def json_safe(value):
+    """Convert argparse values such as nested Path lists into JSON-safe objects."""
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    return value
+
+
 def replay_eval_batch_aggregate(sequence_summaries: list[dict]) -> dict:
     totals = {
         "sequence_count": len(sequence_summaries),
@@ -361,7 +372,7 @@ def main() -> None:
         "image_root": str(args.image_root),
         "split": args.split,
         "model": args.model,
-        "args": {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
+        "args": json_safe(vars(args)),
         "aggregate": aggregate_metrics(sequence_summaries),
         "sequence_summaries": sequence_summaries,
         "failures": failures,

@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--raw-root", type=Path, required=True, help="Root containing downloaded/extracted external datasets.")
     parser.add_argument("--yolo-root", type=Path, required=True, help="Output YOLO root with images/labels/{train,val}.")
     parser.add_argument("--nanotrack-root", type=Path, required=True, help="Output NanoTrack root with rgb/crop511 and train/val json.")
-    parser.add_argument("--datasets", nargs="+", default=["dut", "halmstad"], choices=("dut", "halmstad", "generic-yolo"))
+    parser.add_argument("--datasets", nargs="+", default=["dut", "halmstad"], choices=("dut", "halmstad", "aod4", "generic-yolo"))
     parser.add_argument("--val-ratio", type=float, default=0.15, help="Validation ratio for unsplit external sequences/images.")
     parser.add_argument("--frame-step", type=int, default=3, help="Keep every Nth frame from videos for YOLO/NanoTrack export.")
     parser.add_argument("--negative-frame-step", type=int, default=12, help="Keep every Nth hard-negative frame from non-drone videos.")
@@ -394,6 +394,67 @@ def load_image_sequence_records(root: Path, dataset_name: str, val_ratio: float,
     return records
 
 
+def load_aod4_records(root: Path) -> list[FrameRecord]:
+    records: list[FrameRecord] = []
+    for aod_root in root.rglob("AOD 4"):
+        if not aod_root.is_dir():
+            continue
+        coco_root = aod_root / "Annotations" / "COCO Annotation format"
+        image_root = aod_root / "Images"
+        if not coco_root.exists() or not image_root.exists():
+            continue
+        for source_split, target_split in (("train", "train"), ("valid", "val"), ("test", "val")):
+            annotation_path = coco_root / source_split / "_annotations.coco.json"
+            split_image_root = image_root / source_split
+            if not annotation_path.exists() or not split_image_root.exists():
+                continue
+            data = json.loads(annotation_path.read_text(encoding="utf-8"))
+            categories = {int(item["id"]): str(item.get("name", "")).lower() for item in data.get("categories", [])}
+            images = {int(item["id"]): item for item in data.get("images", [])}
+            grouped_annotations: dict[int, list[dict[str, object]]] = {}
+            for annotation in data.get("annotations", []):
+                grouped_annotations.setdefault(int(annotation["image_id"]), []).append(annotation)
+            for image_id, image_info in images.items():
+                file_name = str(image_info.get("file_name", ""))
+                image_path = split_image_root / file_name
+                if not image_path.exists():
+                    continue
+                width = int(image_info.get("width") or 0)
+                height = int(image_info.get("height") or 0)
+                if width <= 0 or height <= 0:
+                    frame = cv2.imread(str(image_path))
+                    if frame is None:
+                        continue
+                    height, width = frame.shape[:2]
+                drone_boxes: list[tuple[float, float, float, float]] = []
+                has_non_drone = False
+                for annotation in grouped_annotations.get(image_id, []):
+                    category_name = categories.get(int(annotation.get("category_id", -1)), "")
+                    bbox = annotation.get("bbox") or []
+                    if not isinstance(bbox, list) or len(bbox) < 4:
+                        continue
+                    x, y, w, h = [float(value) for value in bbox[:4]]
+                    clamped = clamp_box((x, y, x + w, y + h), width, height)
+                    if clamped is None:
+                        continue
+                    if "drone" in category_name:
+                        drone_boxes.append(clamped)
+                    else:
+                        has_non_drone = True
+                if not drone_boxes and not has_non_drone:
+                    continue
+                records.append(
+                    FrameRecord(
+                        dataset="aod4",
+                        split=target_split,
+                        image_path=image_path,
+                        boxes_xyxy=tuple(drone_boxes),
+                        is_hard_negative=has_non_drone and not drone_boxes,
+                    )
+                )
+    return records
+
+
 def discover_records(args: argparse.Namespace) -> tuple[list[FrameRecord], dict[str, object]]:
     raw_root = args.raw_root.expanduser().resolve()
     records: list[FrameRecord] = []
@@ -417,6 +478,13 @@ def discover_records(args: argparse.Namespace) -> tuple[list[FrameRecord], dict[
             before = len(records)
             for root in roots[:4]:
                 records.extend(load_video_records(root, "halmstad_drone_detection", args.val_ratio, args.frame_step, args.negative_frame_step, args.max_video_frames))
+            notes["datasets"][dataset] = {"records": len(records) - before, "roots": [str(root) for root in roots[:4]]}
+        elif dataset == "aod4":
+            roots = [path for path in raw_root.rglob("*") if path.is_dir() and "aod" in path.name.lower()]
+            roots = roots or [raw_root]
+            before = len(records)
+            for root in roots[:4]:
+                records.extend(load_aod4_records(root))
             notes["datasets"][dataset] = {"records": len(records) - before, "roots": [str(root) for root in roots[:4]]}
         elif dataset == "generic-yolo":
             before = len(records)

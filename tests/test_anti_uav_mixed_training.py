@@ -196,6 +196,69 @@ def test_prepare_external_rgb_static_and_video(tmp_path):
     assert list((output_nano / "rgb" / "crop511").rglob("*.jpg"))
 
 
+def test_prepare_external_rgb_aod4_coco(tmp_path):
+    raw_root = tmp_path / "raw"
+    aod_root = raw_root / "aod4" / "AOD 4"
+    for split in ("train", "valid"):
+        (aod_root / "Images" / split).mkdir(parents=True)
+        (aod_root / "Annotations" / "COCO Annotation format" / split).mkdir(parents=True)
+    image = np.full((64, 96, 3), 255, dtype=np.uint8)
+    cv2.imwrite(str(aod_root / "Images" / "train" / "drone.jpg"), image)
+    cv2.imwrite(str(aod_root / "Images" / "valid" / "bird.jpg"), image)
+    categories = [
+        {"id": 1, "name": "airplane"},
+        {"id": 2, "name": "bird"},
+        {"id": 3, "name": "drone"},
+        {"id": 4, "name": "helicopter"},
+    ]
+    (aod_root / "Annotations" / "COCO Annotation format" / "train" / "_annotations.coco.json").write_text(
+        json.dumps(
+            {
+                "categories": categories,
+                "images": [{"id": 1, "file_name": "drone.jpg", "width": 96, "height": 64}],
+                "annotations": [{"id": 1, "image_id": 1, "category_id": 3, "bbox": [10, 12, 20, 16]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (aod_root / "Annotations" / "COCO Annotation format" / "valid" / "_annotations.coco.json").write_text(
+        json.dumps(
+            {
+                "categories": categories,
+                "images": [{"id": 2, "file_name": "bird.jpg", "width": 96, "height": 64}],
+                "annotations": [{"id": 2, "image_id": 2, "category_id": 2, "bbox": [10, 12, 20, 16]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_yolo = tmp_path / "external_yolo"
+    output_nano = tmp_path / "external_nano"
+    script = ROOT / "scripts" / "anti_uav" / "prepare_external_rgb_datasets.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--raw-root",
+            str(raw_root),
+            "--yolo-root",
+            str(output_yolo),
+            "--nanotrack-root",
+            str(output_nano),
+            "--datasets",
+            "aod4",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    summary = json.loads(result.stdout)
+    assert summary["yolo"]["positive"] == 1
+    assert summary["yolo"]["hard_negative"] == 1
+    assert summary["yolo"]["train"] == 1
+    assert summary["yolo"]["val"] == 1
+
+
 def test_convert_anti_uav300_supports_train_layout(tmp_path):
     source_root = tmp_path / "train"
     sequence_dir = source_root / "seq_0001"

@@ -128,6 +128,64 @@ def test_merge_nanotrack_datasets(tmp_path):
     assert (output_root / "crop511" / "seq_a").is_symlink()
 
 
+def test_prepare_external_rgb_static_and_video(tmp_path):
+    raw_root = tmp_path / "raw"
+    dut_root = raw_root / "dut_anti_uav" / "train"
+    dut_root.mkdir(parents=True)
+    image = np.full((64, 96, 3), 255, dtype=np.uint8)
+    cv2.imwrite(str(dut_root / "dut_img.jpg"), image)
+    (dut_root / "dut_img.xml").write_text(
+        """
+        <annotation>
+          <object>
+            <name>drone</name>
+            <bndbox><xmin>10</xmin><ymin>12</ymin><xmax>40</xmax><ymax>32</ymax></bndbox>
+          </object>
+        </annotation>
+        """,
+        encoding="utf-8",
+    )
+
+    halmstad_root = raw_root / "halmstad_drone_detection"
+    halmstad_root.mkdir(parents=True)
+    video_path = halmstad_root / "VISIBLE_BIRD_001.mp4"
+    writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), 1.0, (96, 64))
+    writer.write(image)
+    writer.release()
+
+    output_yolo = tmp_path / "external_yolo"
+    output_nano = tmp_path / "external_nano"
+    script = ROOT / "scripts" / "anti_uav" / "prepare_external_rgb_datasets.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--raw-root",
+            str(raw_root),
+            "--yolo-root",
+            str(output_yolo),
+            "--nanotrack-root",
+            str(output_nano),
+            "--datasets",
+            "dut",
+            "halmstad",
+            "--negative-frame-step",
+            "1",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    summary = json.loads(result.stdout)
+    assert summary["yolo"]["positive"] == 1
+    assert summary["yolo"]["hard_negative"] == 1
+    assert (output_yolo / "ExternalRGBDrone.yaml").exists()
+    label_files = list((output_yolo / "labels").rglob("*.txt"))
+    assert len(label_files) == 2
+    assert any(path.read_text(encoding="utf-8").strip() for path in label_files)
+    assert not list((output_nano / "rgb" / "crop511").rglob("*.jpg"))
+
+
 def test_convert_anti_uav300_supports_train_layout(tmp_path):
     source_root = tmp_path / "train"
     sequence_dir = source_root / "seq_0001"

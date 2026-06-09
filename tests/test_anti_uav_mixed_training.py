@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_prepare_detector_mixed_dataset(tmp_path):
     anti_root = tmp_path / "anti"
     extra_root = tmp_path / "extra"
+    flat_root = tmp_path / "flat_extra"
     anti_root.mkdir()
     (anti_root / "train_rgb.txt").write_text("/tmp/a.jpg\n", encoding="utf-8")
     (anti_root / "val_rgb.txt").write_text("/tmp/b.jpg\n", encoding="utf-8")
@@ -27,18 +28,35 @@ def test_prepare_detector_mixed_dataset(tmp_path):
         label_path = extra_root / "labels" / split / f"{stem}.txt"
         image_path.write_bytes(b"x")
         label_path.write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+    (flat_root / "images").mkdir(parents=True)
+    (flat_root / "labels").mkdir(parents=True)
+    for stem in ("train_000001", "val_000002"):
+        (flat_root / "images" / f"{stem}.jpg").write_bytes(b"x")
+        (flat_root / "labels" / f"{stem}.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
 
     output_root = tmp_path / "merged"
     script = ROOT / "scripts" / "anti_uav" / "prepare_detector_mixed_dataset.py"
     result = subprocess.run(
-        [sys.executable, str(script), "--antiuav-root", str(anti_root), "--extra-yolo-root", str(extra_root), "--output-root", str(output_root)],
+        [
+            sys.executable,
+            str(script),
+            "--antiuav-root",
+            str(anti_root),
+            "--extra-yolo-root",
+            str(extra_root),
+            "--extra-yolo-root",
+            str(flat_root),
+            "--output-root",
+            str(output_root),
+        ],
         check=True,
         capture_output=True,
         text=True,
     )
     summary = json.loads(result.stdout)
-    assert summary["train_items"] == 2
-    assert summary["val_items"] == 2
+    assert summary["train_items"] == 3
+    assert summary["val_items"] == 3
+    assert len(summary["extra_yolo_roots"]) == 2
     assert (output_root / "AntiUAV300PlusHanlueRGB.yaml").exists()
 
 
@@ -68,6 +86,24 @@ def test_convert_tracker_sequences_nanotrack(tmp_path):
     assert "train_000001" in train_json
     crop_files = list((output_root / "rgb" / "crop511" / "train_000001").glob("*.jpg"))
     assert crop_files
+
+
+def test_batch_tracker_sequence_eval_reads_frames_dir(tmp_path):
+    seq_dir = tmp_path / "sequences" / "seq_0001"
+    frames_dir = seq_dir / "frames"
+    frames_dir.mkdir(parents=True)
+    for index in range(2):
+        frame = np.full((32, 32, 3), 255, dtype=np.uint8)
+        cv2.imwrite(str(frames_dir / f"{index:06d}.jpg"), frame)
+    (seq_dir / "groundtruth.txt").write_text("4,6,12,10\n0,0,0,0\n", encoding="utf-8")
+
+    sys.path.insert(0, str(ROOT))
+    from scripts.anti_uav.batch_tracker_sequence_eval import read_sequence
+
+    frame_paths, gt = read_sequence(seq_dir, tmp_path / "unused_images", "val")
+    assert [path.name for path in frame_paths] == ["000000.jpg", "000001.jpg"]
+    assert gt[1] == (4.0, 6.0, 16.0, 16.0)
+    assert gt[2] is None
 
 
 def test_merge_nanotrack_datasets(tmp_path):

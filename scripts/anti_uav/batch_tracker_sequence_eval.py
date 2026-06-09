@@ -42,6 +42,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True, help="Detector weights.")
     parser.add_argument("--tracker-root", type=Path, default=DEFAULT_TRACKER_ROOT, help="tracker_sequences root.")
     parser.add_argument("--image-root", type=Path, default=DEFAULT_IMAGE_ROOT, help="Fallback image root.")
+    parser.add_argument(
+        "--sequence-root",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "Sequence parent root to evaluate directly. Can be repeated. "
+            "When provided, --tracker-root/--split are ignored."
+        ),
+    )
     parser.add_argument("--split", default="val", help="Split folder under --tracker-root.")
     parser.add_argument("--output-root", required=True, help="Directory for per-sequence summaries.")
     parser.add_argument("--limit", type=int, default=0, help="Optional sequence cap.")
@@ -100,17 +110,31 @@ def remap_frame_path(raw_path: str, image_root: Path, split: str) -> Path:
     raise FileNotFoundError(f"Frame path not found: {raw_path} (fallback: {fallback})")
 
 
-def read_sequence(sequence_dir: Path, image_root: Path, split: str) -> tuple[list[Path], dict[int, Optional[tuple[float, float, float, float]]]]:
+def read_frame_paths(sequence_dir: Path, image_root: Path, split: str) -> list[Path]:
     frames_path = sequence_dir / "frames.txt"
-    groundtruth_path = sequence_dir / "groundtruth.txt"
-    if not frames_path.exists() or not groundtruth_path.exists():
-        raise FileNotFoundError(f"Missing frames.txt or groundtruth.txt in {sequence_dir}")
+    if frames_path.exists():
+        return [
+            remap_frame_path(line.strip(), image_root, split)
+            for line in frames_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
 
-    frame_paths = [
-        remap_frame_path(line.strip(), image_root, split)
-        for line in frames_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    frames_dir = sequence_dir / "frames"
+    if frames_dir.exists():
+        extensions = {".jpg", ".jpeg", ".png", ".bmp"}
+        frame_paths = sorted(path.resolve() for path in frames_dir.iterdir() if path.is_file() and path.suffix.lower() in extensions)
+        if frame_paths:
+            return frame_paths
+
+    raise FileNotFoundError(f"Missing frames.txt or frames/ images in {sequence_dir}")
+
+
+def read_sequence(sequence_dir: Path, image_root: Path, split: str) -> tuple[list[Path], dict[int, Optional[tuple[float, float, float, float]]]]:
+    groundtruth_path = sequence_dir / "groundtruth.txt"
+    if not groundtruth_path.exists():
+        raise FileNotFoundError(f"Missing groundtruth.txt in {sequence_dir}")
+
+    frame_paths = read_frame_paths(sequence_dir, image_root, split)
     ground_truth: dict[int, Optional[tuple[float, float, float, float]]] = {}
     rows = [line.strip() for line in groundtruth_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if len(frame_paths) != len(rows):
@@ -290,36 +314,50 @@ def main() -> None:
     args = parse_args()
     args.tracker_root = args.tracker_root.expanduser().resolve()
     args.image_root = args.image_root.expanduser().resolve()
+    args.sequence_root = [path.expanduser().resolve() for path in args.sequence_root]
     output_root = Path(args.output_root).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    split_root = args.tracker_root / args.split
-    if not split_root.exists():
-        raise FileNotFoundError(f"Split root does not exist: {split_root}")
+    sequence_roots = args.sequence_root or [args.tracker_root / args.split]
+    for sequence_root in sequence_roots:
+        if not sequence_root.exists():
+            raise FileNotFoundError(f"Sequence root does not exist: {sequence_root}")
 
     model = YOLO(args.model)
     detector = replay_eval.build_detector(model, args)
     sequence_summaries: list[dict] = []
     failures: list[dict] = []
 
-    for index, sequence_dir in enumerate(sorted(path for path in split_root.iterdir() if path.is_dir()), start=1):
+    sequence_dirs: list[tuple[Path, Path]] = []
+    for sequence_root in sequence_roots:
+        sequence_dirs.extend((sequence_root, path) for path in sorted(item for item in sequence_root.iterdir() if item.is_dir()))
+
+    for index, (sequence_root, sequence_dir) in enumerate(sequence_dirs, start=1):
         if args.limit and len(sequence_summaries) + len(failures) >= args.limit:
             break
-        sequence_out = output_root / sequence_dir.name
+        sequence_name = sequence_dir.name
+        if len(sequence_roots) > 1:
+            sequence_name = f"{sequence_root.parent.name}__{sequence_dir.name}"
+        sequence_out = output_root / sequence_name
         summary_path = sequence_out / "summary.json"
         if args.skip_existing and summary_path.exists():
             sequence_summaries.append(json.loads(summary_path.read_text(encoding="utf-8")))
             continue
         sequence_out.mkdir(parents=True, exist_ok=True)
         try:
-            sequence_summaries.append(evaluate_sequence(sequence_dir, model, detector, args, sequence_out))
+            summary = evaluate_sequence(sequence_dir, model, detector, args, sequence_out)
+            summary["sequence_root"] = str(sequence_root)
+            summary["sequence"] = sequence_name
+            replay_eval.write_json(summary_path, summary)
+            sequence_summaries.append(summary)
         except Exception as exc:  # noqa: BLE001
-            failures.append({"sequence": sequence_dir.name, "error": repr(exc)})
+            failures.append({"sequence": sequence_name, "sequence_root": str(sequence_root), "error": repr(exc)})
             (sequence_out / "failure.log").write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
-        print(f"[{index}] {sequence_dir.name} done", flush=True)
+        print(f"[{index}] {sequence_name} done", flush=True)
 
     aggregate = {
         "tracker_root": str(args.tracker_root),
+        "sequence_roots": [str(path) for path in sequence_roots],
         "image_root": str(args.image_root),
         "split": args.split,
         "model": args.model,

@@ -10,6 +10,7 @@ PYTHON_BIN="${PYTHON_BIN:-$([[ -x "${DEFAULT_PYTHON_BIN}" ]] && echo "${DEFAULT_
 ANTIUAV_SOURCE_ROOT="${ANTIUAV_SOURCE_ROOT:-/mnt/chenziye/datasets/anti_uav/Anti-UAV300/train}"
 ANTIUAV_YOLO_ROOT="${ANTIUAV_YOLO_ROOT:-/mnt/chenziye/datasets/anti_uav/anti_uav300_yolo_trainonly}"
 EXTRA_YOLO_ROOT="${EXTRA_YOLO_ROOT:-/mnt/hanlue/hanlue_multirotor_assets_phase1_20260525}"
+EXTRA_YOLO_ROOTS="${EXTRA_YOLO_ROOTS:-${EXTRA_YOLO_ROOT}}"
 MERGED_YOLO_ROOT="${MERGED_YOLO_ROOT:-/mnt/chenziye/datasets/anti_uav/anti_uav300_plus_hanlue_yolo_trainonly}"
 MODEL="${MODEL:-${REPO_ROOT}/checkpoints/yolov8n.pt}"
 EPOCHS="${EPOCHS:-50}"
@@ -33,10 +34,17 @@ if [[ ! -d "${ANTIUAV_SOURCE_ROOT}" ]]; then
   echo "Anti-UAV300 root not found: ${ANTIUAV_SOURCE_ROOT}" >&2
   exit 1
 fi
-if [[ ! -d "${EXTRA_YOLO_ROOT}" ]]; then
-  echo "Extra YOLO root not found: ${EXTRA_YOLO_ROOT}" >&2
+read -r -a EXTRA_YOLO_ROOT_ARRAY <<< "${EXTRA_YOLO_ROOTS}"
+if [[ "${#EXTRA_YOLO_ROOT_ARRAY[@]}" -eq 0 ]]; then
+  echo "No extra YOLO roots configured." >&2
   exit 1
 fi
+for extra_root in "${EXTRA_YOLO_ROOT_ARRAY[@]}"; do
+  if [[ ! -d "${extra_root}" ]]; then
+    echo "Extra YOLO root not found: ${extra_root}" >&2
+    exit 1
+  fi
+done
 
 if [[ ! -f "${ANTIUAV_YOLO_ROOT}/train_rgb.txt" || "${OVERWRITE_EXPORT}" == "1" ]]; then
   "${PYTHON_BIN}" "${ANTI_CONVERTER}" \
@@ -49,11 +57,16 @@ if [[ ! -f "${ANTIUAV_YOLO_ROOT}/train_rgb.txt" || "${OVERWRITE_EXPORT}" == "1" 
     $([[ "${OVERWRITE_EXPORT}" == "1" ]] && echo --overwrite)
 fi
 
-"${PYTHON_BIN}" "${MERGER}" \
-  --antiuav-root "${ANTIUAV_YOLO_ROOT}" \
-  --extra-yolo-root "${EXTRA_YOLO_ROOT}" \
-  --output-root "${MERGED_YOLO_ROOT}" \
+MERGE_ARGS=(
+  "${MERGER}"
+  --antiuav-root "${ANTIUAV_YOLO_ROOT}"
+  --output-root "${MERGED_YOLO_ROOT}"
   --modality rgb
+)
+for extra_root in "${EXTRA_YOLO_ROOT_ARRAY[@]}"; do
+  MERGE_ARGS+=(--extra-yolo-root "${extra_root}")
+done
+"${PYTHON_BIN}" "${MERGE_ARGS[@]}"
 
 DATA_YAML="${MERGED_YOLO_ROOT}/AntiUAV300PlusHanlueRGB.yaml"
 

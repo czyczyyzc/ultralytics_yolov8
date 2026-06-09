@@ -260,7 +260,9 @@ if [[ "${MODE}" == "all" || "${MODE}" == "train" ]]; then
 fi
 
 if [[ "${MODE}" == "all" || "${MODE}" == "eval" ]]; then
-  write_eval_yamls
+  if [[ "${RUN_DETECTION_EVAL}" == "1" ]]; then
+    write_eval_yamls
+  fi
   weights="$(detector_weights)"
   if [[ "${RUN_DETECTION_EVAL}" == "1" ]]; then
     run_detection_evals "${weights}"

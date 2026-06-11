@@ -48,6 +48,22 @@ def resolve_default_presence_model() -> Path | None:
     return None
 
 
+def parse_imgsz(value: str | int | list[int] | tuple[int, ...]) -> int | list[int]:
+    """Parse detector image size as either a scalar or [height, width]."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (list, tuple)):
+        items = [int(item) for item in value]
+    else:
+        raw = str(value).replace(",", " ").replace("x", " ").replace("X", " ")
+        items = [int(part) for part in raw.split() if part.strip()]
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return items
+    raise ValueError(f"--imgsz must be one integer or height,width, got: {value!r}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an alerting-only anti-UAV perception pipeline on video.")
     parser.add_argument("--model", default="yolov8n.pt", help="YOLO model path.")
@@ -90,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
     parser.add_argument("--conf", type=float, default=0.45, help="Detector confidence threshold.")
-    parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
+    parser.add_argument("--imgsz", default="640", help="Detector input size, for example 640 or 544,960.")
     parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
     parser.add_argument(
         "--detector-assist-policy",
@@ -135,7 +151,7 @@ def build_detector(model, args: argparse.Namespace):
         model,
         class_names=class_names or None,
         conf=args.conf,
-        imgsz=args.imgsz,
+        imgsz=parse_imgsz(args.imgsz),
         device=args.device,
         tile_size=args.tile_size if args.tile_size > 0 else None,
         tile_overlap=args.tile_overlap,

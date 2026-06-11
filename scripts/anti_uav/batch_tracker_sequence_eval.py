@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-classes", default="drone,uav", help="Comma-separated class-name allowlist.")
     parser.add_argument("--conf", type=float, default=0.45, help="Detector confidence threshold.")
     parser.add_argument("--min-confidence", type=float, default=0.45, help="State-machine detector confidence threshold.")
-    parser.add_argument("--imgsz", type=int, default=640, help="Detector input size.")
+    parser.add_argument("--imgsz", default="640", help="Detector input size, for example 640 or 544,960.")
     parser.add_argument("--device", default=None, help="Torch device for detector inference.")
     parser.add_argument("--detector-assist-policy", default="edtc_like", choices=("granular", "edtc_like"))
     parser.add_argument("--detect-interval", type=int, default=2)

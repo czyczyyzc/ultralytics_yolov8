@@ -134,7 +134,12 @@ class YOLODataset(BaseDataset):
     def get_labels(self):
         """Returns dictionary of labels for YOLO training."""
         self.label_files = img2label_paths(self.im_files)
-        cache_path = Path(self.label_files[0]).parent.with_suffix(".cache")
+        img_path = Path(self.img_path) if isinstance(self.img_path, (str, Path)) else None
+        cache_path = (
+            img_path.with_suffix(".cache")
+            if img_path is not None and img_path.is_file()
+            else Path(self.label_files[0]).parent.with_suffix(".cache")
+        )
         try:
             cache, exists = load_dataset_cache_file(cache_path), True  # attempt to load a *.cache file
             assert cache["version"] == DATASET_CACHE_VERSION  # matches current version
@@ -174,12 +179,13 @@ class YOLODataset(BaseDataset):
 
     def build_transforms(self, hyp=None):
         """Builds and appends transforms to the list."""
+        imgsz = tuple(self.imgsz) if isinstance(self.imgsz, (list, tuple)) else (self.imgsz, self.imgsz)
         if self.augment:
             hyp.mosaic = hyp.mosaic if self.augment and not self.rect else 0.0
             hyp.mixup = hyp.mixup if self.augment and not self.rect else 0.0
             transforms = v8_transforms(self, self.imgsz, hyp)
         else:
-            transforms = Compose([LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
+            transforms = Compose([LetterBox(new_shape=imgsz, scaleup=False)])
         transforms.append(
             Format(
                 bbox_format="xywh",

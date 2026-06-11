@@ -2280,9 +2280,12 @@ def v8_transforms(dataset, imgsz, hyp, stretch=False):
         >>> transforms = v8_transforms(dataset, imgsz=640, hyp=hyp)
         >>> augmented_data = transforms(dataset[0])
     """
+    rectangular = isinstance(imgsz, (list, tuple))
+    target_shape = tuple(imgsz) if rectangular else (imgsz, imgsz)
+    mosaic_imgsz = max(target_shape) if rectangular else imgsz
     pre_transform = Compose(
         [
-            Mosaic(dataset, imgsz=imgsz, p=hyp.mosaic),
+            Mosaic(dataset, imgsz=mosaic_imgsz, p=0.0 if rectangular else hyp.mosaic),
             CopyPaste(p=hyp.copy_paste),
             RandomPerspective(
                 degrees=hyp.degrees,
@@ -2290,7 +2293,7 @@ def v8_transforms(dataset, imgsz, hyp, stretch=False):
                 scale=hyp.scale,
                 shear=hyp.shear,
                 perspective=hyp.perspective,
-                pre_transform=None if stretch else LetterBox(new_shape=(imgsz, imgsz)),
+                pre_transform=None if stretch else LetterBox(new_shape=target_shape),
             ),
         ]
     )

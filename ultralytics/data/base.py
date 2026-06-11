@@ -96,6 +96,14 @@ class BaseDataset(Dataset):
         # Transforms
         self.transforms = self.build_transforms(hyp=hyp)
 
+    def _imgsz_hw(self):
+        """Return configured image size as (height, width)."""
+        if isinstance(self.imgsz, (list, tuple, np.ndarray)):
+            if len(self.imgsz) == 1:
+                return int(self.imgsz[0]), int(self.imgsz[0])
+            return int(self.imgsz[0]), int(self.imgsz[1])
+        return int(self.imgsz), int(self.imgsz)
+
     def get_img_files(self, img_path):
         """Read image files."""
         try:
@@ -158,13 +166,14 @@ class BaseDataset(Dataset):
                 raise FileNotFoundError(f"Image Not Found {f}")
 
             h0, w0 = im.shape[:2]  # orig hw
+            target_h, target_w = self._imgsz_hw()
             if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
-                r = self.imgsz / max(h0, w0)  # ratio
+                r = min(target_h / h0, target_w / w0)  # ratio
                 if r != 1:  # if sizes are not equal
-                    w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
+                    w, h = (min(math.ceil(w0 * r), target_w), min(math.ceil(h0 * r), target_h))
                     im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
-            elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
-                im = cv2.resize(im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+            elif not (h0 == target_h and w0 == target_w):  # resize by stretching image to target shape
+                im = cv2.resize(im, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
 
             # Add to buffer if training with augmentations
             if self.augment:
@@ -205,9 +214,10 @@ class BaseDataset(Dataset):
         """Check image caching requirements vs available memory."""
         b, gb = 0, 1 << 30  # bytes of cached images, bytes per gigabytes
         n = min(self.ni, 30)  # extrapolate from 30 random images
+        target_h, target_w = self._imgsz_hw()
         for _ in range(n):
             im = cv2.imread(random.choice(self.im_files))  # sample image
-            ratio = self.imgsz / max(im.shape[0], im.shape[1])  # max(h, w)  # ratio
+            ratio = min(target_h / im.shape[0], target_w / im.shape[1])
             b += im.nbytes * ratio**2
         mem_required = b * self.ni / n * (1 + safety_margin)  # GB required to cache dataset into RAM
         mem = psutil.virtual_memory()
@@ -243,7 +253,7 @@ class BaseDataset(Dataset):
             elif mini > 1:
                 shapes[i] = [1, 1 / mini]
 
-        self.batch_shapes = np.ceil(np.array(shapes) * self.imgsz / self.stride + self.pad).astype(int) * self.stride
+        self.batch_shapes = np.ceil(np.array(shapes) * np.array(self._imgsz_hw()) / self.stride + self.pad).astype(int) * self.stride
         self.batch = bi  # batch index of image
 
     def __getitem__(self, index):

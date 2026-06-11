@@ -97,7 +97,8 @@ class BaseValidator:
         (self.save_dir / "labels" if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
         if self.args.conf is None:
             self.args.conf = 0.001  # default conf=0.001
-        self.args.imgsz = check_imgsz(self.args.imgsz, max_dim=1)
+        imgsz_is_hw = isinstance(self.args.imgsz, (list, tuple)) and len(self.args.imgsz) == 2
+        self.args.imgsz = check_imgsz(self.args.imgsz, max_dim=2 if imgsz_is_hw else 1)
 
         self.plots = {}
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
@@ -130,12 +131,14 @@ class BaseValidator:
             self.device = model.device  # update device
             self.args.half = model.fp16  # update half
             stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-            imgsz = check_imgsz(self.args.imgsz, stride=stride)
+            imgsz_is_hw = isinstance(self.args.imgsz, (list, tuple)) and len(self.args.imgsz) == 2
+            imgsz = check_imgsz(self.args.imgsz, stride=stride, max_dim=2 if imgsz_is_hw else 1)
             if engine:
                 self.args.batch = model.batch_size
             elif not pt and not jit:
                 self.args.batch = model.metadata.get("batch", 1)  # export.py models default to batch-size 1
-                LOGGER.info(f"Setting batch={self.args.batch} input of shape ({self.args.batch}, 3, {imgsz}, {imgsz})")
+                shape = tuple(imgsz) if isinstance(imgsz, list) else (imgsz, imgsz)
+                LOGGER.info(f"Setting batch={self.args.batch} input of shape ({self.args.batch}, 3, {shape[0]}, {shape[1]})")
 
             if str(self.args.data).split(".")[-1] in {"yaml", "yml"}:
                 self.data = check_det_dataset(self.args.data)

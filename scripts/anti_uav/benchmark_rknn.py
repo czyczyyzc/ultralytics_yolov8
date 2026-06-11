@@ -47,6 +47,40 @@ def load_runtime():
     return runtime, runtime_type
 
 
+def infer_with_layout_fallback(runtime, tensor_nhwc: np.ndarray, cached_mode: str | None):
+    rgb = tensor_nhwc[0]
+    candidates = {
+        "nhwc_batch": (np.ascontiguousarray(tensor_nhwc), "nhwc"),
+        "nchw_batch": (np.ascontiguousarray(rgb.transpose(2, 0, 1)[None]), "nchw"),
+        "raw_hwc": (np.ascontiguousarray(rgb), None),
+    }
+    order = [cached_mode] if cached_mode else []
+    order.extend(mode for mode in candidates if mode not in order)
+
+    last_error = None
+    for mode in order:
+        input_tensor, data_format = candidates[mode]
+        kwargs = {"inputs": [input_tensor]}
+        if data_format is not None:
+            kwargs["data_format"] = [data_format]
+        try:
+            outputs = runtime.inference(**kwargs)
+        except TypeError:
+            kwargs.pop("data_format", None)
+            try:
+                outputs = runtime.inference(**kwargs)
+            except Exception as exc:
+                last_error = exc
+                continue
+        except Exception as exc:
+            last_error = exc
+            continue
+        if outputs is not None:
+            return outputs, mode
+
+    raise RuntimeError(f"RKNN inference failed for all input layouts, last error: {last_error}")
+
+
 def iter_frames(source: str):
     source_path = Path(source).expanduser().resolve()
     if source_path.is_dir():
@@ -127,14 +161,15 @@ def main() -> None:
 
     tensors = [prepare_frame(frame, args.input_mode, args.clahe, input_size) for _, frame in frames]
 
+    input_layout = None
     for tensor in tensors[: min(args.warmup, len(tensors))]:
-        runtime.inference(inputs=[tensor])
+        _, input_layout = infer_with_layout_fallback(runtime, tensor, input_layout)
 
     times_ms = []
     output_shapes = None
     for index, tensor in enumerate(tensors, start=1):
         start = perf_counter()
-        outputs = runtime.inference(inputs=[tensor])
+        outputs, input_layout = infer_with_layout_fallback(runtime, tensor, input_layout)
         elapsed_ms = (perf_counter() - start) * 1000.0
         times_ms.append(elapsed_ms)
         if output_shapes is None:
@@ -149,6 +184,7 @@ def main() -> None:
     mean_ms = float(sum(times_ms) / len(times_ms))
     summary = {
         "runtime": runtime_type,
+        "input_layout": input_layout,
         "model": str(model_path),
         "frames": len(times_ms),
         "input_size": list(input_size),

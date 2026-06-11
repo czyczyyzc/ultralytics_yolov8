@@ -42,3 +42,5 @@ mmcv
 mmdetection3d
 checkpoints
 work_dirs
+runs/
+rknn_model_zoo/

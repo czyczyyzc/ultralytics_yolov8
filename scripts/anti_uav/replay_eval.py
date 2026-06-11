@@ -141,7 +141,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default=None, help="Torch device for detector inference, for example 0 or cpu.")
     parser.add_argument(
         "--detector-assist-policy",
-        default="granular",
+        default="edtc_like",
         choices=("granular", "edtc_like"),
         help="Detector-assisted tracking policy. 'granular' uses the current multi-stage fusion logic, while 'edtc_like' mimics anti_uav_edtc_jit style detect/search and track/until-uncertain switching.",
     )

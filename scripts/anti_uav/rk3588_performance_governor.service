@@ -1,0 +1,12 @@
+[Unit]
+Description=Pin RK3588 CPU/NPU/DMC governors to performance
+After=local-fs.target systemd-modules-load.service loadcpufreq.service cpufrequtils.service
+ConditionPathExists=/sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rk3588_set_performance.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

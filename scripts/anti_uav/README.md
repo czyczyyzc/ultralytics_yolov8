@@ -220,6 +220,28 @@ Useful tuning flags:
 - `--nanotrack-snapshot`
 - `--nanotrack-device`
 
+## RK3588 persistent performance governor
+
+If you want repeatable RK3588 detector benchmarks after reboot, use:
+
+- `scripts/anti_uav/rk3588_set_performance.sh`
+- `scripts/anti_uav/rk3588_performance_governor.service`
+
+The script pins:
+
+- CPU `cpufreq` governors to `performance`
+- `dmc` governor to `performance`
+- `npu` governor to `performance`
+
+Typical board-side install:
+
+```bash
+sudo install -m 755 scripts/anti_uav/rk3588_set_performance.sh /usr/local/sbin/rk3588_set_performance.sh
+sudo install -m 644 scripts/anti_uav/rk3588_performance_governor.service /etc/systemd/system/rk3588-performance-governor.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now rk3588-performance-governor.service
+```
+
 ## `batch_replay_eval.py`
 
 Runs `replay_eval.py` over an entire Anti-UAV split and aggregates the results.
@@ -397,3 +419,130 @@ Useful flags:
 The generated manifest records the feature tensor shapes so the later RKNN conversion
 and board-side runtime can be checked against the expected `T-backbone / X-backbone / Head`
 interfaces before building `.rknn` artifacts.
+
+## `setup_rk3588_board.sh`
+
+Bootstraps a Rockchip RK3588 board for board-side deployment:
+
+- creates or reuses a venv under `/data/venvs/anti_uav_rk3588`
+- installs `onnxruntime`, `yacs`, and `rknn-toolkit-lite2`
+- clones `Try2ChangeX/NanoTrack_RK3588_python`
+- downloads the RK-optimized YOLOv8n ONNX from the bundled RKNN model-zoo example
+
+Example on the board after syncing this repository to `/data/codes/ultralytics_yolov8`:
+
+```bash
+bash scripts/anti_uav/setup_rk3588_board.sh
+```
+
+Useful overrides:
+
+- `VENV_DIR=/data/venvs/custom_env`
+- `NANOTRACK_ROOT=/data/codes/NanoTrack_RK3588_python`
+- `MODEL_DIR=/data/models/anti_uav`
+- `YOLO_ONNX_PATH=/data/models/anti_uav/custom_detector.onnx`
+- `DOWNLOAD_YOLO_ONNX=0`
+
+## `anti_uav_rk3588.py`
+
+Runs the alerting-only perception stack on RK3588 without requiring PyTorch on the board.
+
+Detector backends:
+
+- `.onnx` via `onnxruntime`
+- `.rknn` via `rknn-toolkit-lite2`
+
+Tracker backends:
+
+- `nanotrack_rknn` using the `Try2ChangeX/NanoTrack_RK3588_python` split runtime
+- `template_match` as a zero-dependency fallback
+
+Example with the default RK-optimized YOLOv8n ONNX plus NanoTrack RKNN:
+
+```bash
+source /data/venvs/anti_uav_rk3588/bin/activate
+python scripts/anti_uav/anti_uav_rk3588.py \
+  --model /data/models/anti_uav/yolov8n_rkopt.onnx \
+  --source /path/to/video.mp4 \
+  --tracker nanotrack_rknn \
+  --nanotrack-root /data/codes/NanoTrack_RK3588_python \
+  --class-names rknn_model_zoo/examples/yolov8/model/coco_80_labels_list.txt \
+  --target-class-names airplane,bird \
+  --save-output /data/models/anti_uav/preview.mp4
+```
+
+For a custom anti-UAV detector, pass your own class list and model path instead:
+
+```bash
+python scripts/anti_uav/anti_uav_rk3588.py \
+  --model /data/models/anti_uav/custom_best.rknn \
+  --source /path/to/video.mp4 \
+  --tracker nanotrack_rknn \
+  --nanotrack-root /data/codes/NanoTrack_RK3588_python \
+  --class-names drone \
+  --target-class-names drone
+```
+
+Notes:
+
+- The board-side script accepts either a final `.rknn` detector or an `.onnx` detector for CPU fallback.
+- The official RKNN stack uses `RKNN-Toolkit2` on a computer for model conversion and `RKNN-Toolkit-Lite2` on the board for inference.
+
+## `prepare_rknn_calibration.py`
+
+Samples frames from a video into JPEGs plus a `dataset.txt` manifest suitable for RKNN quantization.
+
+Example:
+
+```bash
+python scripts/anti_uav/prepare_rknn_calibration.py \
+  --source /mnt/chenziye/datasets/anti_uav/Anti-UAV300/test-dev/20190925_101846_1_1/RGB.mp4 \
+  --output-dir runs/anti_uav/calibration_rgb_1_1 \
+  --dataset-txt runs/anti_uav/calibration_rgb_1_1/dataset.txt \
+  --max-frames 64 \
+  --frame-step 30 \
+  --width 960 \
+  --height 960
+```
+
+## `export_detector_rknn_legacy.sh`
+
+Host-side helper for boards that still run the older RKNN runtime line such as `librknnrt 1.4.0`.
+
+It does two things:
+
+1. exports a custom Ultralytics detector checkpoint to the repo's RKNN-optimized ONNX layout
+2. sanitizes the ONNX graph for RKNN `v1.4.0` compatibility and builds an old-format `.rknn` using a separate `python=3.8` RKNN-Toolkit2 environment
+
+Typical FP32 build on the conversion host:
+
+```bash
+CONDA_BIN=/mnt/chenziye/miniconda3/bin/conda \
+EXPORT_PYTHON=/mnt/chenziye/codes/ultralytics_yolov8/.venv/bin/python \
+RKNN_WHEEL=/path/to/rknn_toolkit2-1.4.0_22dcfef4-cp38-cp38-linux_x86_64.whl \
+MODEL=/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/yolov8n_anti_uav300_rgb_8gpu_b128_e50_nbs128/weights/best.pt \
+IMGSZ=960 \
+RKNN_OUT=/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/yolov8n_anti_uav300_rgb_8gpu_b128_e50_nbs128/weights/best_v140_fp.rknn \
+bash scripts/anti_uav/export_detector_rknn_legacy.sh
+```
+
+INT8 build with calibration sampled from a video:
+
+```bash
+CONDA_BIN=/mnt/chenziye/miniconda3/bin/conda \
+EXPORT_PYTHON=/mnt/chenziye/codes/ultralytics_yolov8/.venv/bin/python \
+RKNN_WHEEL=/path/to/rknn_toolkit2-1.4.0_22dcfef4-cp38-cp38-linux_x86_64.whl \
+MODEL=/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/yolov8n_anti_uav300_rgb_8gpu_b128_e50_nbs128/weights/best.pt \
+IMGSZ=960 \
+QUANTIZE=1 \
+CALIB_SOURCE=/mnt/chenziye/datasets/anti_uav/Anti-UAV300/test-dev/20190925_101846_1_1/RGB.mp4 \
+RKNN_OUT=/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/yolov8n_anti_uav300_rgb_8gpu_b128_e50_nbs128/weights/best_v140_i8.rknn \
+bash scripts/anti_uav/export_detector_rknn_legacy.sh
+```
+
+Notes:
+
+- This flow is specifically for older board runtimes that reject newer RKNN model versions.
+- The script separates the export environment from the RKNN conversion environment on purpose: modern Ultralytics export can stay on Python 3.10, while RKNN `v1.4.0` conversion stays on Python 3.8.
+- The legacy helper writes an extra `*_v140.onnx` artifact after stripping unsupported `MaxPool.dilations=[1,1]` attributes.
+- The official `rknn-toolkit2 v1.4.0` wheel has non-PEP-440 metadata, so the helper unpacks it directly into the target environment instead of relying on `pip install`.

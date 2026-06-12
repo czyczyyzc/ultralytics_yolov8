@@ -59,8 +59,9 @@ class DetectionTrainer(BaseTrainer):
         batch["img"] = batch["img"].to(self.device, non_blocking=True).float() / 255
         if self.args.multi_scale:
             imgs = batch["img"]
+            base_imgsz = max(self.args.imgsz) if isinstance(self.args.imgsz, (list, tuple)) else self.args.imgsz
             sz = (
-                random.randrange(int(self.args.imgsz * 0.5), int(self.args.imgsz * 1.5 + self.stride))
+                random.randrange(int(base_imgsz * 0.5), int(base_imgsz * 1.5 + self.stride))
                 // self.stride
                 * self.stride
             )  # size

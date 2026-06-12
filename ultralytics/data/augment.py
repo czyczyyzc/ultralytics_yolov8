@@ -516,7 +516,7 @@ class Mosaic(BaseMixTransform):
         >>> augmented_labels = mosaic_aug(original_labels)
     """
 
-    def __init__(self, dataset, imgsz=640, p=1.0, n=4):
+    def __init__(self, dataset, imgsz=640, p=1.0, n=4, border=None):
         """
         Initializes the Mosaic augmentation object.
 
@@ -538,7 +538,7 @@ class Mosaic(BaseMixTransform):
         assert n in {4, 9}, "grid must be equal to 4 or 9."
         super().__init__(dataset=dataset, p=p)
         self.imgsz = imgsz
-        self.border = (-imgsz // 2, -imgsz // 2)  # width, height
+        self.border = border if border is not None else (-imgsz // 2, -imgsz // 2)  # height, width
         self.n = n
 
     def get_indexes(self, buffer=True):
@@ -2283,9 +2283,14 @@ def v8_transforms(dataset, imgsz, hyp, stretch=False):
     rectangular = isinstance(imgsz, (list, tuple))
     target_shape = tuple(imgsz) if rectangular else (imgsz, imgsz)
     mosaic_imgsz = max(target_shape) if rectangular else imgsz
+    mosaic_border = (
+        ((target_shape[0] - 2 * mosaic_imgsz) // 2, (target_shape[1] - 2 * mosaic_imgsz) // 2)
+        if rectangular
+        else None
+    )
     pre_transform = Compose(
         [
-            Mosaic(dataset, imgsz=mosaic_imgsz, p=0.0 if rectangular else hyp.mosaic),
+            Mosaic(dataset, imgsz=mosaic_imgsz, p=hyp.mosaic, border=mosaic_border),
             CopyPaste(p=hyp.copy_paste),
             RandomPerspective(
                 degrees=hyp.degrees,

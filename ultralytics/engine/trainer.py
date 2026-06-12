@@ -273,9 +273,6 @@ class BaseTrainer:
         gs = max(int(self.model.stride.max() if hasattr(self.model, "stride") else 32), 32)  # grid size (max stride)
         imgsz_is_hw = isinstance(self.args.imgsz, (list, tuple)) and len(self.args.imgsz) == 2
         self.args.imgsz = check_imgsz(self.args.imgsz, stride=gs, floor=gs, max_dim=2 if imgsz_is_hw else 1)
-        if imgsz_is_hw and self.args.multi_scale:
-            LOGGER.warning("WARNING ⚠️ multi_scale=True is incompatible with rectangular imgsz, setting multi_scale=False")
-            self.args.multi_scale = False
         self.stride = gs  # for multiscale training
 
         # Batch size

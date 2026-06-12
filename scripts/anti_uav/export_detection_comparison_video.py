@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conf", type=float, default=0.45)
     parser.add_argument("--iou-thresh", type=float, default=0.3)
     parser.add_argument("--panel-width", type=int, default=960)
+    parser.add_argument("--panel-height", type=int, default=540)
     parser.add_argument("--fps", type=float, default=2.0)
     parser.add_argument("--repeat-frames", type=int, default=6, help="Repeat each failure image this many video frames.")
     parser.add_argument("--device", default="0")
@@ -111,11 +112,18 @@ def put_text(frame: np.ndarray, text: str, y: int, color: tuple[int, int, int] =
     cv2.putText(frame, text, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.62, color, 2)
 
 
-def resize_panel(frame: np.ndarray, width: int) -> np.ndarray:
-    if width <= 0 or frame.shape[1] == width:
+def fit_panel(frame: np.ndarray, width: int, height: int) -> np.ndarray:
+    if width <= 0 or height <= 0:
         return frame
-    h = int(round(frame.shape[0] * width / frame.shape[1]))
-    return cv2.resize(frame, (width, h), interpolation=cv2.INTER_AREA)
+    scale = min(width / frame.shape[1], height / frame.shape[0])
+    new_w = max(1, int(round(frame.shape[1] * scale)))
+    new_h = max(1, int(round(frame.shape[0] * scale)))
+    resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    canvas = np.full((height, width, 3), 114, dtype=np.uint8)
+    x = (width - new_w) // 2
+    y = (height - new_h) // 2
+    canvas[y : y + new_h, x : x + new_w] = resized
+    return canvas
 
 
 def annotate(frame: np.ndarray, label: str, gt: list[Sequence[float]], preds, match_iou: float, best_box, best_conf: float, ok: bool) -> np.ndarray:
@@ -190,12 +198,8 @@ def main() -> None:
             )
             left_panel = annotate(frame, args.left_label, gt, left_preds, left_iou, left_box, left_conf, left_ok)
             right_panel = annotate(frame, args.right_label, gt, right_preds, right_iou, right_box, right_conf, right_ok)
-            left_panel = resize_panel(left_panel, args.panel_width)
-            right_panel = resize_panel(right_panel, args.panel_width)
-            if left_panel.shape[0] != right_panel.shape[0]:
-                h = min(left_panel.shape[0], right_panel.shape[0])
-                left_panel = cv2.resize(left_panel, (left_panel.shape[1], h), interpolation=cv2.INTER_AREA)
-                right_panel = cv2.resize(right_panel, (right_panel.shape[1], h), interpolation=cv2.INTER_AREA)
+            left_panel = fit_panel(left_panel, args.panel_width, args.panel_height)
+            right_panel = fit_panel(right_panel, args.panel_width, args.panel_height)
             combined = np.concatenate([left_panel, right_panel], axis=1)
             if writer is None:
                 writer = open_writer(args.output_video, combined, args.fps)

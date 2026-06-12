@@ -153,7 +153,11 @@ def resolve_frames_and_gt(eval_root: Path, model: str, dataset: str, sequence: s
 
     sequence_root = Path(summary["sequence_root"])
     sequence_dir = sequence_root / sequence
-    frame_paths, gt = batch_tracker_sequence_eval.read_sequence(sequence_dir, Path("/"), "val")
+    aggregate_path = eval_root / "tracking" / model / dataset / "aggregate_summary.json"
+    aggregate = load_json(aggregate_path) if aggregate_path.exists() else {}
+    image_root = Path(aggregate.get("image_root") or "/")
+    split = aggregate.get("split") or "val"
+    frame_paths, gt = batch_tracker_sequence_eval.read_sequence(sequence_dir, image_root, split)
     return frame_paths, gt
 
 

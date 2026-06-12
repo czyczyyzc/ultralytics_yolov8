@@ -6,11 +6,17 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+import sys
 from typing import Optional, Sequence
 
 import cv2
 import numpy as np
 from ultralytics import YOLO
+
+FILE = Path(__file__).resolve()
+ROOT = FILE.parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from scripts.anti_uav.replay_eval import bbox_iou, parse_imgsz
 

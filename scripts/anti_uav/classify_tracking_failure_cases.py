@@ -232,6 +232,51 @@ def write_manifest(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
         writer.writerows(rows)
 
 
+def read_csv_rows(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def md_metric_table(rows: list[dict], columns: list[str], formats: dict[str, str] | None = None) -> list[str]:
+    if not rows:
+        return ["未找到对应结果文件。"]
+    formats = formats or {}
+    lines = [
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---:" if col not in {"resolution", "dataset"} else "---" for col in columns) + " |",
+    ]
+    for row in rows:
+        values = []
+        for col in columns:
+            value = row.get(col, "")
+            if col in formats and value != "":
+                value = formats[col].format(float(value))
+            values.append(str(value))
+        lines.append("| " + " | ".join(values) + " |")
+    return lines
+
+
+def metric_deltas(rows: list[dict], baseline_resolution: str, compare_resolutions: list[str], metrics: list[str]) -> list[dict]:
+    keyed = {(row["resolution"], row["dataset"]): row for row in rows}
+    datasets = sorted({row["dataset"] for row in rows})
+    deltas: list[dict] = []
+    for dataset in datasets:
+        base = keyed.get((baseline_resolution, dataset))
+        if not base:
+            continue
+        for resolution in compare_resolutions:
+            current = keyed.get((resolution, dataset))
+            if not current:
+                continue
+            item = {"resolution": f"{resolution} - {baseline_resolution}", "dataset": dataset}
+            for metric in metrics:
+                item[metric] = float(current[metric]) - float(base[metric])
+            deltas.append(item)
+    return deltas
+
+
 def main() -> None:
     args = parse_args()
     eval_root = args.eval_root.expanduser().resolve()
@@ -325,6 +370,19 @@ def main() -> None:
     scenario_counts = Counter(i["scenario"] for i in classified)
     platform_counts = Counter(i["platform"] for i in classified if i["platform"] != "unknown")
     cat_dataset = {cat: dict(Counter(i["dataset"] for i in items)) for cat, items in sorted(by_cat.items())}
+    detection_results = read_csv_rows(eval_root / "detection_results.csv")
+    tracking_results = read_csv_rows(eval_root / "tracking_results.csv")
+    metric_fmt = {
+        "precision": "{:.4f}",
+        "recall": "{:.4f}",
+        "mAP50": "{:.4f}",
+        "mAP50-95": "{:.4f}",
+        "avg_iou": "{:.4f}",
+        "mean_seq_precision": "{:.4f}",
+        "mean_seq_recall": "{:.4f}",
+        "mean_seq_avg_iou": "{:.4f}",
+    }
+    delta_fmt = {key: "{:+.4f}" for key in metric_fmt}
 
     report = [
         "# 960x960 vs 640x640 Tracking Failure Case 分类报告",
@@ -342,6 +400,57 @@ def main() -> None:
         f"| 原始 reason | `{dict(reason_counts)}` |",
         f"| 场景 | `{dict(scenario_counts)}` |",
         f"| Hanlue new 平台 | `{dict(platform_counts)}` |",
+        "",
+        "## 相关精度结果",
+        "",
+        "### Detection",
+        "",
+        *md_metric_table(
+            detection_results,
+            ["resolution", "dataset", "precision", "recall", "mAP50", "mAP50-95"],
+            metric_fmt,
+        ),
+        "",
+        "### Detection 相对 640x640 的变化",
+        "",
+        *md_metric_table(
+            metric_deltas(detection_results, "640x640", ["960x960", "960x540"], ["precision", "recall", "mAP50", "mAP50-95"]),
+            ["resolution", "dataset", "precision", "recall", "mAP50", "mAP50-95"],
+            delta_fmt,
+        ),
+        "",
+        "### Detection + Tracking",
+        "",
+        *md_metric_table(
+            tracking_results,
+            [
+                "resolution",
+                "dataset",
+                "sequences",
+                "frames",
+                "precision",
+                "recall",
+                "avg_iou",
+                "mean_seq_precision",
+                "mean_seq_recall",
+                "mean_seq_avg_iou",
+                "failures",
+            ],
+            metric_fmt,
+        ),
+        "",
+        "### Detection + Tracking 相对 640x640 的变化",
+        "",
+        *md_metric_table(
+            metric_deltas(
+                tracking_results,
+                "640x640",
+                ["960x960", "960x540"],
+                ["precision", "recall", "avg_iou", "mean_seq_precision", "mean_seq_recall", "mean_seq_avg_iou"],
+            ),
+            ["resolution", "dataset", "precision", "recall", "avg_iou", "mean_seq_precision", "mean_seq_recall", "mean_seq_avg_iou"],
+            delta_fmt,
+        ),
         "",
         "## Failure Case 分类",
         "",

@@ -317,7 +317,7 @@ def main() -> None:
                 f"- `{Path(item['classified_video']).name}`: dataset={item['dataset']}, "
                 f"sequence={item['sequence']}, reason={item['reason']}, recall_delta={float(item['recall_delta']):.3f}"
             )
-        (cat_dir / "README.md").write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+        (cat_dir / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     cat_counts = Counter(i["category"] for i in classified)
     dataset_counts = Counter(i["dataset"] for i in classified)
@@ -398,7 +398,7 @@ def main() -> None:
         "- verifier / 轨迹终止策略优先看 `06`。",
         "- bbox 回归和 tracker 校正优先看 `05`。",
     ]
-    (out / "failure_case_report.md").write_text("\\n".join(report) + "\\n", encoding="utf-8")
+    (out / "failure_case_report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
 
     print(f"classified {len(classified)} videos into {out}")
     print("category_counts", dict(cat_counts))

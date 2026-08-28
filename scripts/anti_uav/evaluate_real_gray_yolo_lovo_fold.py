@@ -95,7 +95,7 @@ def fixed_threshold_metrics(model: YOLO, image_list: Path, args: argparse.Namesp
         for threshold in args.thresholds
     }
     predictions = model.predict(
-        source=[str(path) for path in images],
+        source=str(image_list),
         imgsz=[544, 960],
         conf=minimum_confidence,
         iou=0.45,

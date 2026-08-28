@@ -8,6 +8,17 @@ import json
 from pathlib import Path
 
 from ultralytics import YOLO
+from ultralytics.models.yolo.detect import DetectionTrainer
+from ultralytics.utils.torch_utils import strip_optimizer
+
+
+class LovoDetectionTrainer(DetectionTrainer):
+    """Keep per-epoch validation but avoid Ultralytics' redundant final validation pass."""
+
+    def final_eval(self) -> None:
+        for checkpoint in (self.last, self.best):
+            if checkpoint.exists():
+                strip_optimizer(checkpoint)
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +42,7 @@ def main() -> None:
         raise FileNotFoundError(data)
     model = YOLO(str(args.model))
     model.train(
+        trainer=LovoDetectionTrainer,
         data=str(data),
         imgsz=[544, 960],
         epochs=args.epochs,

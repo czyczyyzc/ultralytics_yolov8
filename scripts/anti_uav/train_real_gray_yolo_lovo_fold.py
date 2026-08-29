@@ -5,20 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.anti_uav.lovo_detection_trainer import LovoDetectionTrainer
 from ultralytics import YOLO
-from ultralytics.models.yolo.detect import DetectionTrainer
-from ultralytics.utils.torch_utils import strip_optimizer
-
-
-class LovoDetectionTrainer(DetectionTrainer):
-    """Keep per-epoch validation but avoid Ultralytics' redundant final validation pass."""
-
-    def final_eval(self) -> None:
-        for checkpoint in (self.last, self.best):
-            if checkpoint.exists():
-                strip_optimizer(checkpoint)
 
 
 def parse_args() -> argparse.Namespace:

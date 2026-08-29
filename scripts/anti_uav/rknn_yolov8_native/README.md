@@ -62,14 +62,17 @@ conversion while writing directly into RKNN input memory. RKNN input and native
 INT8 output buffers are zero-copy; RGA preprocessing is not enabled in this
 source tree.
 
-## Measured reference performance
+## Measured final-release performance
 
-The previous same-shape `960x544` release model measured on Orange Pi CM5
-RK3588S with performance governors enabled:
+The final real-gray `960x544` INT8 release measured on Orange Pi CM5 RK3588S
+with performance governors enabled:
 
-- one NPU context: 47.62 FPS
-- three contexts, detector only, queue 3: 129.41 FPS
-- three contexts plus RK-BoT-SORT, queue 3: 129.57 FPS
+- one NPU context, detector only, 2000 measured frames: 48.05 FPS
+- three contexts, detector only, 1000 measured frames from a cold start: 120.69 FPS
+- three contexts plus RK-BoT-SORT, 2000 measured frames from cold to hot: 108.50 FPS
 
-These numbers include video read for the three-worker test. Re-run the benchmark
-for every final model artifact, camera backend, kernel, and runtime combination.
+The three-worker tests include video read. The tracker run also writes the
+tracks CSV; tracker association itself averages 0.010 ms/frame. Board
+temperature rose from about 63.8 C to 82.2 C and the NPU throttled to 800 MHz,
+so the 107 FPS target has limited thermal margin. Run a 30-minute real-camera
+soak test and improve cooling before production acceptance.

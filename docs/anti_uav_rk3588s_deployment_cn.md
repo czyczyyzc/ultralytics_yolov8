@@ -145,8 +145,8 @@ anti_uav_rk3588s_real_gray_final_20260829/
 | RKNN INT8 构建 | 通过 | 448 张灰度 calibration 图片，7 段视频各含正/负样本 |
 | RKNN 输出结构检查 | 通过 | P3/P4/P5 为 `68x120`、`34x60`、`17x30` |
 | PT/RKNN simulator 短片回归 | 通过 | 20 帧检测数一致，共同检测框平均 IoU `0.711` |
-| RK3588S 初始化和结果回归 | 交付验收项 | 按第 8、15 节在目标板执行 |
-| 当前模型板端 FPS | 交付验收项 | 第 13 节数据仅为同结构模型参考值 |
+| RK3588S 初始化和结果回归 | 通过 | CM5 上完成 120 帧 smoke test 和 2000 帧长测 |
+| 当前模型板端 FPS | 通过但余量有限 | 三核 detector `120.69 FPS`；三核 + RK-BoT-SORT 长测 `108.50 FPS` |
 
 当前文件可用于 RK3588S 软件集成和板端验收。先前 fold3 交付模型保留为回滚版本，不再作为主发布；任何模型替换都必须更新 SHA256，并重新执行第 15 节验收。
 
@@ -226,7 +226,7 @@ sha256sum /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real
 | Board | Orange Pi CM5 RK3588S |
 | Kernel | `6.1.99-rockchip-rk3588` |
 | RKNN Runtime | 2.3.2 |
-| NPU driver/runtime | 应与 RKNN 2.3.2 兼容 |
+| NPU driver | `0.9.8` |
 | NPU performance clock | 运行中应达到 1,000 MHz |
 | DDR performance clock | 运行中应达到 2,112 MHz |
 
@@ -236,6 +236,22 @@ sha256sum /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real
 sudo mkdir -p /data/anti_uav/{bin,models,metadata,config,videos,output,logs,src}
 sudo chown -R "$(id -un):$(id -gn)" /data/anti_uav
 ```
+
+本次参考板识别到一张 125G 可用容量的 SD 卡，但在 `DISCARD` 后和后续 fsck 读取中均出现 MMC `-110`/I/O error，因此该卡已从 fstab 移除，最终板端验收使用系统盘上的 `/data`，可用空间约 21G。不要把该卡用于代码、环境或录像归档，需更换并完成全盘读写验证后再迁移。
+
+更换合格 SD 卡后，建议将其挂载为 `/data`。如果卡或控制器不支持稳定的 `DISCARD`，fstab 应包含 `X-fstrim.notrim`：
+
+```text
+UUID=<replacement-card-uuid> /data ext4 defaults,noatime,nofail,X-fstrim.notrim,x-systemd.device-timeout=10 0 2
+```
+
+```bash
+sudo systemctl disable --now fstrim.timer
+findmnt /data
+df -hT /data
+```
+
+使用 `blkid` 获取新卡 UUID，不要复用上述占位符或故障卡 UUID。不要对已有数据的卡直接执行 `mkfs`；新卡格式化和迁移后，应执行全盘容量/读写测试、`fsck -f`、模型 SHA256 校验，并重启确认自动挂载。只做少量抽样写入不足以排除坏卡或扩容假卡。
 
 安装编译依赖：
 
@@ -422,19 +438,20 @@ python scripts/anti_uav/rknn_yolov8_native/render_tracker_video.py \
 
 可视化属于离线工具，不计入实时 pipeline FPS。
 
-## 13. 性能参考
+## 13. 板端性能实测
 
-以下数据来自先前同网络结构、同输入尺寸的 `960x544 INT8` 基准模型，不是第 3 节 final 灰度适配 RKNN 的验收成绩。Orange Pi CM5 RK3588S 上 1000 帧参考实测如下：
+当前 final 灰度适配模型已在 Orange Pi CM5 RK3588S 实测。输入为 `1920x1080 @ 100 FPS` 的 `Video00004.mp4`，模型输入 `960x544`，queue size 为 3，CPU worker 绑定大核 4/5/6，NPU context 分别绑定 NPU0/1/2。三线程数据包含视频读取；Tracker 长测同时写入 tracks CSV。
 
-| 配置 | 完整 FPS | 说明 |
-|---|---:|---|
-| 单 RKNN context | 47.62 | preprocess + inference + decode + NMS，不含 video read |
-| 3 contexts，queue 3 | 129.41 | 包含 video read、preprocess、inference、decode、NMS |
-| 3 contexts + RK-BoT-SORT，queue 3 | 129.57 | 包含 video read 和 tracker，tracker 约 0.0087 ms/frame |
+| 配置 | 计时帧 | 完整 FPS | 平均 NPU 推理 | 说明 |
+|---|---:|---:|---:|---|
+| 单 RKNN context，detector | 2000 | 48.05 | 18.40 ms | 不含 video read |
+| 3 contexts，detector，冷机 | 1000 | 120.69 | 19.87 ms | 约 `63.8 -> 79.5°C` |
+| 3 contexts + RK-BoT-SORT，冷到热长测 | 2000 | 108.50 | 21.20 ms | 约 `63.8 -> 82.2°C`，结束时 NPU 热降到 800 MHz |
+| 3 contexts，detector，worker 绑定小核 | 1000 | 78.82 | 20.75 ms | OpenCV 预处理增至 15.90 ms，不推荐 |
 
-该结果是在 NPU 1 GHz、DDR 2.112 GHz、performance governor 和参考 MP4 上测得。当前 final 灰度模型虽然网络结构相同、理论计算量相同，仍必须重新实测；摄像头驱动、视频编码、温度、kernel、NPU driver 和 Runtime 变化都会影响结果。
+长测中的 Tracker association 平均只有 `0.010 ms/frame`；性能下降主要来自温度导致的 NPU/CPU 降频，不是 RK-BoT-SORT。板载风扇已为最大 PWM 255，当前散热结构下 107 FPS 需求仅有约 1.5 FPS 的长测余量。生产交付前仍须用真实 107 FPS 摄像头连续运行至少 30 分钟，检查采集丢帧、端到端延迟和热稳态；建议改善散热器接触、风道或主动风扇，不能只用冷机峰值 `120.69 FPS` 作为持续性能承诺。
 
-对于 107 FPS 摄像头，参考 pipeline 在吞吐上有约 22 FPS 余量，但这不等于当前模型或所有摄像头接入方式都能稳定逐帧处理。验收应使用当前 RKNN 和真实摄像头连续运行，不应只使用历史模型或本地文件结果代替。
+原始结果位于发布包 `metadata/board_validation/`。历史同结构 RGB 模型曾测得三核约 `129.41 FPS`，差异主要来自测试温度、视频解码和持续负载条件，不能替代当前 final 模型的上述验收成绩。
 
 ## 14. 上层系统接口
 

@@ -1,12 +1,14 @@
 # Anti-UAV RK3588S 部署说明
 
-文档版本：1.2
+文档版本：1.3
 
 发布日期：2026-08-29
 
 适用平台：Orange Pi CM5 / RK3588S / aarch64 Linux
 
 部署基线：YOLOv8n `960x544 (WxH)` INT8 + 原生 C++ RKNN 推理 + RK-BoT-SORT + 3 NPU 核并行
+
+模型更新说明：本版已将先前 7-fold 中挑选的 fold3 部署模型替换为 `2026-08-29` 完成的 Anti-UAV300 + 全部 7 段灰度正样本最终混合训练模型。当前正式训练 checkpoint 是 `final_all_gray/weights/last.pt`，旧 fold3 模型只保留作回滚，不得作为默认交付模型。
 
 ## 1. 部署范围
 
@@ -86,8 +88,9 @@
 | 发布标识 | `real_gray_final_544x960_20260829_v232_int8` |
 | 发布类型 | Anti-UAV300 + 全部灰度正样本最终混合训练版 |
 | Git commit | `dbed591` |
-| 源权重 | `yolov8n_anti_uav_real_gray_final_best.pt` |
-| 源权重 SHA256 | `804296ba1f0d920a50ffe94110da91bfddbbbb367b6f627d4a694c3d70944cd4` |
+| 训练源 checkpoint | `real_gray_yolo_final_mixed_20260829/training/final_all_gray/weights/last.pt` |
+| 发布 PT 文件 | `yolov8n_anti_uav_real_gray_final_best.pt`，为上述 `last.pt` 的重命名副本 |
+| 发布 PT SHA256 | `804296ba1f0d920a50ffe94110da91bfddbbbb367b6f627d4a694c3d70944cd4` |
 | RK-optimized ONNX | `yolov8n_anti_uav_real_gray_final_544x960_rkopt.onnx` |
 | ONNX SHA256 | `275fb0bf82dfe18421b47d9fb842aa86c4f3eba6da19d2a85053c8298ee61f9e` |
 | RKNN | `yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn` |
@@ -108,6 +111,7 @@
 关键文件绝对路径：
 
 ```text
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/real_gray_yolo_final_mixed_20260829/training/final_all_gray/weights/last.pt
 /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn
 /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_544x960_rkopt.onnx
 /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_best.pt
@@ -116,6 +120,8 @@
 /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/release_manifest.json
 /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/validation/pt_rknn_clip_comparison.json
 ```
+
+注意：发布 PT 文件名中的 `best` 是交付命名，不代表训练目录的 `weights/best.pt`。本次对 `best.pt`、epoch5、epoch10 和 `last.pt` 做过统一灰度/RGB 评测，最终明确选择 `last.pt`；部署或重新导出时必须以上述训练源 checkpoint 或 SHA256 一致的发布 PT 为准。
 
 建议复制到板端：
 

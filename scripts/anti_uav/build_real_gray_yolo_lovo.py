@@ -240,6 +240,34 @@ def main() -> None:
             }
         )
 
+    final_dir = args.output / "final_all_gray"
+    final_dir.mkdir(parents=True, exist_ok=True)
+    final_gray_unique = [path for stem in stems for path in positives_by_video[stem]]
+    final_rng = random.Random(args.seed + len(stems))
+    final_gray_order = final_gray_unique.copy()
+    final_rng.shuffle(final_gray_order)
+    final_gray_balanced = [
+        final_gray_order[index % len(final_gray_order)] for index in range(len(rgb_train_positive))
+    ]
+    final_mixed = rgb_train_positive + final_gray_balanced
+    final_rng.shuffle(final_mixed)
+    final_train_list = final_dir / "train_mixed_50_50.txt"
+    write_lines(final_train_list, final_mixed)
+    write_lines(final_dir / "train_gray_positive_unique.txt", final_gray_unique)
+    write_lines(final_dir / "train_rgb_positive_unique.txt", rgb_train_positive)
+    write_yaml(final_dir / "train_rgb_monitor.yaml", final_train_list, args.rgb_val_list)
+    final_training = {
+        "name": final_dir.name,
+        "rgb_unique_positive": len(rgb_train_positive),
+        "gray_unique_positive": len(final_gray_unique),
+        "gray_balanced_samples": len(final_gray_balanced),
+        "train_samples": len(final_mixed),
+        "gray_training_videos": stems,
+        "new_gray_empty_frames_in_training": 0,
+        "train_list": str(final_train_list),
+        "data_yaml": str(final_dir / "train_rgb_monitor.yaml"),
+    }
+
     manifest = {
         "schema_version": "anti_uav.real_gray_yolo_lovo.v1",
         "seed": args.seed,
@@ -259,6 +287,7 @@ def main() -> None:
         },
         "gray_videos": metadata,
         "folds": folds,
+        "final_training": final_training,
     }
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps(manifest, indent=2))

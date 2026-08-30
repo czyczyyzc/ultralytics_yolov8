@@ -73,6 +73,7 @@ def initialize_p2_model(initial_weights: Path, model_cfg: Path) -> tuple[YOLO, d
     target = YOLO(str(model_cfg))
     target.model = DetectionModel(str(model_cfg), nc=source.model.nc, verbose=True)
     target.model.names = source.model.names
+    target.ckpt = {}
 
     source_state = source.model.float().state_dict()
     target_state = target.model.state_dict()

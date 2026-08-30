@@ -4,6 +4,7 @@ import numpy as np
 
 from scripts.anti_uav.anti_uav_rk3588 import group_model_zoo_outputs
 from scripts.anti_uav.export_detector_rkopt_onnx import validate_rkopt_shapes
+from scripts.anti_uav.train_real_gray_yolo_lovo_fold import p2_target_key
 
 
 def rkopt_shapes(grids: list[tuple[int, int]]) -> list[list[int]]:
@@ -35,3 +36,12 @@ def test_validate_rkopt_shapes_keeps_three_branch_support():
 
     assert validation["output_count"] == 9
     assert validation["branch_count"] == 3
+
+
+def test_p2_target_key_reuses_standard_neck_and_detect_branches():
+    assert p2_target_key("model.16.conv.weight") == "model.22.conv.weight"
+    assert p2_target_key("model.21.cv2.conv.weight") == "model.27.cv2.conv.weight"
+    assert p2_target_key("model.22.cv2.0.0.conv.weight") == "model.28.cv2.1.0.conv.weight"
+    assert p2_target_key("model.22.cv3.2.2.bias") == "model.28.cv3.3.2.bias"
+    assert p2_target_key("model.22.dfl.conv.weight") == "model.28.dfl.conv.weight"
+    assert p2_target_key("model.15.cv1.conv.weight") is None

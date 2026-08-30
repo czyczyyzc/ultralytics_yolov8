@@ -16,6 +16,8 @@ os.environ["PYTHONPATH"] = os.pathsep.join(part for part in (str(REPO_ROOT), os.
 
 from scripts.anti_uav.lovo_detection_trainer import LovoDetectionTrainer
 from ultralytics import YOLO
+from ultralytics.nn.tasks import DetectionModel
+from ultralytics.utils.torch_utils import init_seeds
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,10 +39,84 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_model(initial_weights: Path, model_cfg: Path | None = None) -> YOLO:
+def p2_target_key(source_key: str) -> str | None:
+    """Map reusable standard YOLOv8 P3-P5 neck/head tensors into YOLOv8-P2."""
+    layer_map = {16: 22, 18: 24, 19: 25, 21: 27}
+    parts = source_key.split(".")
+    if len(parts) < 3 or parts[0] != "model":
+        return None
+    try:
+        source_layer = int(parts[1])
+    except ValueError:
+        return None
+
+    if source_layer in layer_map:
+        parts[1] = str(layer_map[source_layer])
+        return ".".join(parts)
+    if source_layer != 22 or len(parts) < 4:
+        return None
+
+    parts[1] = "28"
+    if parts[2] in {"cv2", "cv3"}:
+        try:
+            parts[3] = str(int(parts[3]) + 1)
+        except ValueError:
+            return None
+    elif parts[2] != "dfl":
+        return None
+    return ".".join(parts)
+
+
+def initialize_p2_model(initial_weights: Path, model_cfg: Path) -> tuple[YOLO, dict[str, int]]:
+    """Build a one-class P2 model and retain every shape-compatible standard-model tensor."""
+    source = YOLO(str(initial_weights))
+    target = YOLO(str(model_cfg))
+    target.model = DetectionModel(str(model_cfg), nc=source.model.nc, verbose=True)
+    target.model.names = source.model.names
+
+    source_state = source.model.float().state_dict()
+    target_state = target.model.state_dict()
+    transferred = {
+        key: value for key, value in source_state.items() if key in target_state and value.shape == target_state[key].shape
+    }
+    direct_count = len(transferred)
+    remapped_count = 0
+    for source_key, value in source_state.items():
+        target_key = p2_target_key(source_key)
+        if target_key and target_key not in transferred and target_key in target_state:
+            if value.shape == target_state[target_key].shape:
+                transferred[target_key] = value
+                remapped_count += 1
+
+    target.model.load_state_dict(transferred, strict=False)
+    report = {
+        "direct_tensors": direct_count,
+        "p2_remapped_tensors": remapped_count,
+        "transferred_tensors": len(transferred),
+        "target_tensors": len(target_state),
+    }
+    print(json.dumps({"p2_initialization": report}, indent=2))
+    return target, report
+
+
+def build_model(
+    initial_weights: Path,
+    model_cfg: Path | None = None,
+    initialized_checkpoint: Path | None = None,
+) -> tuple[YOLO, dict[str, int] | None]:
     if model_cfg is None:
-        return YOLO(str(initial_weights))
-    return YOLO(str(model_cfg)).load(str(initial_weights))
+        return YOLO(str(initial_weights)), None
+    if initialized_checkpoint is None:
+        raise ValueError("initialized_checkpoint is required with --model-cfg so DDP workers retain warm-start weights")
+
+    if model_cfg.stem.endswith("-p2"):
+        model, report = initialize_p2_model(initial_weights, model_cfg)
+    else:
+        model = YOLO(str(model_cfg)).load(str(initial_weights))
+        report = None
+    initialized_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    model.save(initialized_checkpoint)
+    return YOLO(str(initialized_checkpoint)), report
 
 
 def main() -> None:
@@ -49,7 +125,9 @@ def main() -> None:
     data = args.fold_dir / "train_rgb_monitor.yaml"
     if not data.exists():
         raise FileNotFoundError(data)
-    model = build_model(args.model, args.model_cfg)
+    init_seeds(args.seed, deterministic=True)
+    initialized_checkpoint = args.project / f"{fold}_initialized.pt" if args.model_cfg else None
+    model, initialization = build_model(args.model, args.model_cfg, initialized_checkpoint)
     model.train(
         trainer=LovoDetectionTrainer,
         data=str(data),
@@ -103,6 +181,8 @@ def main() -> None:
         "fold": fold,
         "initial_model": str(args.model),
         "model_cfg": str(args.model_cfg) if args.model_cfg else None,
+        "initialized_checkpoint": str(initialized_checkpoint) if initialized_checkpoint else None,
+        "initialization": initialization,
         "data": str(data),
         "epochs_requested": args.epochs,
         "batch": args.batch,

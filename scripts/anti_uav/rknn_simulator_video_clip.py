@@ -108,11 +108,11 @@ def postprocess(
     input_height: int,
     input_width: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    if len(outputs) != 9:
-        raise RuntimeError(f"Expected 9 outputs, got {len(outputs)}")
+    if len(outputs) not in {9, 12}:
+        raise RuntimeError(f"Expected 9 (P3-P5) or 12 (P2-P5) outputs, got {len(outputs)}")
     boxes = []
     probabilities = []
-    for branch in range(3):
+    for branch in range(len(outputs) // 3):
         offset = branch * 3
         boxes.append(flatten_spatial(decode_boxes(outputs[offset], input_height, input_width)))
         probabilities.append(flatten_spatial(outputs[offset + 1]))

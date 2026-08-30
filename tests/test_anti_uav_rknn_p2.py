@@ -4,6 +4,7 @@ import numpy as np
 
 from scripts.anti_uav.anti_uav_rk3588 import group_model_zoo_outputs
 from scripts.anti_uav.export_detector_rkopt_onnx import validate_rkopt_shapes
+from scripts.anti_uav.rknn_simulator_video_clip import postprocess
 from scripts.anti_uav.train_real_gray_yolo_lovo_fold import p2_target_key
 
 
@@ -45,3 +46,12 @@ def test_p2_target_key_reuses_standard_neck_and_detect_branches():
     assert p2_target_key("model.22.cv3.2.2.bias") == "model.28.cv3.3.2.bias"
     assert p2_target_key("model.22.dfl.conv.weight") == "model.28.dfl.conv.weight"
     assert p2_target_key("model.15.cv1.conv.weight") is None
+
+
+def test_simulator_postprocess_accepts_p2_outputs():
+    outputs = [np.zeros(shape, dtype=np.float32) for shape in rkopt_shapes([(4, 6), (2, 3), (1, 2), (1, 1)])]
+
+    boxes, scores = postprocess(outputs, conf=0.25, nms_iou=0.45, input_height=16, input_width=24)
+
+    assert boxes.shape == (0, 4)
+    assert scores.shape == (0,)

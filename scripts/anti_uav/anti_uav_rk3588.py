@@ -502,11 +502,16 @@ def flatten_branch(branch: np.ndarray) -> np.ndarray:
 def group_model_zoo_outputs(outputs: Sequence[np.ndarray]) -> list[tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]]:
     """Group RKNN model-zoo YOLOv8 outputs as (bbox_logits, class_conf, score_sum)."""
     tensors = [ensure_nchw(np.asarray(output)) for output in outputs]
-    if len(tensors) not in {6, 9}:
+    output_layouts = {
+        6: (3, 2),
+        8: (4, 2),
+        9: (3, 3),
+        12: (4, 3),
+    }
+    if len(tensors) not in output_layouts:
         raise ValueError(f"Unsupported RKNN/optimized ONNX output layout with {len(tensors)} tensors")
 
-    branches = 3
-    pair_per_branch = len(tensors) // branches
+    branches, pair_per_branch = output_layouts[len(tensors)]
 
     # Normal export order is branch-major: bbox, class, optional score_sum for each scale.
     branch_major: list[tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]] = []
@@ -799,7 +804,9 @@ class YoloBoardBackend:
                     cpp_preprocess_lib,
                     pad_color=(0, 0, 0),
                     fallback=python_preprocessor if preprocess_backend == "auto" else None,
-                    prefer_rga=preprocess_backend in {"auto", "rga"},
+                    # The current RGA path needs a temporary BGR surface followed by
+                    # a CPU channel swap. Direct OpenCV BGR->RGB is faster at 640x640.
+                    prefer_rga=preprocess_backend == "rga",
                     require_rga=preprocess_backend == "rga",
                 )
             elif preprocess_backend in {"cpp", "rga"}:
@@ -901,7 +908,7 @@ class YoloBoardBackend:
         start = perf_counter()
         if len(outputs) == 1:
             boxes, class_ids, scores = decode_ultralytics_output(outputs[0], self.conf_thresh)
-        elif self.cpp_postprocessor is not None:
+        elif self.cpp_postprocessor is not None and len(outputs) in {6, 9}:
             branches = group_model_zoo_outputs(outputs)
             boxes, class_ids, scores = self.cpp_postprocessor(
                 branches,

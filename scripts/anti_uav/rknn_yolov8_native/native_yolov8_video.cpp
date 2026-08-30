@@ -260,9 +260,11 @@ private:
         }
 
         ret = rknn_query(context_, RKNN_QUERY_IN_OUT_NUM, &io_num_, sizeof(io_num_));
-        if (ret != RKNN_SUCC || io_num_.n_input != 1 || io_num_.n_output != 9) {
-            throw std::runtime_error("Expected one input and nine RK-optimized YOLO outputs");
+        if (ret != RKNN_SUCC || io_num_.n_input != 1 ||
+            (io_num_.n_output != 9 && io_num_.n_output != 12)) {
+            throw std::runtime_error("Expected one input and 9 (P3-P5) or 12 (P2-P5) RK-optimized YOLO outputs");
         }
+        branch_count_ = static_cast<int>(io_num_.n_output / 3);
 
         input_attr_.index = 0;
         ret = rknn_query(context_, RKNN_QUERY_INPUT_ATTR, &input_attr_, sizeof(input_attr_));
@@ -344,7 +346,7 @@ public:
         int max_detections) const {
         std::vector<Detection> candidates;
         candidates.reserve(128);
-        for (int branch = 0; branch < 3; ++branch) {
+        for (int branch = 0; branch < branch_count_; ++branch) {
             const int box_index = branch * 3;
             const int class_index = box_index + 1;
             const int sum_index = box_index + 2;
@@ -402,6 +404,7 @@ private:
     std::vector<rknn_tensor_mem*> output_mems_;
     int input_height_ = 0;
     int input_width_ = 0;
+    int branch_count_ = 0;
     cv::Mat resized_bgr_;
     bool io_initialized_ = false;
 };

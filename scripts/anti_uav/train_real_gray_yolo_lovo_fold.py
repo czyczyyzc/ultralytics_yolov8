@@ -12,9 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-os.environ["PYTHONPATH"] = os.pathsep.join(
-    part for part in (str(REPO_ROOT), os.environ.get("PYTHONPATH", "")) if part
-)
+os.environ["PYTHONPATH"] = os.pathsep.join(part for part in (str(REPO_ROOT), os.environ.get("PYTHONPATH", "")) if part)
 
 from scripts.anti_uav.lovo_detection_trainer import LovoDetectionTrainer
 from ultralytics import YOLO
@@ -23,6 +21,12 @@ from ultralytics import YOLO
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, required=True)
+    parser.add_argument(
+        "--model-cfg",
+        type=Path,
+        default=None,
+        help="Optional model architecture YAML. When set, initialize that architecture from --model weights.",
+    )
     parser.add_argument("--fold-dir", type=Path, required=True)
     parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=15)
@@ -33,13 +37,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def build_model(initial_weights: Path, model_cfg: Path | None = None) -> YOLO:
+    if model_cfg is None:
+        return YOLO(str(initial_weights))
+    return YOLO(str(model_cfg)).load(str(initial_weights))
+
+
 def main() -> None:
     args = parse_args()
     fold = args.fold_dir.name
     data = args.fold_dir / "train_rgb_monitor.yaml"
     if not data.exists():
         raise FileNotFoundError(data)
-    model = YOLO(str(args.model))
+    model = build_model(args.model, args.model_cfg)
     model.train(
         trainer=LovoDetectionTrainer,
         data=str(data),
@@ -92,6 +102,7 @@ def main() -> None:
     summary = {
         "fold": fold,
         "initial_model": str(args.model),
+        "model_cfg": str(args.model_cfg) if args.model_cfg else None,
         "data": str(data),
         "epochs_requested": args.epochs,
         "batch": args.batch,

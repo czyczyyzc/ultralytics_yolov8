@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--allow-unverified",
         action="store_true",
-        help="Do not fail when the exported graph does not look like a 6/9-output RK-optimized YOLOv8 graph.",
+        help="Do not fail when the graph does not look like a 3/4-scale RK-optimized YOLOv8 graph.",
     )
     return parser.parse_args()
 
@@ -55,15 +55,21 @@ def onnx_output_shapes(onnx_path: Path) -> list[list[int | str | None]]:
 
 
 def validate_rkopt_shapes(shapes: list[list[int | str | None]]) -> dict:
-    if len(shapes) not in {6, 9}:
+    output_layouts = {
+        6: (3, 2),
+        8: (4, 2),
+        9: (3, 3),
+        12: (4, 3),
+    }
+    if len(shapes) not in output_layouts:
         raise ValueError(
-            "RK-optimized YOLOv8 should expose 6 or 9 tensors "
-            f"(bbox/class[/score_sum] x 3 scales), got {len(shapes)} output(s): {shapes}"
+            "RK-optimized YOLOv8 should expose 6/9 tensors for P3-P5 or 8/12 tensors for P2-P5 "
+            f"(bbox/class[/score_sum] per scale), got {len(shapes)} output(s): {shapes}"
         )
 
-    pair_per_branch = len(shapes) // 3
+    branch_count, pair_per_branch = output_layouts[len(shapes)]
     branches = []
-    for branch_index in range(3):
+    for branch_index in range(branch_count):
         start = branch_index * pair_per_branch
         branch = shapes[start : start + pair_per_branch]
         if any(len(shape) != 4 for shape in branch):
@@ -77,14 +83,19 @@ def validate_rkopt_shapes(shapes: list[list[int | str | None]]) -> dict:
         if pair_per_branch == 3:
             score_shape = branch[2]
             if score_shape[2:] != box_shape[2:]:
-                raise ValueError(
-                    f"Branch {branch_index} score_sum spatial shape differs: {score_shape} vs {box_shape}"
-                )
-        branches.append({"bbox": box_shape, "class": cls_shape, "score_sum": branch[2] if pair_per_branch == 3 else None})
+                raise ValueError(f"Branch {branch_index} score_sum spatial shape differs: {score_shape} vs {box_shape}")
+        branches.append(
+            {"bbox": box_shape, "class": cls_shape, "score_sum": branch[2] if pair_per_branch == 3 else None}
+        )
 
     if len(shapes) == 1 and len(shapes[0]) == 3:
         raise ValueError(f"Ultralytics single-output graph was exported instead of RK-optimized layout: {shapes[0]}")
-    return {"output_count": len(shapes), "pair_per_branch": pair_per_branch, "branches": branches}
+    return {
+        "output_count": len(shapes),
+        "branch_count": branch_count,
+        "pair_per_branch": pair_per_branch,
+        "branches": branches,
+    }
 
 
 def main() -> None:
@@ -97,17 +108,21 @@ def main() -> None:
     from ultralytics import YOLO
 
     model = YOLO(str(weights))
-    exported = Path(
-        model.export(
-            format="rknn",
-            imgsz=imgsz,
-            batch=1,
-            device=args.device,
-            opset=args.opset,
-            simplify=args.simplify,
-            dynamic=False,
+    exported = (
+        Path(
+            model.export(
+                format="rknn",
+                imgsz=imgsz,
+                batch=1,
+                device=args.device,
+                opset=args.opset,
+                simplify=args.simplify,
+                dynamic=False,
+            )
         )
-    ).expanduser().resolve()
+        .expanduser()
+        .resolve()
+    )
 
     output_path = args.output.expanduser().resolve() if args.output else exported
     if output_path != exported:

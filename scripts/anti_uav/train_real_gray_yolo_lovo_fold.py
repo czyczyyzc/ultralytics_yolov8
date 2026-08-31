@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr0", type=float, default=0.001)
     parser.add_argument("--lrf", type=float, default=0.1)
     parser.add_argument("--warmup-epochs", type=float, default=1.0)
+    parser.add_argument("--save-period", type=int, default=5)
     return parser.parse_args()
 
 
@@ -162,7 +163,7 @@ def main() -> None:
         cache=False,
         val=True,
         save=True,
-        save_period=5,
+        save_period=args.save_period,
         plots=True,
         single_cls=True,
         mosaic=0.0,
@@ -194,6 +195,7 @@ def main() -> None:
         "lr0": args.lr0,
         "lrf": args.lrf,
         "warmup_epochs": args.warmup_epochs,
+        "save_period": args.save_period,
         "save_dir": str(model.trainer.save_dir),
     }
     output = args.project / fold / "training_manifest.json"

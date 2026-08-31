@@ -1,14 +1,14 @@
 # Anti-UAV RK3588S 部署说明
 
-文档版本：1.3
+文档版本：1.4
 
-发布日期：2026-08-29
+发布日期：2026-08-31
 
 适用平台：Orange Pi CM5 / RK3588S / aarch64 Linux
 
 部署基线：YOLOv8n `960x544 (WxH)` INT8 + 原生 C++ RKNN 推理 + RK-BoT-SORT + 3 NPU 核并行
 
-模型更新说明：本版已将先前 7-fold 中挑选的 fold3 部署模型替换为 `2026-08-29` 完成的 Anti-UAV300 + 全部 7 段灰度正样本最终混合训练模型。当前正式训练 checkpoint 是 `final_all_gray/weights/last.pt`，旧 fold3 模型只保留作回滚，不得作为默认交付模型。
+模型更新说明：当前默认模型是 `neg15` recall-safe 数据上的困难正样本增量训练 epoch 1。相对原 `neg15 e10` INT8，在 Video00004、板端 `conf=0.01` 下 Recall 从 `72.54%` 提升到 `75.00%`，Precision 从 `81.05%` 提升到 `81.16%`。原 `neg15 e10` 和 `2026-08-29 final_all_gray` 模型保留作回滚，不作为默认配置。
 
 ## 1. 部署范围
 
@@ -61,6 +61,9 @@
 | `scripts/anti_uav/build_real_gray_yolo_lovo.py` | 构建 Anti-UAV300 + 灰度正样本 LOVO 数据 |
 | `scripts/anti_uav/train_real_gray_yolo_lovo_fold.py` | `544x960` 灰度适配训练 |
 | `scripts/anti_uav/evaluate_real_gray_yolo_lovo_fold.py` | 灰度 holdout 评测 |
+| `scripts/anti_uav/mine_yolo_hard_positives.py` | 挖掘漏检、定位失败和低置信灰度正样本 |
+| `scripts/anti_uav/build_hard_positive_rehearsal_mix.py` | 保持 neg15 不变并重排困难正样本 rehearsal 槽位 |
+| `scripts/anti_uav/rknn_yolov8_native/run_recall_safe_deployment.sh` | 固定生产阈值的板端启动脚本 |
 
 ### 2.3 训练和验证数据
 
@@ -77,24 +80,24 @@
 
 ## 3. 当前交付版本
 
-本次交付使用 Anti-UAV300 正样本和全部 7 段灰度视频正样本完成最终混合训练。训练集包含 Anti-UAV300 正样本 `35,325` 张、灰度唯一正样本 `8,424` 张；灰度样本重复平衡后按 1:1 混合为 `70,650` 张，未加入灰度空帧。15 个 epoch 中选择 `last.pt`：它在完整灰度回放上的 mAP50-95 为 `17.74%`，`conf=0.25` 时 F1 为 `72.52%`、无目标帧 FPR 为 `1.66%`，Anti-UAV300 RGB mAP50-95 为 `68.74%`。
+本次交付从原 `neg15 e10` 开始做困难正样本增量训练。训练集保持 `70,650` 个正样本槽位和 `12,468` 个负样本，负样本比例仍为 `15.00036%`。从 `8,424` 个唯一灰度正样本中挖掘出 `3,012` 个困难样本，并使用 `7,930` 个原有重复正样本槽位做 rehearsal。10 个增量 epoch 中选择第 1 个 epoch，对应训练文件 `weights/epoch0.pt`。
 
-完整灰度回放包含 final 训练所覆盖的视频，只用于模型选择和适配覆盖检查，不作为独立泛化指标。独立泛化应引用 7-fold LOVO 结果：灰度 macro mAP50-95 为 `8.32%`，相对原模型的 `1.43%` 有明确提升。
+完整灰度回放包含 final 训练所覆盖的视频，只用于模型选择和适配覆盖检查，不作为独立泛化指标。旧 7-fold LOVO 的 `8.32%` macro mAP50-95 只能作为前一阶段基线；新困难正样本模型尚未完成逐 fold 独立重训，不能把旧 LOVO 数字作为新模型结果。
 
 ### 3.1 发布清单
 
 | 项目 | 值 |
 |---|---|
-| 发布标识 | `real_gray_final_544x960_20260829_v232_int8` |
-| 发布类型 | Anti-UAV300 + 全部灰度正样本最终混合训练版 |
-| Git commit | `dbed591` |
-| 训练源 checkpoint | `real_gray_yolo_final_mixed_20260829/training/final_all_gray/weights/last.pt` |
-| 发布 PT 文件 | `yolov8n_anti_uav_real_gray_final_best.pt`，为上述 `last.pt` 的重命名副本 |
-| 发布 PT SHA256 | `804296ba1f0d920a50ffe94110da91bfddbbbb367b6f627d4a694c3d70944cd4` |
-| RK-optimized ONNX | `yolov8n_anti_uav_real_gray_final_544x960_rkopt.onnx` |
-| ONNX SHA256 | `275fb0bf82dfe18421b47d9fb842aa86c4f3eba6da19d2a85053c8298ee61f9e` |
-| RKNN | `yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn` |
-| RKNN SHA256 | `c041e401fa890b58353c74af78a952940c1a37546ca0f6ace0c9fcf42c276130` |
+| 发布标识 | `neg15_hardpos_e1_544x960_20260831_v232_int8` |
+| 发布类型 | recall-safe neg15 + 灰度困难正样本增量训练版 |
+| Git commit | `eec8b01` |
+| 训练源 checkpoint | `real_gray_yolov8n_neg15_hard_positive_20260831/.../weights/epoch0.pt` |
+| 发布 PT 文件 | `yolov8n_recall_safe_neg15_hardpos_e1.pt` |
+| 发布 PT SHA256 | `428807cb6214a3af8f6f87775291152058728f5042a45cfe2ffdc2b0f541a0ea` |
+| RK-optimized ONNX | `yolov8n_recall_safe_neg15_hardpos_e1_544x960_rkopt.onnx` |
+| ONNX SHA256 | `00867478b302bffbb221f3faab2e27f49c25706702449bf118a8d5bad89fdba5` |
+| RKNN | `yolov8n_recall_safe_neg15_hardpos_e1_544x960_v232_int8.rknn` |
+| RKNN SHA256 | `3d5a47132cd7b087e03170ba398db7a57af730d834ebb0c8d0c77d81e776f98e` |
 | Toolkit | RKNN-Toolkit2 `2.3.2`，compiler `2.3.2` |
 | 目标平台 | `rk3588`，RK3588/RK3588S |
 | 输入 | RGB NHWC，`1x544x960x3`，INT8 量化 |
@@ -105,39 +108,38 @@
 
 ```text
 /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/
-  rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/
+  rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/
 ```
 
 关键文件绝对路径：
 
 ```text
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/real_gray_yolo_final_mixed_20260829/training/final_all_gray/weights/last.pt
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_544x960_rkopt.onnx
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_best.pt
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/model.rkopt.json
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/model_build.log
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/release_manifest.json
-/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/validation/pt_rknn_clip_comparison.json
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/real_gray_yolov8n_neg15_hard_positive_20260831/training/real_gray_yolo_recall_safe_neg15_hardpos_v1_20260831/weights/epoch0.pt
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/yolov8n_recall_safe_neg15_hardpos_e1_544x960_v232_int8.rknn
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/yolov8n_recall_safe_neg15_hardpos_e1_544x960_rkopt.onnx
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/yolov8n_recall_safe_neg15_hardpos_e1.pt
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/model.rkopt.json
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/model_build.log
 ```
 
-注意：发布 PT 文件名中的 `best` 是交付命名，不代表训练目录的 `weights/best.pt`。本次对 `best.pt`、epoch5、epoch10 和 `last.pt` 做过统一灰度/RGB 评测，最终明确选择 `last.pt`；部署或重新导出时必须以上述训练源 checkpoint 或 SHA256 一致的发布 PT 为准。
+注意：训练文件 `epoch0.pt` 表示本次增量训练完成第 1 个 epoch。10 个 checkpoint 已按相同灰度固定阈值评测，epoch 1 的 Recall/F1 最优；不要用 RGB 验证产生的 `best.pt` 或最后的 `last.pt` 替换发布模型。
 
 建议复制到板端：
 
 ```text
-/data/anti_uav/models/yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn
+/data/anti_uav/models/yolov8n_recall_safe_neg15_hardpos_e1_544x960_v232_int8.rknn
 ```
 
 交付目录建议保持以下结构：
 
 ```text
-anti_uav_rk3588s_real_gray_final_20260829/
-  models/yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn
-  metadata/model.rkopt.json
-  metadata/model_build.log
-  metadata/calibration_summary.json
-  DEPLOYMENT.md
+anti_uav_yolov8n_neg15_hard_positive_544x960_20260831/
+  models/yolov8n_recall_safe_neg15_hardpos_e1.pt
+  rknn/yolov8n_recall_safe_neg15_hardpos_e1_544x960_rkopt.onnx
+  rknn/yolov8n_recall_safe_neg15_hardpos_e1_544x960_v232_int8.rknn
+  rknn/model.rkopt.json
+  rknn/model_build.log
+  COMPARISON.md
   SHA256SUMS
 ```
 
@@ -145,16 +147,16 @@ anti_uav_rk3588s_real_gray_final_20260829/
 
 | 检查项 | 状态 | 说明 |
 |---|---|---|
-| `.pt` LOVO 独立集评测 | 通过 | 7-fold 灰度 macro mAP50-95 `8.32%` |
-| `.pt` final 回放评测 | 通过 | mAP50-95 `17.74%`，conf0.25 F1 `72.52%`，FPR `1.66%` |
+| `.pt` LOVO 独立集评测 | 待完成 | 新困难正样本版本尚未逐 fold 独立重训 |
+| `.pt` Video00004 回放 | 通过 | conf0.03：P `89.53%`、R `72.54%`、F1 `80.15%` |
 | ONNX 结构检查 | 通过 | 输入 `544x960`，9 outputs |
 | RKNN INT8 构建 | 通过 | 448 张灰度 calibration 图片，7 段视频各含正/负样本 |
 | RKNN 输出结构检查 | 通过 | P3/P4/P5 为 `68x120`、`34x60`、`17x30` |
-| PT/RKNN simulator 短片回归 | 通过 | 20 帧检测数一致，共同检测框平均 IoU `0.711` |
-| RK3588S 初始化和结果回归 | 通过 | CM5 上完成 120 帧 smoke test 和 2000 帧长测 |
-| 当前模型板端 FPS | 通过但余量有限 | 三核 detector `120.69 FPS`；三核 + RK-BoT-SORT 长测 `108.50 FPS` |
+| RK3588S 精度回归 | 通过 | conf0.01：P `81.16%`、R `75.00%`、F1 `77.96%` |
+| RK3588S 完整视频验证 | 通过 | Video00004 共 2,359 帧，detector 和 Tracker 均完成 |
+| 当前模型板端 FPS | 通过但余量有限 | 三核 detector `114.75 FPS`；三核 + RK-BoT-SORT `108.51 FPS` |
 
-当前文件可用于 RK3588S 软件集成和板端验收。先前 fold3 交付模型保留为回滚版本，不再作为主发布；任何模型替换都必须更新 SHA256，并重新执行第 15 节验收。
+当前文件可用于 RK3588S 软件集成和板端回归验收。新场景正式发布前仍需完成困难正样本版本的 7-fold LOVO；任何模型替换都必须更新 SHA256，并重新执行第 15 节验收。
 
 模型验收条件：
 
@@ -176,10 +178,10 @@ cd /mnt/chenziye/codes/ultralytics_yolov8
 source .venv/bin/activate
 
 python scripts/anti_uav/export_detector_rkopt_onnx.py \
-  --weights /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/real_gray_yolo_final_mixed_20260829/training/final_all_gray/weights/last.pt \
+  --weights /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/real_gray_yolov8n_neg15_hard_positive_20260831/training/real_gray_yolo_recall_safe_neg15_hardpos_v1_20260831/weights/epoch0.pt \
   --imgsz 544,960 \
-  --output /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_544x960_rkopt.onnx \
-  --metadata /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/model.rkopt.json \
+  --output /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/yolov8n_recall_safe_neg15_hardpos_e1_544x960_rkopt.onnx \
+  --metadata /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/model.rkopt.json \
   --opset 12
 ```
 
@@ -208,17 +210,17 @@ python scripts/anti_uav/prepare_rknn_calibration.py \
 ### 4.3 生成 INT8 RKNN
 
 ```bash
-python scripts/anti_uav/build_rknn.py \
-  --onnx /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_544x960_rkopt.onnx \
-  --output /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn \
+/mnt/chenziye/miniconda3/envs/rknn232/bin/python scripts/anti_uav/build_rknn.py \
+  --onnx /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/yolov8n_recall_safe_neg15_hardpos_e1_544x960_rkopt.onnx \
+  --output /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/yolov8n_recall_safe_neg15_hardpos_e1_544x960_v232_int8.rknn \
   --target rk3588 \
   --quantize \
-  --dataset /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/calibration/dataset.txt \
+  --dataset /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_recall_safe_neg15_e10_544x960_20260831_v232_int8/calibration/dataset_balanced_224pos_224neg.txt \
   --mean-values 0,0,0 \
   --std-values 255,255,255 \
-  --verbose 2>&1 | tee /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/model_build.log
+  --verbose 2>&1 | tee /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/model_build.log
 
-sha256sum /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_real_gray_final_544x960_20260829_v232_int8/*.rknn
+sha256sum /mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/rknn_yolov8n_neg15_hardpos_e1_544x960_20260831_v232_int8/*.rknn
 ```
 
 转换日志必须显示 RKNN-Toolkit2 2.3.2。发现 outlier warning 时应做 RKNN simulator 和板端精度回归，不能只确认转换命令返回成功。
@@ -282,7 +284,7 @@ git clone git@github.com:czyczyyzc/ultralytics_yolov8.git \
   /data/anti_uav/src/ultralytics_yolov8
 
 cd /data/anti_uav/src/ultralytics_yolov8
-git checkout dbed591
+git checkout eec8b01
 
 cd scripts/anti_uav/rknn_yolov8_native
 RKNN_INCLUDE=/data/anti_uav/third_party/rknn/include \
@@ -325,8 +327,23 @@ cat /sys/class/devfreq/dmc/governor
 
 ## 8. 单视频部署测试
 
+安装固定生产配置：
+
 ```bash
-MODEL=/data/anti_uav/models/yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn
+install -m 755 scripts/anti_uav/rknn_yolov8_native/run_recall_safe_deployment.sh \
+  /data/anti_uav/bin/run_recall_safe_deployment.sh
+install -m 644 scripts/anti_uav/rknn_yolov8_native/recall_safe_neg15.env \
+  /data/anti_uav/config/recall_safe_neg15.env
+
+/data/anti_uav/bin/run_recall_safe_deployment.sh \
+  /data/anti_uav/videos/test.mp4 \
+  /data/anti_uav/output/recall_safe_neg15
+```
+
+等价的完整命令如下：
+
+```bash
+MODEL=/data/anti_uav/models/yolov8n_recall_safe_neg15_hardpos_e1_544x960_v232_int8.rknn
 VIDEO=/data/anti_uav/videos/test.mp4
 OUT=/data/anti_uav/output/smoke
 
@@ -341,11 +358,11 @@ mkdir -p "$OUT"
   --source-fps 107 \
   --max-frames 1000 \
   --warmup-frames 50 \
-  --conf 0.25 \
+  --conf 0.01 \
   --nms-iou 0.45 \
-  --track-high-thresh 0.25 \
-  --track-low-thresh 0.10 \
-  --new-track-thresh 0.30 \
+  --track-high-thresh 0.03 \
+  --track-low-thresh 0.01 \
+  --new-track-thresh 0.05 \
   --track-first-match-cost 0.92 \
   --track-second-match-cost 0.92 \
   --track-buffer-sec 1.0 \
@@ -397,17 +414,17 @@ V4L2 摄像头示例：
 
 ```bash
 /data/anti_uav/bin/native_yolov8_video \
-  /data/anti_uav/models/yolov8n_anti_uav_real_gray_final_544x960_v232_int8.rknn \
+  /data/anti_uav/models/yolov8n_recall_safe_neg15_hardpos_e1_544x960_v232_int8.rknn \
   /dev/video0 \
   --workers 3 \
   --queue-size 3 \
   --worker-cpu-base 4 \
   --tracker rk_botsort \
   --source-fps 107 \
-  --conf 0.25 \
-  --track-high-thresh 0.25 \
-  --track-low-thresh 0.10 \
-  --new-track-thresh 0.30 \
+  --conf 0.01 \
+  --track-high-thresh 0.03 \
+  --track-low-thresh 0.01 \
+  --new-track-thresh 0.05 \
   --track-buffer-sec 1.0 \
   --track-prediction-sec 0.0 \
   --tracks-csv /data/anti_uav/output/camera_tracks.csv \
@@ -446,18 +463,16 @@ python scripts/anti_uav/rknn_yolov8_native/render_tracker_video.py \
 
 ## 13. 板端性能实测
 
-当前 final 灰度适配模型已在 Orange Pi CM5 RK3588S 实测。输入为 `1920x1080 @ 100 FPS` 的 `Video00004.mp4`，模型输入 `960x544`，queue size 为 3，CPU worker 绑定大核 4/5/6，NPU context 分别绑定 NPU0/1/2。三线程数据包含视频读取；Tracker 长测同时写入 tracks CSV。
+当前 neg15 hard-positive e1 模型已在 Orange Pi CM5 RK3588S 实测。输入为 `1920x1080 @ 100 FPS` 的 `Video00004.mp4`，模型输入 `960x544`，queue size 为 3，CPU worker 绑定大核 4/5/6，NPU context 分别绑定 NPU0/1/2。三线程数据包含视频读取；Tracker 长测同时写入 tracks CSV。
 
 | 配置 | 计时帧 | 完整 FPS | 平均 NPU 推理 | 说明 |
 |---|---:|---:|---:|---|
-| 单 RKNN context，detector | 2000 | 48.05 | 18.40 ms | 不含 video read |
-| 3 contexts，detector，冷机 | 1000 | 120.69 | 19.87 ms | 约 `63.8 -> 79.5°C` |
-| 3 contexts + RK-BoT-SORT，冷到热长测 | 2000 | 108.50 | 21.20 ms | 约 `63.8 -> 82.2°C`，结束时 NPU 热降到 800 MHz |
-| 3 contexts，detector，worker 绑定小核 | 1000 | 78.82 | 20.75 ms | OpenCV 预处理增至 15.90 ms，不推荐 |
+| 3 contexts，detector，`conf=0.01` | 2359 | 114.75 | 19.83 ms | 336 TP / 78 FP |
+| 3 contexts + RK-BoT-SORT | 2359 | 108.51 | 20.77 ms | high/low/new=`0.03/0.01/0.05` |
 
-长测中的 Tracker association 平均只有 `0.010 ms/frame`；性能下降主要来自温度导致的 NPU/CPU 降频，不是 RK-BoT-SORT。板载风扇已为最大 PWM 255，当前散热结构下 107 FPS 需求仅有约 1.5 FPS 的长测余量。生产交付前仍须用真实 107 FPS 摄像头连续运行至少 30 分钟，检查采集丢帧、端到端延迟和热稳态；建议改善散热器接触、风道或主动风扇，不能只用冷机峰值 `120.69 FPS` 作为持续性能承诺。
+长测中的 Tracker association 平均只有 `0.011 ms/frame`；性能下降主要来自温度导致的 NPU/CPU 降频，不是 RK-BoT-SORT。板端风扇使用自动策略，当前散热结构下 107 FPS 需求只有约 1.5 FPS 的长测余量。生产交付前仍须用真实 107 FPS 摄像头连续运行至少 30 分钟，检查采集丢帧、端到端延迟和热稳态；建议改善散热器接触、风道或主动风扇，不能只用冷机峰值作为持续性能承诺。
 
-原始结果位于发布包 `metadata/board_validation/`。历史同结构 RGB 模型曾测得三核约 `129.41 FPS`，差异主要来自测试温度、视频解码和持续负载条件，不能替代当前 final 模型的上述验收成绩。
+原始结果位于本地交付目录 `deliverables/anti_uav_yolov8n_neg15_hard_positive_544x960_20260831/board/`。历史同结构模型的更高冷机 FPS 主要来自测试温度、视频解码和持续负载条件，不能替代当前模型的完整视频验收成绩。
 
 ## 14. 上层系统接口
 
@@ -488,7 +503,7 @@ predicted,confirmed,age,hits,time_since_update_sec
 
 1. 确认板型、kernel、NPU driver 和 RKNN Runtime 版本。
 2. 确认模型输入为 `960x544`、INT8、9 outputs、单类别 drone。
-3. 核对 Git commit `dbed591`、RKNN SHA256 `c041e401fa890b58353c74af78a952940c1a37546ca0f6ace0c9fcf42c276130` 和发布清单。
+3. 核对 Git commit `eec8b01`、RKNN SHA256 `3d5a47132cd7b087e03170ba398db7a57af730d834ebb0c8d0c77d81e776f98e` 和发布清单。
 4. 重启后确认 CPU/NPU/DDR governor 仍为 performance。
 5. 运行 20 帧 smoke test，确认模型可初始化且没有 output layout 错误。
 6. 运行至少 1000 帧 benchmark，保存 JSON、温度和 NPU/DDR 频率。

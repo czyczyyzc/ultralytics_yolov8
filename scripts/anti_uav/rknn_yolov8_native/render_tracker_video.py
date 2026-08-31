@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--benchmark", type=Path)
     parser.add_argument("--summary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--model-label", default="YOLOv8n INT8", help="Model name shown in the video header.")
     parser.add_argument("--hold-sec", type=float, default=1.0)
     parser.add_argument("--max-frames", type=int, default=0)
     return parser.parse_args()
@@ -205,7 +206,7 @@ def main() -> None:
             cv2.rectangle(frame, (0, 0), (8, 66), (54, 218, 255), -1)
             put_text(
                 frame,
-                f"RK3588S  |  YOLOv8n INT8 {input_width}x{input_height} + RK-BoT-SORT",
+                f"RK3588S  |  {args.model_label} {input_width}x{input_height} + RK-BoT-SORT",
                 (24, 29),
                 0.69,
             )
@@ -220,13 +221,14 @@ def main() -> None:
                 f"Tracker  {tracker_ms:.4f} ms/frame  |  Source  {fps:.0f} FPS"
             )
             put_text(frame, perf_text, (24, height - 34), 0.59)
-            quality_text = (
-                f"P {float(accuracy.get('precision', 0.0)) * 100:.2f}%  "
-                f"R {float(accuracy.get('recall', 0.0)) * 100:.2f}%  "
-                f"F1 {float(accuracy.get('f1', 0.0)) * 100:.2f}%"
-            )
-            (quality_width, _), _ = cv2.getTextSize(quality_text, cv2.FONT_HERSHEY_SIMPLEX, 0.59, 2)
-            put_text(frame, quality_text, (width - quality_width - 24, height - 34), 0.59, (95, 242, 173))
+            if accuracy:
+                quality_text = (
+                    f"P {float(accuracy.get('precision', 0.0)) * 100:.2f}%  "
+                    f"R {float(accuracy.get('recall', 0.0)) * 100:.2f}%  "
+                    f"F1 {float(accuracy.get('f1', 0.0)) * 100:.2f}%"
+                )
+                (quality_width, _), _ = cv2.getTextSize(quality_text, cv2.FONT_HERSHEY_SIMPLEX, 0.59, 2)
+                put_text(frame, quality_text, (width - quality_width - 24, height - 34), 0.59, (95, 242, 173))
 
             writer.write(frame)
             frame_index += 1

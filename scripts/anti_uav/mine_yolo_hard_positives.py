@@ -24,6 +24,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--device", default="0")
     parser.add_argument("--max-det", type=int, default=100)
+    parser.add_argument(
+        "--gray-only",
+        action="store_true",
+        help="Mine only gray positives while leaving RGB images available to the rehearsal mix.",
+    )
     return parser.parse_args()
 
 
@@ -163,7 +168,8 @@ def main() -> None:
 
     source_paths = [Path(line.strip()) for line in args.train_list.read_text().splitlines() if line.strip()]
     unique_paths = list(dict.fromkeys(source_paths))
-    positives = [path for path in unique_paths if len(read_normalized_boxes(path))]
+    all_positives = [path for path in unique_paths if len(read_normalized_boxes(path))]
+    positives = [path for path in all_positives if not args.gray_only or source_group(path) != "rgb"]
     args.output.mkdir(parents=True, exist_ok=True)
     positive_list = args.output / "positive_unique.txt"
     positive_list.write_text("".join(f"{path}\n" for path in positives))
@@ -227,7 +233,9 @@ def main() -> None:
         "weak_confidence": args.weak_conf,
         "iou_threshold": args.iou,
         "unique_training_images": len(unique_paths),
+        "unique_positive_images_before_scope_filter": len(all_positives),
         "unique_positive_images": len(positives),
+        "gray_only": args.gray_only,
         "hard_positive_images": len(hard_records),
         "categories": dict(sorted(categories.items())),
         "requested_extra_rehearsal_slots": sum(record["extra_repeats"] for record in hard_records),

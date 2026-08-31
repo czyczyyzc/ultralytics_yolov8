@@ -682,10 +682,11 @@ public:
             ++detection_frames_;
             detection_count_ += static_cast<int>(result.detections.size());
             if (predictions_) {
-                const Detection& best = result.detections.front();
-                predictions_ << result.frame_index << ',' << best.x1 << ',' << best.y1 << ','
-                             << best.x2 - best.x1 << ',' << best.y2 - best.y1 << ','
-                             << best.score << ',' << best.class_id << '\n';
+                for (const Detection& detection : result.detections) {
+                    predictions_ << result.frame_index << ',' << detection.x1 << ',' << detection.y1 << ','
+                                 << detection.x2 - detection.x1 << ',' << detection.y2 - detection.y1 << ','
+                                 << detection.score << ',' << detection.class_id << '\n';
+                }
             }
         }
 

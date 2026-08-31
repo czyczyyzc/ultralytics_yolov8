@@ -36,6 +36,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--device", default="0")
     parser.add_argument("--seed", type=int, default=20260828)
+    parser.add_argument("--lr0", type=float, default=0.001)
+    parser.add_argument("--lrf", type=float, default=0.1)
+    parser.add_argument("--warmup-epochs", type=float, default=1.0)
     return parser.parse_args()
 
 
@@ -143,11 +146,11 @@ def main() -> None:
         exist_ok=True,
         pretrained=True,
         optimizer="AdamW",
-        lr0=0.001,
-        lrf=0.1,
+        lr0=args.lr0,
+        lrf=args.lrf,
         momentum=0.937,
         weight_decay=0.0005,
-        warmup_epochs=1.0,
+        warmup_epochs=args.warmup_epochs,
         warmup_momentum=0.8,
         warmup_bias_lr=0.01,
         cos_lr=True,
@@ -188,6 +191,9 @@ def main() -> None:
         "epochs_requested": args.epochs,
         "batch": args.batch,
         "imgsz_height_width": [544, 960],
+        "lr0": args.lr0,
+        "lrf": args.lrf,
+        "warmup_epochs": args.warmup_epochs,
         "save_dir": str(model.trainer.save_dir),
     }
     output = args.project / fold / "training_manifest.json"

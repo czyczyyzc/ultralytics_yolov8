@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build positive-only real-gray YOLO LOVO folds mixed 1:1 with Anti-UAV300 RGB."""
+"""Build real-gray YOLO LOVO folds mixed with Anti-UAV300 RGB and negatives."""
 
 from __future__ import annotations
 
@@ -19,6 +19,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rgb-train-list", type=Path, required=True)
     parser.add_argument("--rgb-val-list", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--gray-data-root",
+        type=Path,
+        default=None,
+        help="Optional existing extraction root containing images/gray and labels/gray.",
+    )
+    parser.add_argument(
+        "--negative-fraction",
+        type=float,
+        default=0.0,
+        help="Fraction of the final training list reserved for empty-label frames.",
+    )
+    parser.add_argument(
+        "--hard-negative-list",
+        type=Path,
+        default=None,
+        help="Optional ordered image list to prioritize within the negative quota.",
+    )
     parser.add_argument("--seed", type=int, default=20260828)
     parser.add_argument("--extract-workers", type=int, default=4)
     parser.add_argument("--jpeg-qscale", type=int, default=1)
@@ -132,8 +150,41 @@ def write_yaml(path: Path, train: Path, val: Path) -> None:
     )
 
 
+def select_negatives(
+    candidates: list[Path],
+    hard_negatives: list[Path],
+    positive_count: int,
+    negative_fraction: float,
+    seed: int,
+) -> tuple[list[Path], int]:
+    """Select unique negatives, prioritizing detector-mined hard examples."""
+    if not 0.0 <= negative_fraction < 1.0:
+        raise ValueError("negative_fraction must be in [0, 1)")
+    if negative_fraction == 0.0:
+        return [], 0
+
+    unique_candidates = list(dict.fromkeys(candidates))
+    candidate_set = set(unique_candidates)
+    prioritized = [path for path in dict.fromkeys(hard_negatives) if path in candidate_set]
+    target_count = round(positive_count * negative_fraction / (1.0 - negative_fraction))
+    if target_count > len(unique_candidates):
+        raise RuntimeError(
+            f"Need {target_count} unique negatives for fraction {negative_fraction:.3f}, "
+            f"but only {len(unique_candidates)} are available"
+        )
+
+    selected = prioritized[:target_count]
+    selected_set = set(selected)
+    remainder = [path for path in unique_candidates if path not in selected_set]
+    random.Random(seed).shuffle(remainder)
+    selected.extend(remainder[: target_count - len(selected)])
+    return selected, min(len(prioritized), target_count)
+
+
 def main() -> None:
     args = parse_args()
+    if not 0.0 <= args.negative_fraction < 1.0:
+        raise ValueError("--negative-fraction must be in [0, 1)")
     videos = sorted(args.videos.glob("Video*.mp4"))
     if not videos:
         raise FileNotFoundError(f"No videos found in {args.videos}")
@@ -157,6 +208,7 @@ def main() -> None:
         }
 
     args.output.mkdir(parents=True, exist_ok=True)
+    gray_data_root = args.gray_data_root or args.output
     with ThreadPoolExecutor(max_workers=args.extract_workers) as executor:
         futures = []
         for video in videos:
@@ -164,7 +216,7 @@ def main() -> None:
                 executor.submit(
                     extract_video,
                     video,
-                    args.output / "images" / "gray" / video.stem,
+                    gray_data_root / "images" / "gray" / video.stem,
                     int(metadata[video.stem]["frames"]),
                     args.jpeg_qscale,
                 )
@@ -174,14 +226,16 @@ def main() -> None:
 
     images_by_video: dict[str, list[Path]] = {}
     positives_by_video: dict[str, list[Path]] = {}
+    negatives_by_video: dict[str, list[Path]] = {}
     for stem in stems:
         info = metadata[stem]
         annotation = annotations[stem]
-        image_dir = args.output / "images" / "gray" / stem
-        label_dir = args.output / "labels" / "gray" / stem
+        image_dir = gray_data_root / "images" / "gray" / stem
+        label_dir = gray_data_root / "labels" / "gray" / stem
         label_dir.mkdir(parents=True, exist_ok=True)
         images: list[Path] = []
         positives: list[Path] = []
+        negatives: list[Path] = []
         for frame_index, (present, box) in enumerate(zip(annotation["exist"], annotation["gt_rect"])):
             image_path = image_dir / f"{frame_index:06d}.jpg"
             target = label_dir / f"{frame_index:06d}.txt"
@@ -191,14 +245,25 @@ def main() -> None:
             images.append(image_path)
             if present:
                 positives.append(image_path)
+            else:
+                negatives.append(image_path)
         images_by_video[stem] = images
         positives_by_video[stem] = positives
+        negatives_by_video[stem] = negatives
 
     rgb_train_all = read_paths(args.rgb_train_list)
-    rgb_train_positive = [path for path in rgb_train_all if label_path(path).read_text().strip()]
+    rgb_train_positive: list[Path] = []
+    rgb_train_negative: list[Path] = []
+    for path in rgb_train_all:
+        target = rgb_train_positive if label_path(path).read_text().strip() else rgb_train_negative
+        target.append(path)
     if not rgb_train_positive:
         raise RuntimeError("No positive Anti-UAV300 RGB training images")
     rgb_val = read_paths(args.rgb_val_list)
+    hard_negatives = read_paths(args.hard_negative_list) if args.hard_negative_list else []
+    all_gray_negatives = [path for stem in stems for path in negatives_by_video[stem]]
+    all_negative_candidates = rgb_train_negative + all_gray_negatives
+    write_lines(args.output / "negative_pool_all.txt", all_negative_candidates)
 
     folds: list[dict] = []
     for fold_index, holdout in enumerate(stems):
@@ -214,13 +279,26 @@ def main() -> None:
         gray_order = gray_unique.copy()
         rng.shuffle(gray_order)
         gray_balanced = [gray_order[index % len(gray_order)] for index in range(len(rgb_train_positive))]
-        mixed = rgb_train_positive + gray_balanced
+        positive_mixed = rgb_train_positive + gray_balanced
+        negative_candidates = rgb_train_negative + [
+            path for stem in stems if stem != holdout for path in negatives_by_video[stem]
+        ]
+        selected_negatives, hard_negative_count = select_negatives(
+            negative_candidates,
+            hard_negatives,
+            len(positive_mixed),
+            args.negative_fraction,
+            args.seed + 1000 + fold_index,
+        )
+        mixed = positive_mixed + selected_negatives
         rng.shuffle(mixed)
 
         train_list = fold_dir / "train_mixed_50_50.txt"
         holdout_all_list = fold_dir / "holdout_all_frames.txt"
         holdout_positive_list = fold_dir / "holdout_positive_frames.txt"
         write_lines(train_list, mixed)
+        write_lines(fold_dir / "train_positive_mixed_50_50.txt", positive_mixed)
+        write_lines(fold_dir / "train_negative_selected.txt", selected_negatives)
         write_lines(holdout_all_list, images_by_video[holdout])
         write_lines(holdout_positive_list, positives_by_video[holdout])
         write_yaml(fold_dir / "train_rgb_monitor.yaml", train_list, args.rgb_val_list)
@@ -233,6 +311,11 @@ def main() -> None:
                 "rgb_unique_positive": len(rgb_train_positive),
                 "gray_unique_positive": len(gray_unique),
                 "gray_balanced_samples": len(gray_balanced),
+                "rgb_unique_negative": len(rgb_train_negative),
+                "gray_unique_negative": len(negative_candidates) - len(rgb_train_negative),
+                "selected_negative_samples": len(selected_negatives),
+                "selected_hard_negative_samples": hard_negative_count,
+                "negative_fraction": len(selected_negatives) / len(mixed),
                 "train_samples": len(mixed),
                 "holdout_all_frames": len(images_by_video[holdout]),
                 "holdout_positive_frames": len(positives_by_video[holdout]),
@@ -249,31 +332,49 @@ def main() -> None:
     final_gray_balanced = [
         final_gray_order[index % len(final_gray_order)] for index in range(len(rgb_train_positive))
     ]
-    final_mixed = rgb_train_positive + final_gray_balanced
+    final_positive_mixed = rgb_train_positive + final_gray_balanced
+    final_negatives, final_hard_negative_count = select_negatives(
+        all_negative_candidates,
+        hard_negatives,
+        len(final_positive_mixed),
+        args.negative_fraction,
+        args.seed + 2000 + len(stems),
+    )
+    final_mixed = final_positive_mixed + final_negatives
     final_rng.shuffle(final_mixed)
     final_train_list = final_dir / "train_mixed_50_50.txt"
     write_lines(final_train_list, final_mixed)
+    write_lines(final_dir / "train_positive_mixed_50_50.txt", final_positive_mixed)
+    write_lines(final_dir / "train_negative_selected.txt", final_negatives)
     write_lines(final_dir / "train_gray_positive_unique.txt", final_gray_unique)
     write_lines(final_dir / "train_rgb_positive_unique.txt", rgb_train_positive)
     write_yaml(final_dir / "train_rgb_monitor.yaml", final_train_list, args.rgb_val_list)
+    all_gray_negative_set = set(all_gray_negatives)
     final_training = {
         "name": final_dir.name,
         "rgb_unique_positive": len(rgb_train_positive),
         "gray_unique_positive": len(final_gray_unique),
         "gray_balanced_samples": len(final_gray_balanced),
+        "rgb_unique_negative": len(rgb_train_negative),
+        "gray_unique_negative": len(all_gray_negatives),
+        "selected_negative_samples": len(final_negatives),
+        "selected_hard_negative_samples": final_hard_negative_count,
+        "negative_fraction": len(final_negatives) / len(final_mixed),
         "train_samples": len(final_mixed),
         "gray_training_videos": stems,
-        "new_gray_empty_frames_in_training": 0,
+        "new_gray_empty_frames_in_training": sum(path in all_gray_negative_set for path in final_negatives),
         "train_list": str(final_train_list),
         "data_yaml": str(final_dir / "train_rgb_monitor.yaml"),
     }
 
     manifest = {
-        "schema_version": "anti_uav.real_gray_yolo_lovo.v1",
+        "schema_version": "anti_uav.real_gray_yolo_lovo.v2",
         "seed": args.seed,
+        "gray_data_root": str(gray_data_root),
         "policy": {
-            "new_gray_empty_frames_in_training": 0,
-            "mix": "all positive Anti-UAV300 RGB plus repeated positive gray frames at 1:1",
+            "negative_fraction": args.negative_fraction,
+            "hard_negative_list": str(args.hard_negative_list) if args.hard_negative_list else None,
+            "mix": "1:1 Anti-UAV300 RGB and gray positives, plus unique empty-label negatives",
             "holdout": "one complete gray video per fold",
             "training_validation": "Anti-UAV300 RGB val only",
             "post_training_evaluation": "complete gray holdout including absent frames",
@@ -282,6 +383,7 @@ def main() -> None:
             "train_list": str(args.rgb_train_list),
             "train_images": len(rgb_train_all),
             "train_positive_images": len(rgb_train_positive),
+            "train_negative_images": len(rgb_train_negative),
             "val_list": str(args.rgb_val_list),
             "val_images": len(rgb_val),
         },

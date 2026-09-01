@@ -21,6 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--summary", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model-label", default="YOLOv8n INT8", help="Model name shown in the video header.")
+    parser.add_argument("--platform-label", default="RK3588S")
+    parser.add_argument("--footer-label", default="")
     parser.add_argument("--hold-sec", type=float, default=1.0)
     parser.add_argument("--max-frames", type=int, default=0)
     return parser.parse_args()
@@ -206,7 +208,7 @@ def main() -> None:
             cv2.rectangle(frame, (0, 0), (8, 66), (54, 218, 255), -1)
             put_text(
                 frame,
-                f"RK3588S  |  {args.model_label} {input_width}x{input_height} + RK-BoT-SORT",
+                f"{args.platform_label}  |  {args.model_label} {input_width}x{input_height} + RK-BoT-SORT",
                 (24, 29),
                 0.69,
             )
@@ -216,7 +218,7 @@ def main() -> None:
             put_text(frame, frame_text, (width - frame_text_width - 24, 39), 0.62)
 
             draw_panel(frame, height - 62, height)
-            perf_text = (
+            perf_text = args.footer_label or (
                 f"Board benchmark  {pipeline_fps:.2f} FPS  |  3 NPU cores  |  "
                 f"Tracker  {tracker_ms:.4f} ms/frame  |  Source  {fps:.0f} FPS"
             )

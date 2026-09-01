@@ -216,7 +216,13 @@ def replace_duplicate_positive_slots(
     if not pseudo_paths:
         raise ValueError("No pseudo-labeled training images")
 
-    positive_flags = [bool(label_path(path).read_text().strip()) for path in source_paths]
+    # Training schedules contain many repeated paths; cache label presence per unique image.
+    positive_by_path = {
+        path: bool(label_path(path).read_text().strip()) for path in set(source_paths) | set(pseudo_paths)
+    }
+    if not all(positive_by_path[path] for path in pseudo_paths):
+        raise ValueError("Every pseudo-labeled image must have a non-empty label")
+    positive_flags = [positive_by_path[path] for path in source_paths]
     positive_count = sum(positive_flags)
     source_unique_positives = {path for path, positive in zip(source_paths, positive_flags) if positive}
     source_negatives = [path for path, positive in zip(source_paths, positive_flags) if not positive]
@@ -239,7 +245,7 @@ def replace_duplicate_positive_slots(
     for index, path in zip(replaceable[:quota], schedule):
         output[index] = path
 
-    output_flags = [bool(label_path(path).read_text().strip()) for path in output]
+    output_flags = [positive_by_path[path] for path in output]
     output_negatives = [path for path, positive in zip(output, output_flags) if not positive]
     output_old_unique = {path for path, positive in zip(output, output_flags) if positive} & source_unique_positives
     if output_negatives != source_negatives:

@@ -15,7 +15,10 @@ std::vector<std::string> split_csv(const std::string& line) {
     std::vector<std::string> fields;
     std::stringstream stream(line);
     std::string field;
-    while (std::getline(stream, field, ',')) fields.push_back(field);
+    while (std::getline(stream, field, ',')) {
+        if (!field.empty() && field.back() == '\r') field.pop_back();
+        fields.push_back(field);
+    }
     return fields;
 }
 

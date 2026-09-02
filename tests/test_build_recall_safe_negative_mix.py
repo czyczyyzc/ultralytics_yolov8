@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from scripts.anti_uav.build_recall_safe_negative_mix import (
+    exclude_gray_sequences,
     filter_gray_negatives,
     parse_gray_frame,
     select_stratified_negatives,
@@ -50,6 +51,16 @@ def test_filter_rejects_positive_in_negative_pool() -> None:
             temporal_sample_seconds=0.0,
             seed=1,
         )
+
+
+def test_exclude_gray_sequences_removes_complete_holdout() -> None:
+    rgb = Path("/dataset/images/rgb/frame.jpg")
+    paths = [gray("Video00003", 1), gray("Video00004", 2), rgb, gray("Video00004", 3)]
+
+    kept, removed = exclude_gray_sequences(paths, {"Video00004"})
+
+    assert kept == [gray("Video00003", 1), rgb]
+    assert removed == {"Video00004": 2}
 
 
 def test_stratified_selection_is_exact_deterministic_and_caps_hard_negatives() -> None:

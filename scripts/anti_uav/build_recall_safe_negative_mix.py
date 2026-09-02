@@ -21,6 +21,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--rgb-val-list", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--exclude-sequence",
+        action="append",
+        default=[],
+        help="Exclude a gray sequence from every negative input. Repeat for multiple sequences.",
+    )
     parser.add_argument("--negative-fraction", type=float, required=True)
     parser.add_argument(
         "--guard-seconds",
@@ -168,6 +174,19 @@ def candidate_group(path: Path) -> str:
     return reference[0] if reference else "rgb"
 
 
+def exclude_gray_sequences(paths: list[Path], excluded: set[str]) -> tuple[list[Path], dict[str, int]]:
+    """Remove complete gray sequences before filtering or ranking negatives."""
+    kept: list[Path] = []
+    removed: dict[str, int] = defaultdict(int)
+    for path in paths:
+        reference = parse_gray_frame(path)
+        if reference is not None and reference[0] in excluded:
+            removed[reference[0]] += 1
+            continue
+        kept.append(path)
+    return kept, dict(sorted(removed.items()))
+
+
 def select_stratified_negatives(
     candidates: list[Path],
     ranked_hard_negatives: list[Path],
@@ -243,6 +262,20 @@ def main() -> None:
     positives = read_paths(args.positive_list)
     negative_pool = read_paths(args.negative_pool)
     hard_negatives = read_paths(args.hard_negative_list) if args.hard_negative_list else []
+    excluded_sequences = set(args.exclude_sequence)
+    leaked_positives = [
+        path
+        for path in positives
+        if (reference := parse_gray_frame(path)) is not None and reference[0] in excluded_sequences
+    ]
+    if leaked_positives:
+        raise ValueError(
+            f"Positive list contains {len(leaked_positives)} samples from excluded sequences"
+        )
+    negative_pool, excluded_negative_counts = exclude_gray_sequences(negative_pool, excluded_sequences)
+    hard_negatives, excluded_hard_negative_counts = exclude_gray_sequences(
+        hard_negatives, excluded_sequences
+    )
     candidates, safe_hard, filter_counts = filter_gray_negatives(
         negative_pool,
         hard_negatives,
@@ -292,6 +325,7 @@ def main() -> None:
             "guard_seconds": args.guard_seconds,
             "temporal_sample_seconds": args.temporal_sample_seconds,
             "hard_negative_max_fraction": args.hard_negative_max_fraction,
+            "excluded_sequences": sorted(excluded_sequences),
             "selection": "ranked safe hard negatives, then round-robin across RGB and gray videos",
         },
         "positive_samples": len(positives),
@@ -300,6 +334,8 @@ def main() -> None:
         "actual_negative_fraction": len(selected) / len(mixed),
         "training_samples": len(mixed),
         "selected_negatives_per_group": per_group,
+        "excluded_negative_samples": excluded_negative_counts,
+        "excluded_hard_negative_samples": excluded_hard_negative_counts,
         "filter": filter_counts,
         "train_list": str(mixed_path),
         "data_yaml": str(yaml_path),

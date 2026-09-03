@@ -158,13 +158,25 @@ def scale_boxes(boxes: np.ndarray, sx: float, sy: float) -> np.ndarray:
     return scaled
 
 
-def draw_box(image: np.ndarray, box: np.ndarray, color: tuple[int, int, int], label: str, thickness: int = 2) -> None:
+def draw_corner_box(image: np.ndarray, box: np.ndarray, color: tuple[int, int, int],
+                    thickness: int = 1, corner_length: int | None = None) -> None:
+    """Draw crisp corner brackets without covering the tiny target interior."""
+    height, width = image.shape[:2]
     x1, y1, x2, y2 = np.rint(box[:4]).astype(int)
-    cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness, cv2.LINE_AA)
-    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-    cv2.drawMarker(image, (cx, cy), color, cv2.MARKER_CROSS, 14, 2, cv2.LINE_AA)
-    cv2.putText(image, label, (max(2, x1), max(16, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
-                color, 1, cv2.LINE_AA)
+    x1, x2 = sorted((int(np.clip(x1, 0, width - 1)), int(np.clip(x2, 0, width - 1))))
+    y1, y2 = sorted((int(np.clip(y1, 0, height - 1)), int(np.clip(y2, 0, height - 1))))
+    box_size = max(x2 - x1 + 1, y2 - y1 + 1)
+    length = corner_length or max(2, min(10, int(round(box_size * 0.35))))
+    horizontal = min(length, x2 - x1)
+    vertical = min(length, y2 - y1)
+    segments = (
+        ((x1, y1), (x1 + horizontal, y1)), ((x1, y1), (x1, y1 + vertical)),
+        ((x2, y1), (x2 - horizontal, y1)), ((x2, y1), (x2, y1 + vertical)),
+        ((x1, y2), (x1 + horizontal, y2)), ((x1, y2), (x1, y2 - vertical)),
+        ((x2, y2), (x2 - horizontal, y2)), ((x2, y2), (x2, y2 - vertical)),
+    )
+    for start, end in segments:
+        cv2.line(image, start, end, color, thickness, cv2.LINE_8)
 
 
 def text_with_shadow(image: np.ndarray, text: str, position: tuple[int, int], scale: float,
@@ -173,24 +185,55 @@ def text_with_shadow(image: np.ndarray, text: str, position: tuple[int, int], sc
     cv2.putText(image, text, position, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness, cv2.LINE_AA)
 
 
-def add_zoom(panel: np.ndarray, gt: np.ndarray, pred: np.ndarray) -> None:
-    if len(gt) == 0:
+def boxes_in_crop(boxes: np.ndarray, left: int, top: int, crop_w: int, crop_h: int,
+                  scale_x: float, scale_y: float) -> np.ndarray:
+    if len(boxes) == 0:
+        return boxes.copy()
+    intersects = ((boxes[:, 2] >= left) & (boxes[:, 0] < left + crop_w) &
+                  (boxes[:, 3] >= top) & (boxes[:, 1] < top + crop_h))
+    cropped = boxes[intersects].copy()
+    cropped[:, [0, 2]] = (cropped[:, [0, 2]] - left) * scale_x
+    cropped[:, [1, 3]] = (cropped[:, [1, 3]] - top) * scale_y
+    return cropped
+
+
+def add_zoom(panel: np.ndarray, clean_frame: np.ndarray, gt_raw: np.ndarray, pred_raw: np.ndarray,
+             pred_color: tuple[int, int, int]) -> None:
+    if len(gt_raw) == 0:
         return
-    height, width = panel.shape[:2]
-    x1, y1, x2, y2 = gt[0]
+    panel_h, panel_w = panel.shape[:2]
+    source_h, source_w = clean_frame.shape[:2]
+    x1, y1, x2, y2 = gt_raw[0]
     cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+    # A 160x100 native-resolution crop is enlarged to 320x200 before annotations.
     crop_w, crop_h = 160, 100
-    left = int(np.clip(cx - crop_w // 2, 0, max(0, width - crop_w)))
-    top = int(np.clip(cy - crop_h // 2, 0, max(0, height - crop_h)))
-    crop = panel[top:top + crop_h, left:left + crop_w]
+    left = int(np.clip(cx - crop_w // 2, 0, max(0, source_w - crop_w)))
+    top = int(np.clip(cy - crop_h // 2, 0, max(0, source_h - crop_h)))
+    crop = clean_frame[top:top + crop_h, left:left + crop_w]
     if crop.shape[:2] != (crop_h, crop_w):
         return
-    zoom = cv2.resize(crop, (320, 200), interpolation=cv2.INTER_NEAREST)
-    zx, zy = width - 330, 48
+    zoom_w, zoom_h = 320, 200
+    zoom = cv2.resize(crop, (zoom_w, zoom_h), interpolation=cv2.INTER_CUBIC)
+    zoom_gt = boxes_in_crop(gt_raw, left, top, crop_w, crop_h, zoom_w / crop_w, zoom_h / crop_h)
+    zoom_pred = boxes_in_crop(pred_raw, left, top, crop_w, crop_h, zoom_w / crop_w, zoom_h / crop_h)
+    for box in zoom_gt:
+        draw_corner_box(zoom, box, COLORS["gt"], 1)
+    for box in zoom_pred:
+        draw_corner_box(zoom, box, pred_color, 1)
+
+    zx, zy = panel_w - 330, 48
     cv2.rectangle(panel, (zx - 3, zy - 3), (zx + 323, zy + 203), (255, 255, 255), 2)
-    panel[zy:zy + 200, zx:zx + 320] = zoom
-    cv2.rectangle(panel, (left, top), (left + crop_w, top + crop_h), (255, 255, 255), 1)
-    text_with_shadow(panel, "2x TARGET VIEW", (zx + 8, zy + 20), 0.48, (255, 255, 255), 1)
+    panel[zy:zy + zoom_h, zx:zx + zoom_w] = zoom
+
+    panel_sx, panel_sy = panel_w / source_w, panel_h / source_h
+    crop_box = np.asarray([left * panel_sx, top * panel_sy,
+                           (left + crop_w) * panel_sx, (top + crop_h) * panel_sy])
+    draw_corner_box(panel, crop_box, (225, 225, 225), 1, corner_length=8)
+    best_conf = float(zoom_pred[:, 4].max()) if len(zoom_pred) else None
+    legend = "TARGET VIEW  |  GT: green"
+    if best_conf is not None:
+        legend += f"  P: {best_conf:.2f}"
+    text_with_shadow(panel, legend, (zx + 8, zy + 20), 0.43, (255, 255, 255), 1)
 
 
 def make_panel(frame: np.ndarray, gt_raw: np.ndarray, pred_raw: np.ndarray, model_label: str,
@@ -205,10 +248,10 @@ def make_panel(frame: np.ndarray, gt_raw: np.ndarray, pred_raw: np.ndarray, mode
         pred[:, [1, 3]] *= panel_h / source_h
     counts = match_counts(gt_raw, pred_raw, match_iou)
     for box in gt:
-        draw_box(panel, box, COLORS["gt"], "GT", 2)
+        draw_corner_box(panel, box, COLORS["gt"], 1)
     for box in pred:
-        draw_box(panel, box, pred_color, f"P {box[4]:.2f}", 2)
-    add_zoom(panel, gt, pred)
+        draw_corner_box(panel, box, pred_color, 1)
+    add_zoom(panel, frame, gt_raw, pred_raw, pred_color)
     tp, fp, fn = counts
     status = "CLEAR" if len(gt) == 0 and fp == 0 else "TP" if tp > 0 and fp == 0 and fn == 0 else f"TP {tp}  FP {fp}  MISS {fn}"
     status_color = COLORS["clear"] if status == "CLEAR" else COLORS["ok"] if fp == 0 and fn == 0 else COLORS["bad"]
@@ -293,6 +336,7 @@ def main() -> None:
         "conf": args.conf,
         "nms_iou": args.nms_iou,
         "match_iou": args.match_iou,
+        "visualization_style": "clean_native_crop_corner_boxes_v2",
         "left": {"label": args.left_label, "model": str(args.left_model.resolve()), "sha256": sha256(args.left_model),
                  "inference_seconds": left_seconds, "metrics": metrics(totals["left"]),
                  "absent_fp_frames": absent_fp_frames["left"]},

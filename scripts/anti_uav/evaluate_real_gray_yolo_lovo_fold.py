@@ -36,6 +36,7 @@ def standard_metrics(model: YOLO, data: Path, args: argparse.Namespace) -> dict[
         plots=False,
         save_json=False,
         verbose=False,
+        rect=False,
     )
     return {
         "precision": float(result.box.mp),
@@ -104,6 +105,7 @@ def fixed_threshold_metrics(model: YOLO, image_list: Path, args: argparse.Namesp
         batch=args.batch,
         stream=True,
         verbose=False,
+        rect=False,
     )
     seen = 0
     for result in predictions:

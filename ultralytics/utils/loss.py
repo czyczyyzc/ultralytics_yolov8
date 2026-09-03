@@ -258,6 +258,18 @@ class v8DetectionLoss:
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
 
 
+class v8AddOnP2DetectionLoss(v8DetectionLoss):
+    """Train only the first (P2) raw feature map of a Frozen-P3 + Add-on P2 detector."""
+
+    def __init__(self, model):
+        super().__init__(model)
+        self.stride = self.stride[:1]
+
+    def __call__(self, preds, batch):
+        feats = preds[1] if isinstance(preds, tuple) else preds
+        return super().__call__([feats[0]], batch)
+
+
 class v8SegmentationLoss(v8DetectionLoss):
     """Criterion class for computing training losses."""
 

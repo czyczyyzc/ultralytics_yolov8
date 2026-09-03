@@ -15,7 +15,16 @@ from .conv import Conv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init
 
-__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect"
+__all__ = (
+    "Detect",
+    "FrozenP3AddOnP2Detect",
+    "Segment",
+    "Pose",
+    "Classify",
+    "OBB",
+    "RTDETRDecoder",
+    "v10Detect",
+)
 
 
 class Detect(nn.Module):
@@ -168,6 +177,25 @@ class Detect(nn.Module):
         scores, index = scores.flatten(1).topk(max_det)
         i = torch.arange(batch_size)[..., None]  # batch indices
         return torch.cat([boxes[i, index // nc], scores[..., None], (index % nc)[..., None].float()], dim=-1)
+
+
+class FrozenP3AddOnP2Detect(Detect):
+    """Four-scale head whose P3-P5 towers remain compatible with a standard three-scale Detect head."""
+
+    addon_index = 0
+    legacy_start_index = 1
+
+    def __init__(self, nc=80, ch=()):
+        if len(ch) != 4:
+            raise ValueError(f"FrozenP3AddOnP2Detect expects P2-P5 channels, received {len(ch)} levels")
+        super().__init__(nc, ch)
+
+        # A normal four-scale Detect sizes every classification tower from P2.
+        # Rebuild P3-P5 from P3 so their shapes exactly match the frozen source head.
+        legacy = Detect(nc, ch[1:])
+        for target_index, source_index in enumerate(range(legacy.nl), start=self.legacy_start_index):
+            self.cv2[target_index] = legacy.cv2[source_index]
+            self.cv3[target_index] = legacy.cv3[source_index]
 
 
 class Segment(Detect):

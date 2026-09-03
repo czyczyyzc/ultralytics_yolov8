@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+import numpy as np
 import torch
 
 from scripts.anti_uav.lovo_detection_trainer import LovoDetectionTrainer
+from ultralytics.data import dataset as dataset_module
 from ultralytics.nn.modules import FrozenP3AddOnP2Detect
 from ultralytics.nn.tasks import DetectionModel
 from ultralytics.utils import LOGGER
@@ -44,6 +49,26 @@ class FrozenP3AddOnP2Trainer(LovoDetectionTrainer):
                 for callback in event_callbacks
                 if callback.__module__ != "ultralytics.utils.callbacks.wb"
             ]
+
+    def build_dataset(self, img_path, mode="train", batch=None):
+        if os.environ.get("ANTI_UAV_TRUST_DATASET_CACHE") != "1":
+            return super().build_dataset(img_path, mode, batch)
+        list_path = Path(img_path) if isinstance(img_path, (str, Path)) else None
+        cache_path = list_path.with_suffix(".cache") if list_path and list_path.is_file() else None
+        if not cache_path or not cache_path.is_file():
+            return super().build_dataset(img_path, mode, batch)
+
+        cache = np.load(str(cache_path), allow_pickle=True).item()
+        cached_hash = cache.get("hash")
+        if not cached_hash:
+            raise RuntimeError(f"Trusted dataset cache has no stored hash: {cache_path}")
+        original_get_hash = dataset_module.get_hash
+        dataset_module.get_hash = lambda _: cached_hash
+        try:
+            LOGGER.info("Trusting validated dataset cache and skipping NFS restat: %s", cache_path)
+            return super().build_dataset(img_path, mode, batch)
+        finally:
+            dataset_module.get_hash = original_get_hash
 
     def build_optimizer(self, model, name="auto", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
         base_model = de_parallel(model)

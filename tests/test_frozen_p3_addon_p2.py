@@ -1,10 +1,7 @@
 from pathlib import Path
 
-from scripts.anti_uav.train_frozen_p3_addon_p2 import (
-    add_on_parameter_ids,
-    transfer_frozen_p3_weights,
-    verify_legacy_outputs,
-)
+from scripts.anti_uav.frozen_p3_addon_p2_trainer import add_on_parameter_ids
+from scripts.anti_uav.train_frozen_p3_addon_p2 import transfer_frozen_p3_weights, verify_legacy_outputs
 from ultralytics.nn.modules import FrozenP3AddOnP2Detect
 from ultralytics.nn.tasks import DetectionModel
 

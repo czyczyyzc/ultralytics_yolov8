@@ -246,6 +246,7 @@ def main() -> None:
         max_det=args.max_det,
         device=args.device,
         batch=args.batch,
+        rect=False,
         stream=True,
         verbose=False,
     )

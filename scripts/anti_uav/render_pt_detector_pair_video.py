@@ -49,6 +49,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="0")
     parser.add_argument("--fps", type=float, help="Override output FPS")
     parser.add_argument("--panel-size", type=int, nargs=2, default=(960, 540), metavar=("W", "H"))
+    parser.add_argument(
+        "--prediction-only",
+        action="store_true",
+        help="Use GT for metrics and crop placement, but draw prediction boxes only.",
+    )
     return parser.parse_args()
 
 
@@ -198,7 +203,7 @@ def boxes_in_crop(boxes: np.ndarray, left: int, top: int, crop_w: int, crop_h: i
 
 
 def add_zoom(panel: np.ndarray, clean_frame: np.ndarray, gt_raw: np.ndarray, pred_raw: np.ndarray,
-             pred_color: tuple[int, int, int]) -> None:
+             pred_color: tuple[int, int, int], show_gt: bool = True) -> None:
     if len(gt_raw) == 0:
         return
     panel_h, panel_w = panel.shape[:2]
@@ -216,8 +221,9 @@ def add_zoom(panel: np.ndarray, clean_frame: np.ndarray, gt_raw: np.ndarray, pre
     zoom = cv2.resize(crop, (zoom_w, zoom_h), interpolation=cv2.INTER_CUBIC)
     zoom_gt = boxes_in_crop(gt_raw, left, top, crop_w, crop_h, zoom_w / crop_w, zoom_h / crop_h)
     zoom_pred = boxes_in_crop(pred_raw, left, top, crop_w, crop_h, zoom_w / crop_w, zoom_h / crop_h)
-    for box in zoom_gt:
-        draw_corner_box(zoom, box, COLORS["gt"], 1)
+    if show_gt:
+        for box in zoom_gt:
+            draw_corner_box(zoom, box, COLORS["gt"], 1)
     for box in zoom_pred:
         draw_corner_box(zoom, box, pred_color, 1)
 
@@ -230,14 +236,17 @@ def add_zoom(panel: np.ndarray, clean_frame: np.ndarray, gt_raw: np.ndarray, pre
                            (left + crop_w) * panel_sx, (top + crop_h) * panel_sy])
     draw_corner_box(panel, crop_box, (225, 225, 225), 1, corner_length=8)
     best_conf = float(zoom_pred[:, 4].max()) if len(zoom_pred) else None
-    legend = "TARGET VIEW  |  GT: green"
+    legend = "TARGET VIEW"
+    if show_gt:
+        legend += "  |  GT: green"
     if best_conf is not None:
         legend += f"  P: {best_conf:.2f}"
     text_with_shadow(panel, legend, (zx + 8, zy + 20), 0.43, (255, 255, 255), 1)
 
 
 def make_panel(frame: np.ndarray, gt_raw: np.ndarray, pred_raw: np.ndarray, model_label: str,
-               pred_color: tuple[int, int, int], panel_size: tuple[int, int], match_iou: float) -> tuple[np.ndarray, tuple[int, int, int]]:
+               pred_color: tuple[int, int, int], panel_size: tuple[int, int], match_iou: float,
+               show_gt: bool = True) -> tuple[np.ndarray, tuple[int, int, int]]:
     panel_w, panel_h = panel_size
     source_h, source_w = frame.shape[:2]
     panel = cv2.resize(frame, (panel_w, panel_h), interpolation=cv2.INTER_AREA)
@@ -247,11 +256,12 @@ def make_panel(frame: np.ndarray, gt_raw: np.ndarray, pred_raw: np.ndarray, mode
         pred[:, [0, 2]] *= panel_w / source_w
         pred[:, [1, 3]] *= panel_h / source_h
     counts = match_counts(gt_raw, pred_raw, match_iou)
-    for box in gt:
-        draw_corner_box(panel, box, COLORS["gt"], 1)
+    if show_gt:
+        for box in gt:
+            draw_corner_box(panel, box, COLORS["gt"], 1)
     for box in pred:
         draw_corner_box(panel, box, pred_color, 1)
-    add_zoom(panel, frame, gt_raw, pred_raw, pred_color)
+    add_zoom(panel, frame, gt_raw, pred_raw, pred_color, show_gt=show_gt)
     tp, fp, fn = counts
     status = "CLEAR" if len(gt) == 0 and fp == 0 else "TP" if tp > 0 and fp == 0 and fn == 0 else f"TP {tp}  FP {fp}  MISS {fn}"
     status_color = COLORS["clear"] if status == "CLEAR" else COLORS["ok"] if fp == 0 and fn == 0 else COLORS["bad"]
@@ -309,8 +319,14 @@ def main() -> None:
         gt = load_gt(image_path, frame.shape[1], frame.shape[0])
         left_pred = left_predictions.get(str(image_path), np.empty((0, 5), dtype=np.float32))
         right_pred = right_predictions.get(str(image_path), np.empty((0, 5), dtype=np.float32))
-        left_panel, left_counts = make_panel(frame, gt, left_pred, args.left_label, COLORS["left"], panel_size, args.match_iou)
-        right_panel, right_counts = make_panel(frame, gt, right_pred, args.right_label, COLORS["right"], panel_size, args.match_iou)
+        left_panel, left_counts = make_panel(
+            frame, gt, left_pred, args.left_label, COLORS["left"], panel_size, args.match_iou,
+            show_gt=not args.prediction_only,
+        )
+        right_panel, right_counts = make_panel(
+            frame, gt, right_pred, args.right_label, COLORS["right"], panel_size, args.match_iou,
+            show_gt=not args.prediction_only,
+        )
         for side, counts in (("left", left_counts), ("right", right_counts)):
             for key, value in zip(("tp", "fp", "fn"), counts):
                 totals[side][key] += value
@@ -336,7 +352,12 @@ def main() -> None:
         "conf": args.conf,
         "nms_iou": args.nms_iou,
         "match_iou": args.match_iou,
-        "visualization_style": "clean_native_crop_corner_boxes_v2",
+        "visualization_style": (
+            "prediction_only_clean_native_crop_corner_boxes_v2"
+            if args.prediction_only
+            else "clean_native_crop_corner_boxes_v2"
+        ),
+        "ground_truth_drawn": not args.prediction_only,
         "left": {"label": args.left_label, "model": str(args.left_model.resolve()), "sha256": sha256(args.left_model),
                  "inference_seconds": left_seconds, "metrics": metrics(totals["left"]),
                  "absent_fp_frames": absent_fp_frames["left"]},

@@ -36,6 +36,7 @@ class Track:
     box: np.ndarray
     confidence: float
     predicted: bool
+    hits: int
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,13 +61,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_tracks(path: Path, frame_count: int) -> dict[int, list[Track]]:
+def load_tracks(path: Path, frame_count: int, min_hits: int) -> dict[int, list[Track]]:
     tracks: dict[int, list[Track]] = defaultdict(list)
     with path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             frame_index = int(row["frame"])
             if not 0 <= frame_index < frame_count:
                 raise ValueError(f"Track frame {frame_index} is outside [0, {frame_count}) in {path}")
+            hits = int(row.get("hits", "1"))
+            if hits < min_hits:
+                continue
             x = float(row["x"])
             y = float(row["y"])
             width = float(row["width"])
@@ -77,6 +81,7 @@ def load_tracks(path: Path, frame_count: int) -> dict[int, list[Track]]:
                     box=np.asarray((x, y, x + width, y + height), dtype=np.float32),
                     confidence=float(row["confidence"]),
                     predicted=bool(int(row.get("predicted", "0"))),
+                    hits=hits,
                 )
             )
     return tracks
@@ -279,8 +284,8 @@ def final_stats(stats: dict[str, object]) -> dict[str, object]:
 def main() -> None:
     args = parse_args()
     images = read_manifest(args.images)
-    left_tracks = load_tracks(args.left_tracks, len(images))
-    right_tracks = load_tracks(args.right_tracks, len(images))
+    left_tracks = load_tracks(args.left_tracks, len(images), args.track_min_hits)
+    right_tracks = load_tracks(args.right_tracks, len(images), args.track_min_hits)
     fps = source_fps(args.source_video, args.fps)
     panel_size = tuple(args.panel_size)
     output_size = (panel_size[0] * 2, panel_size[1])
@@ -355,8 +360,9 @@ def main() -> None:
         "fps": fps,
         "output_resolution": list(output_size),
         "input_resolution": [args.imgsz[1], args.imgsz[0]],
-        "visualization_style": "prediction_only_corner_boxes_with_track_id_and_short_trail_v1",
+        "visualization_style": "prediction_only_confirmed_tracks_corner_boxes_and_short_trail_v1",
         "ground_truth_drawn": False,
+        "unconfirmed_tracks_drawn": False,
         "tracker": {
             "name": "RK-BoT-SORT",
             "high_threshold": args.track_high_thresh,

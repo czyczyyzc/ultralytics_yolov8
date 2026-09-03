@@ -103,11 +103,14 @@ def scaled_box(box: np.ndarray, scale_x: float, scale_y: float) -> np.ndarray:
 def draw_trails(
     panel: np.ndarray,
     histories: dict[int, deque[tuple[float, float]]],
+    active_ids: set[int],
     color: tuple[int, int, int],
     scale_x: float,
     scale_y: float,
 ) -> None:
-    for points in histories.values():
+    for track_id, points in histories.items():
+        if track_id not in active_ids:
+            continue
         if len(points) < 2:
             continue
         scaled = [(int(round(x * scale_x)), int(round(y * scale_y))) for x, y in points]
@@ -232,7 +235,7 @@ def make_panel(
     source_h, source_w = frame.shape[:2]
     scale_x, scale_y = panel_w / source_w, panel_h / source_h
     panel = cv2.resize(frame, (panel_w, panel_h), interpolation=cv2.INTER_AREA)
-    draw_trails(panel, histories, color, scale_x, scale_y)
+    draw_trails(panel, histories, {track.track_id for track in tracks}, color, scale_x, scale_y)
     for track in tracks:
         draw_corner_box(panel, scaled_box(track.box, scale_x, scale_y), color, 1)
     add_zoom(panel, frame, gt, tracks, color)

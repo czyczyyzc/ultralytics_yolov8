@@ -34,6 +34,17 @@ def is_add_on_state(name: str, model: DetectionModel) -> bool:
 class FrozenP3AddOnP2Trainer(LovoDetectionTrainer):
     """Optimize only the P2 adapter and its decoupled box/classification towers."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # This run is fully local. Older W&B versions ignore WANDB_MODE=disabled
+        # and reject long filesystem project paths before training can start.
+        for event, event_callbacks in self.callbacks.items():
+            self.callbacks[event] = [
+                callback
+                for callback in event_callbacks
+                if callback.__module__ != "ultralytics.utils.callbacks.wb"
+            ]
+
     def build_optimizer(self, model, name="auto", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
         base_model = de_parallel(model)
         trainable_ids = add_on_parameter_ids(base_model)

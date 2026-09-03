@@ -138,7 +138,9 @@ def contiguous_runs(rows: list[dict]) -> list[dict]:
     ]
 
 
-def summarize(values: list[float]) -> dict[str, float]:
+def summarize(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"mean": None, "p25": None, "median": None, "p75": None}
     array = np.asarray(values, dtype=np.float64)
     return {
         "mean": float(array.mean()),

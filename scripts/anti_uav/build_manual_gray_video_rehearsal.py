@@ -23,9 +23,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-data", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--positive-stride", type=int, default=3)
-    parser.add_argument("--negative-stride", type=int, default=10)
+    parser.add_argument("--negative-stride", type=int, default=20)
     parser.add_argument("--positive-rehearsal-fraction", type=float, default=0.10)
-    parser.add_argument("--negative-rehearsal-fraction", type=float, default=0.10)
     parser.add_argument("--jpeg-quality", type=int, default=95)
     parser.add_argument("--seed", type=int, default=20260904)
     return parser.parse_args()
@@ -192,11 +191,10 @@ def replace_duplicate_class_slots(
     manual_positive_by_video: dict[str, list[Path]],
     manual_negative_by_video: dict[str, list[Path]],
     positive_fraction: float,
-    negative_fraction: float,
     seed: int,
 ) -> tuple[list[Path], dict]:
-    if not 0.0 < positive_fraction < 1.0 or not 0.0 < negative_fraction < 1.0:
-        raise ValueError("Rehearsal fractions must be in (0, 1)")
+    if not 0.0 < positive_fraction < 1.0:
+        raise ValueError("Positive rehearsal fraction must be in (0, 1)")
 
     manual_positive_paths = [path for paths in manual_positive_by_video.values() for path in paths]
     manual_negative_paths = [path for paths in manual_negative_by_video.values() for path in paths]
@@ -210,37 +208,40 @@ def replace_duplicate_class_slots(
     source_flags = [positive_by_path[path] for path in source_paths]
     source_positive_count = sum(source_flags)
     source_negative_count = len(source_paths) - source_positive_count
+    if source_positive_count == 0 or source_negative_count == 0:
+        raise ValueError("Source schedule must contain both positive and negative samples")
     occurrences: Counter[Path] = Counter()
-    replaceable = {True: [], False: []}
+    replaceable_positive: list[int] = []
     for index, (path, positive) in enumerate(zip(source_paths, source_flags)):
         occurrences[path] += 1
-        if occurrences[path] > 1:
-            replaceable[positive].append(index)
+        if positive and occurrences[path] > 1:
+            replaceable_positive.append(index)
 
     requested_positive = max(round(source_positive_count * positive_fraction), len(manual_positive_paths))
-    requested_negative = max(round(source_negative_count * negative_fraction), len(manual_negative_paths))
-    if requested_positive > len(replaceable[True]) or requested_negative > len(replaceable[False]):
+    if requested_positive > len(replaceable_positive):
         raise ValueError(
-            "Not enough duplicate source slots to preserve old unique coverage: "
-            f"positive {requested_positive}/{len(replaceable[True])}, "
-            f"negative {requested_negative}/{len(replaceable[False])}"
+            "Not enough duplicate positive slots to preserve old unique coverage: "
+            f"{requested_positive}/{len(replaceable_positive)}"
         )
 
     rng = random.Random(seed)
-    rng.shuffle(replaceable[True])
-    rng.shuffle(replaceable[False])
-    schedules = {
-        True: balanced_schedule(manual_positive_by_video, requested_positive, rng),
-        False: balanced_schedule(manual_negative_by_video, requested_negative, rng),
-    }
+    rng.shuffle(replaceable_positive)
+    replacement_schedule = balanced_schedule(manual_positive_by_video, requested_positive, rng)
     output = list(source_paths)
-    for positive in (True, False):
-        for index, replacement in zip(replaceable[positive], schedules[positive]):
-            output[index] = replacement
+    for index, replacement in zip(replaceable_positive, replacement_schedule):
+        output[index] = replacement
+
+    # Source negatives are all unique in the neg15 schedule. Append new negatives and enough
+    # manual positives to retain the exact source class ratio rather than deleting old scenes.
+    appended_positive_count = round(len(manual_negative_paths) * source_positive_count / source_negative_count)
+    appended_positive = balanced_schedule(manual_positive_by_video, appended_positive_count, rng)
+    appended = appended_positive + manual_negative_paths
+    rng.shuffle(appended)
+    output.extend(appended)
 
     output_flags = [positive_by_path[path] for path in output]
-    if output_flags != source_flags:
-        raise RuntimeError("Positive/negative class sequence changed")
+    if output_flags[: len(source_flags)] != source_flags:
+        raise RuntimeError("Source positive/negative class sequence changed")
     if not set(source_paths).issubset(output):
         raise RuntimeError("Old unique source coverage changed")
     if not set(manual_positive_paths + manual_negative_paths).issubset(output):
@@ -251,10 +252,15 @@ def replace_duplicate_class_slots(
         "negative_samples": source_negative_count,
         "negative_fraction": source_negative_count / len(source_paths),
         "positive_rehearsal_slots": requested_positive,
-        "negative_rehearsal_slots": requested_negative,
+        "appended_positive_slots": appended_positive_count,
+        "appended_negative_slots": len(manual_negative_paths),
+        "output_samples": len(output),
+        "output_positive_samples": sum(output_flags),
+        "output_negative_samples": len(output) - sum(output_flags),
+        "output_negative_fraction": (len(output) - sum(output_flags)) / len(output),
         "manual_unique_positive_images": len(manual_positive_paths),
         "manual_unique_negative_images": len(manual_negative_paths),
-        "class_sequence_unchanged": True,
+        "source_class_sequence_unchanged": True,
         "old_unique_sample_coverage_unchanged": True,
         "manual_sample_coverage_complete": True,
     }
@@ -302,7 +308,6 @@ def main() -> None:
         positive_by_video,
         negative_by_video,
         args.positive_rehearsal_fraction,
-        args.negative_rehearsal_fraction,
         args.seed,
     )
 
@@ -323,7 +328,7 @@ def main() -> None:
             "eval_isolation": "Every included video path and SHA256 must differ from the eval video",
             "annotations": "Final visible boxes and explicit absent frames only",
             "sampling": "Temporal thinning by class, balanced equally across included videos",
-            "rehearsal": "Replace duplicate slots with the same class; preserve schedule size, class order, and old unique samples",
+            "rehearsal": "Replace duplicate positive slots; append balanced positives with new negatives to preserve the class ratio and all old samples",
         },
         "annotations": str(args.annotations),
         "annotations_sha256": sha256_file(args.annotations),
@@ -335,7 +340,6 @@ def main() -> None:
         "positive_stride": args.positive_stride,
         "negative_stride": args.negative_stride,
         "positive_rehearsal_fraction_requested": args.positive_rehearsal_fraction,
-        "negative_rehearsal_fraction_requested": args.negative_rehearsal_fraction,
         "videos": video_manifest,
         "rehearsal": rehearsal,
         "train_list": str(train_list),

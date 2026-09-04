@@ -31,18 +31,19 @@ def test_rehearsal_preserves_class_sequence_and_unique_source_coverage(tmp_path:
         new_positive,
         new_negative,
         positive_fraction=0.25,
-        negative_fraction=0.25,
         seed=7,
     )
 
-    assert len(output) == len(source)
+    assert len(output) == 20
     assert old_positive in output
     assert old_negative in output
     assert set(path for paths in new_positive.values() for path in paths).issubset(output)
     assert set(path for paths in new_negative.values() for path in paths).issubset(output)
-    assert [bool(label.read_text().strip()) for label in map(_label_path, output)] == [True] * 8 + [False] * 8
+    assert [bool(label.read_text().strip()) for label in map(_label_path, output[:16])] == [True] * 8 + [False] * 8
     assert manifest["positive_rehearsal_slots"] == 2
-    assert manifest["negative_rehearsal_slots"] == 2
+    assert manifest["appended_positive_slots"] == 2
+    assert manifest["appended_negative_slots"] == 2
+    assert manifest["output_negative_fraction"] == 0.5
 
 
 def _label_path(image: Path) -> Path:

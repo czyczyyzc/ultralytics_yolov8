@@ -8,7 +8,11 @@ import csv
 import hashlib
 import json
 import math
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.anti_uav.causal_roi_policy import choose_region
 
 ARMS = ["p3_full", "p3_roi2x", "p3_roi4x", "addon_full"]
 TITLES = {"p3_full": "P3 full", "p3_roi2x": "P3 ROI 2x",
@@ -102,6 +106,14 @@ def validate_traces(manifests, traces, count):
                 raise ValueError(f"Protocol mismatch: {arm}/{key}")
         if len(traces[arm]) != count or [r["frame"] for r in traces[arm]] != list(range(count)):
             raise ValueError(f"Frame coverage mismatch: {arm}")
+        previous,anchor = [],None
+        width,height = manifests[arm]["source_size"]
+        for record in traces[arm]:
+            region,mode,anchor = choose_region(previous,record["frame"],width,height,
+                                               manifests[arm]["zoom"],manifests[arm]["refresh_interval"],anchor)
+            if (list(region),mode,anchor) != (record["roi"],record["mode"],record["anchor_id"]):
+                raise ValueError(f"Historical-only ROI audit failed at {arm}/{record['frame']}")
+            previous = record["tracks"]
     if len({manifests[arm]["model_sha256"] for arm in ARMS[:3]}) != 1:
         raise ValueError("P3 baselines must use identical weights")
 
@@ -125,11 +137,13 @@ def main():
                    gt_sha256=hashlib.sha256(args.ground_truth.read_bytes()).hexdigest(),
                    size_definition="sqrt(GT width*height) at fixed full-frame 960x544 input scale; same bins for all arms",
                    protocol_note="No new training, no GT/future input to ROI. Fixed 2x primary and 4x sensitivity, refresh=10; test not used to tune either.",
+                   causal_audit="Every crop and anchor reconstructed exactly from preceding output tracks; all frames passed",
                    thresholds_note="Detector score sweeps filter a fixed conf=0.01 causal trace; changing tracker feedback thresholds needs a new sequential run. These are not standard mAP.",
                    arms={})
     all_track_rows = {}
     for arm in ARMS:
         track_rows = score_rows(traces[arm],gt,"tracks")
+        detector_rows = score_rows(traces[arm],gt,"detections")
         all_track_rows[arm] = track_rows
         event_rows = events(track_rows,ref["source_fps"])
         size_rows = {}
@@ -138,17 +152,33 @@ def main():
             size_rows[name] = dict(gt_count=len(selected),
                                   track_tp=sum(track_rows[i]["tp"] for i in selected),
                                   track_recall=sum(track_rows[i]["tp"] for i in selected)/len(selected) if selected else None)
-            dr = score_rows(traces[arm],gt,"detections")
-            size_rows[name]["detector_tp"] = sum(dr[i]["tp"] for i in selected)
-            size_rows[name]["detector_recall"] = sum(dr[i]["tp"] for i in selected)/len(selected) if selected else None
-        roi_visible = [i for i,r in enumerate(traces[arm]) if r["mode"] == "roi" and gt[i] is not None]
-        inside = [i for i in roi_visible if all((gt[i][0]>=traces[arm][i]["roi"][0],
-                  gt[i][1]>=traces[arm][i]["roi"][1],gt[i][2]<=traces[arm][i]["roi"][2],gt[i][3]<=traces[arm][i]["roi"][3]))]
+            size_rows[name]["detector_tp"] = sum(detector_rows[i]["tp"] for i in selected)
+            size_rows[name]["detector_recall"] = sum(detector_rows[i]["tp"] for i in selected)/len(selected) if selected else None
+        roi_visible = {i for i,r in enumerate(traces[arm]) if r["mode"] == "roi" and gt[i] is not None}
+        inside = {i for i in roi_visible if all((gt[i][0]>=traces[arm][i]["roi"][0],
+                  gt[i][1]>=traces[arm][i]["roi"][1],gt[i][2]<=traces[arm][i]["roi"][2],gt[i][3]<=traces[arm][i]["roi"][3]))}
+        failures = dict(roi_target_outside=0,roi_detector_miss_inside=0,
+                        roi_tracking_miss_after_detection=0,full_detector_miss=0,
+                        full_tracking_miss_after_detection=0)
+        for i,target in enumerate(gt):
+            if target is None or track_rows[i]["tp"]:
+                continue
+            if i in roi_visible:
+                if i not in inside:
+                    key = "roi_target_outside"
+                elif not detector_rows[i]["tp"]:
+                    key = "roi_detector_miss_inside"
+                else:
+                    key = "roi_tracking_miss_after_detection"
+            else:
+                key = "full_detector_miss" if not detector_rows[i]["tp"] else "full_tracking_miss_after_detection"
+            failures[key] += 1
         summary["arms"][arm] = dict(
             manifest=manifests[arm], tracker=metrics(track_rows), events=event_rows,
             id_switches=sum(e["id_switches"] for e in event_rows),fragments=sum(e["fragments"] for e in event_rows),
             detector_thresholds={f"{t:.2f}":metrics(score_rows(traces[arm],gt,"detections",t)) for t in THRESHOLDS},
             size_buckets=size_rows, roi_visible_frames=len(roi_visible),
+            miss_breakdown=failures,
             roi_gt_fully_inside_frames=len(inside),roi_gt_outside_frames=len(roi_visible)-len(inside),
             roi_inside_tracker_recall=sum(track_rows[i]["tp"] for i in inside)/len(inside) if inside else None)
     for arm in ARMS[1:]:
@@ -174,6 +204,14 @@ def main():
         count=summary["arms"][ARMS[0]]["size_buckets"][name]["gt_count"]
         values=[summary["arms"][a]["size_buckets"][name]["track_recall"] for a in ARMS]
         lines.append(f"| {name} | {count} | " + " | ".join("N/A" if v is None else f"{v:.2%}" for v in values)+" |")
+    lines += ["", "## Causal audit and misses", "", summary["causal_audit"], "",
+              "Miss categories partition tracking FN. Outside means the GT is not fully inside the selected ROI; it does not establish motion as the cause. Detector miss includes localization IoU below 0.50.", "",
+              "| Method | ROI outside | ROI detector miss inside | ROI track miss after detection | Full detector miss | Full track miss after detection |",
+              "|---|---:|---:|---:|---:|---:|"]
+    for a in ARMS:
+        failures = summary["arms"][a]["miss_breakdown"]
+        lines.append(f"| {TITLES[a]} | " + " | ".join(str(v) for v in failures.values()) + " |")
+    lines += ["", "There is one visible episode, frames 587-1034 (zero-based). First confirmed IoU-matched output is delayed 7 frames / 70 ms for all P3 arms and 2 frames / 20 ms for Add-on P2. These are source-video intervals, not compute latency. This clip does not test multiple disappearance/reappearance episodes."]
     lines += ["", "## Detector thresholds", "", summary["thresholds_note"], "", "| Conf | Method | TP | FP | FN | Precision | Recall | F1 |", "|---:|---|---:|---:|---:|---:|---:|---:|"]
     for t in THRESHOLDS:
         for a in ARMS:

@@ -1,7 +1,9 @@
 import unittest
 
 from scripts.anti_uav.causal_roi_policy import choose_region, restore_boxes
-from scripts.anti_uav.summarize_causal_roi_comparison import gt_boxes, score_rows, metrics, events
+from scripts.anti_uav.summarize_causal_roi_comparison import (
+    ARMS, gt_boxes, score_rows, metrics, events, validate_traces,
+)
 
 
 def track(box, tid=1, hits=3, score=.5, confirmed=True, predicted=False):
@@ -40,6 +42,26 @@ class CausalRoiTests(unittest.TestCase):
         rows=[dict(frame=i,visible=True,tp=int(i in (2,4,5)),id=1 if i<5 else 2) for i in range(6)]
         e=events(rows,100)[0]
         self.assertEqual((e["first_match_delay_frames"],e["fragments"],e["id_switches"]),(2,1,1))
+
+    def test_audit_rejects_a_crop_not_derived_from_previous_tracks(self):
+        common = dict(source_sha256="video", source_size=[1920,1080], source_fps=100,
+                      input_size_wh=[960,544], conf=.01, nms_iou=.45, max_det=100,
+                      padding="114", tracker={}, tracker_source_sha256="tracker",
+                      runtime="test", model_sha256="p3", refresh_interval=10)
+        manifests, traces = {}, {}
+        for arm,zoom in zip(ARMS,(1,2,4,1)):
+            manifests[arm] = dict(common, zoom=zoom)
+            records,previous,anchor = [],[],None
+            for index in range(3):
+                region,mode,anchor = choose_region(previous,index,1920,1080,zoom,10,anchor)
+                previous = [track([950,530,970,550])]
+                records.append(dict(frame=index,roi=list(region),mode=mode,
+                                    anchor_id=anchor,tracks=previous))
+            traces[arm] = records
+        validate_traces(manifests,traces,3)
+        traces["p3_roi2x"][1]["roi"][0] += 1
+        with self.assertRaisesRegex(ValueError,"Historical-only ROI audit failed"):
+            validate_traces(manifests,traces,3)
 
 
 if __name__ == "__main__":

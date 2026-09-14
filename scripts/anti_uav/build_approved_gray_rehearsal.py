@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import math
 from pathlib import Path
@@ -59,7 +60,7 @@ def validate_frame_sets(manifest: dict) -> tuple[set[int], set[int]]:
     return included, negative
 
 
-def audit_base(source_paths: list[Path], old_root: Path, holdout: str, rgb_root: Path) -> dict:
+def audit_base(source_paths: list[Path], old_root: Path, holdout: str, rgb_root: Path) -> tuple[dict, dict]:
     old_manifest = json.loads((old_root / 'manifest.json').read_text())
     records = {Path(v['video_name']).stem: v for v in old_manifest['videos']}
     holdout_hash = records[holdout]['video_sha256']
@@ -73,14 +74,13 @@ def audit_base(source_paths: list[Path], old_root: Path, holdout: str, rgb_root:
             raise ValueError(f'Old annotation checksum failed: {annotation}')
         annotations[name] = json.loads(annotation.read_text())
         hashes[name] = record['video_sha256']
-    seen = set()
-    for image in set(source_paths):
+    def check_image(image):
         if not image.is_file():
             raise FileNotFoundError(image)
         text = label_path(image).read_text()
         boxes = parse_label(text)
         if image.is_relative_to(rgb_root):
-            continue
+            return image, bool(boxes), None
         name = image.parent.name
         if name not in records or name == holdout:
             raise ValueError(f'Unexpected/held-out base training image: {image}')
@@ -98,12 +98,21 @@ def audit_base(source_paths: list[Path], old_root: Path, holdout: str, rgb_root:
             expected = annotation['gt_rect'][frame]
             if max(abs(a-b) for a, b in zip(actual, expected)) > 0.1:
                 raise ValueError(f'Base box differs from old GT: {image}: {actual} != {expected}')
-        seen.add(name)
+        return image, bool(boxes), name
+
+    seen, presence = set(), {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for count, (image, positive, name) in enumerate(pool.map(check_image, sorted(set(source_paths))), 1):
+            presence[image] = positive
+            if name:
+                seen.add(name)
+            if count % 10000 == 0:
+                print(f'Validated {count} unique base images/labels', flush=True)
     if seen != set(records) - {holdout}:
         raise ValueError(f'Expected six non-held-out videos, found {seen}')
     return dict(training_video_hashes={k:hashes[k] for k in sorted(seen)},
                 holdout=holdout, holdout_sha256=holdout_hash,
-                base_unique_samples=len(set(source_paths)), old_labels_match_source=True)
+                base_unique_samples=len(set(source_paths)), old_labels_match_source=True), presence
 
 
 def extract_task(task: Path, video_root: Path, output: Path, blocked_hashes: set[str],
@@ -191,7 +200,7 @@ def main():
     data = yaml.safe_load(a.source_data.read_text())
     source_list = Path(data['train'])
     paths = [Path(line) for line in source_list.read_text().splitlines() if line.strip()]
-    audit = audit_base(paths, a.old_root, a.holdout, a.rgb_root)
+    audit, presence = audit_base(paths, a.old_root, a.holdout, a.rgb_root)
     print(json.dumps({'base_audit':audit}), flush=True)
     tasks = sorted(a.approved_root.glob('*/manifest.json'))
     if not tasks:
@@ -203,12 +212,15 @@ def main():
                                        a.positive_stride, a.negative_stride)
         positives[record['sha256']] = pos
         negatives[record['sha256']] = neg
+        presence.update((path, True) for path in pos)
+        presence.update((path, False) for path in neg)
         records.append(record)
-    source_positive = sum(bool(label_path(path).read_text().strip()) for path in paths)
+    source_positive = sum(presence[path] for path in paths)
     # Every video must cycle through all its samples, including the longest clip.
     quota = max(round(source_positive * 0.10), max(map(len, positives.values())) * len(positives))
     fraction = quota / source_positive
-    schedule, sampling = replace_duplicate_class_slots(paths, positives, negatives, fraction, a.seed)
+    schedule, sampling = replace_duplicate_class_slots(paths, positives, negatives, fraction, a.seed,
+                                                       verified_presence=presence)
     train_list = a.output / 'train_manual_gray_rehearsal.txt'
     train_list.write_text(''.join(f'{path}\n' for path in schedule))
     data.update(path=str(a.output), train=str(train_list))

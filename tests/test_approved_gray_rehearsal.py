@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from scripts.anti_uav.build_approved_gray_rehearsal import checked_path, parse_label, validate_frame_sets
+from scripts.anti_uav.build_manual_gray_video_rehearsal import replace_duplicate_class_slots
 
 
 def test_uncertain_frames_are_not_negatives():
@@ -35,3 +36,16 @@ def test_manifest_path_cannot_escape(tmp_path: Path):
     with pytest.raises(ValueError):
         checked_path(tmp_path, '../outside.txt')
     assert checked_path(tmp_path, 'labels/1.txt') == tmp_path/'labels/1.txt'
+
+
+def test_verified_presence_avoids_reopening_labels(tmp_path: Path):
+    pos, neg, newpos, newneg = [tmp_path/name for name in ('pos','neg','newpos','newneg')]
+    source = [pos]*8+[neg]*8
+    flags = {pos:True, neg:False, newpos:True, newneg:False}
+    output, stats = replace_duplicate_class_slots(source, {'clip':[newpos]}, {'clip':[newneg]},
+                                                 0.25, 7, verified_presence=flags)
+    assert set(output) == set(flags)
+    assert stats['output_negative_fraction'] == 0.5
+    with pytest.raises(ValueError, match='does not cover'):
+        replace_duplicate_class_slots(source, {'clip':[newpos]}, {'clip':[newneg]},
+                                      0.25, 7, verified_presence={pos:True})

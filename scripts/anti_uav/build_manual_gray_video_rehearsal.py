@@ -192,6 +192,7 @@ def replace_duplicate_class_slots(
     manual_negative_by_video: dict[str, list[Path]],
     positive_fraction: float,
     seed: int,
+    verified_presence: dict[Path, bool] | None = None,
 ) -> tuple[list[Path], dict]:
     if not 0.0 < positive_fraction < 1.0:
         raise ValueError("Positive rehearsal fraction must be in (0, 1)")
@@ -199,7 +200,12 @@ def replace_duplicate_class_slots(
     manual_positive_paths = [path for paths in manual_positive_by_video.values() for path in paths]
     manual_negative_paths = [path for paths in manual_negative_by_video.values() for path in paths]
     all_paths = set(source_paths) | set(manual_positive_paths) | set(manual_negative_paths)
-    positive_by_path = {path: bool(label_path(path).read_text().strip()) for path in all_paths}
+    if verified_presence is None:
+        positive_by_path = {path: bool(label_path(path).read_text().strip()) for path in all_paths}
+    else:
+        if not all_paths.issubset(verified_presence):
+            raise ValueError("Verified presence map does not cover all samples")
+        positive_by_path = {path: verified_presence[path] for path in all_paths}
     if not all(positive_by_path[path] for path in manual_positive_paths):
         raise ValueError("Every manual positive image must have a non-empty label")
     if any(positive_by_path[path] for path in manual_negative_paths):

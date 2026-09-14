@@ -26,8 +26,8 @@ from ultralytics.utils import ops
 class AttributionPredictor(DetectionPredictor):
     def postprocess(self, preds, img, orig_imgs):
         prediction, levels = preds
-        assert len(levels) == 4 and prediction.shape[1] == 5, "Expected single-class four-scale head"
-        p2_count = levels[0].shape[2] * levels[0].shape[3]
+        assert len(levels) in (3, 4) and prediction.shape[1] == 5, "Expected single-class three/four-scale head"
+        p2_count = levels[0].shape[2] * levels[0].shape[3] if len(levels) == 4 else 0
         tagged = prediction.new_zeros((len(prediction), 6, prediction.shape[-1]))
         tagged[:, :4] = prediction[:, :4]
         tagged[:, 4, p2_count:] = prediction[:, 4, p2_count:]

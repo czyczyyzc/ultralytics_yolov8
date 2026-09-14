@@ -96,7 +96,8 @@ def main():
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     (run / 'logs').mkdir(exist_ok=True)
     env = dict(os.environ, PYTHONPATH=str(ROOT), WANDB_MODE='disabled', WANDB_DISABLED='true',
-               OMP_NUM_THREADS='4', OPENBLAS_NUM_THREADS='4', MPLBACKEND='Agg')
+               OMP_NUM_THREADS='4', OPENBLAS_NUM_THREADS='4', MPLBACKEND='Agg',
+               YOLO_CONFIG_DIR=str(run/'yolo_config'))
     env.pop('ANTI_UAV_TRUST_DATASET_CACHE', None)
     env.pop('CUDA_VISIBLE_DEVICES', None)
     python = sys.executable
@@ -107,6 +108,11 @@ def main():
         if not file.is_file():
             raise FileNotFoundError(file)
     try:
+        # Keep experiment logging local without modifying settings used by other jobs.
+        execute(run, 'configure_local_logging', [python, '-c',
+            "from ultralytics.utils import SETTINGS; SETTINGS.update(dict(sync=False, "
+            "wandb=False, clearml=False, comet=False, dvc=False, hub=False, mlflow=False, "
+            "neptune=False, raytune=False))"], env)
         if not (a.dataset_dir / 'manifest.json').exists():
             execute(run, 'prepare_data', [python, str(scripts/'build_approved_gray_rehearsal.py'),
                 '--approved-root', str(DATA_ROOT/'approved_tasks'),

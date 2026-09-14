@@ -116,6 +116,7 @@ def main():
         if not (a.dataset_dir / 'manifest.json').exists():
             execute(run, 'prepare_data', [python, str(scripts/'build_approved_gray_rehearsal.py'),
                 '--approved-root', str(DATA_ROOT/'approved_tasks'),
+                '--tasks-file', str(scripts/'configs/approved_tasks_20260914.json'),
                 '--video-root', '/mnt/andrew/video-labeler/videos',
                 '--old-root', str(DATA_ROOT/'seven_old_videos'),
                 '--source-data', str(DATA_ROOT/'real_gray_yolo_strict_holdout_Video00004_newclips01_v1_20260902/base_neg15/train_rgb_monitor.yaml'),

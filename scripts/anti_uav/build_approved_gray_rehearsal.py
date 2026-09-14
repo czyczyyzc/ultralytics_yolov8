@@ -182,6 +182,7 @@ def extract_task(task: Path, video_root: Path, output: Path, blocked_hashes: set
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--approved-root', type=Path, required=True)
+    p.add_argument('--tasks-file', type=Path, required=True, help='Frozen task-ID snapshot; ignore later uploads')
     p.add_argument('--video-root', type=Path, required=True)
     p.add_argument('--old-root', type=Path, required=True)
     p.add_argument('--source-data', type=Path, required=True)
@@ -202,7 +203,10 @@ def main():
     paths = [Path(line) for line in source_list.read_text().splitlines() if line.strip()]
     audit, presence = audit_base(paths, a.old_root, a.holdout, a.rgb_root)
     print(json.dumps({'base_audit':audit}), flush=True)
-    tasks = sorted(a.approved_root.glob('*/manifest.json'))
+    task_ids = json.loads(a.tasks_file.read_text())['task_ids']
+    if len(set(task_ids)) != len(task_ids):
+        raise ValueError('Duplicate task in snapshot')
+    tasks = [checked_path(a.approved_root, f'{task}/manifest.json') for task in sorted(task_ids)]
     if not tasks:
         raise ValueError('No approved manifests')
     blocked = set(audit['training_video_hashes'].values()) | {audit['holdout_sha256']}
@@ -226,6 +230,7 @@ def main():
     data.update(path=str(a.output), train=str(train_list))
     (a.output / 'train_rgb_monitor.yaml').write_text(yaml.safe_dump(data, sort_keys=False))
     report = dict(schema_version='anti_uav.approved_gray_rehearsal.v1',
+                  tasks_file=str(a.tasks_file), tasks_file_sha256=sha256_file(a.tasks_file),
                   old_root=str(a.old_root), source_data=str(a.source_data),
                   source_train_sha256=sha256_file(source_list), base_audit=audit,
                   approved_tasks=records, training_gray_videos=len(records)+6,

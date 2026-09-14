@@ -63,10 +63,13 @@ def main():
     misses = {t: [] for t in thresholds}
     args.output_prefix.parent.mkdir(parents=True, exist_ok=True)
     model = YOLO(str(args.model))
-    predictions = model.predict(source=str(args.image_list), predictor=AttributionPredictor,
-                                imgsz=[544, 960], conf=.01, iou=.45, max_det=100,
-                                device=args.device, batch=32, stream=True, verbose=False,
-                                rect=False, half=False)
+    options = dict(imgsz=[544, 960], conf=.01, iou=.45, max_det=100,
+                   device=args.device, batch=32, verbose=False, rect=False,
+                   half=False, save=False, mode="predict")
+    # This repository's Model.predict accepts a predictor instance, not a class.
+    predictor = AttributionPredictor(overrides=options)
+    predictions = model.predict(source=str(args.image_list), predictor=predictor,
+                                stream=True, **options)
     nframes = 0
     with args.output_prefix.with_suffix(".jsonl").open("w") as stream:
         for result in predictions:

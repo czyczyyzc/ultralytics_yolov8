@@ -344,24 +344,46 @@ def validate_samples(manifest: dict, root: Path, blocked: list[str]):
             raise ValueError(f"Missing/mismatched source image SHA256: {image}")
 
 
-def preview_card(original: np.ndarray, result: np.ndarray, box, info: dict, asset: Image.Image):
+def draw_corner_box(image: Image.Image, box, scale_xy=(1.0, 1.0), origin_xy=(0.0, 0.0),
+                    color=(40, 210, 255)):
+    """Draw after resizing so the visualization outline stays one display pixel."""
+    x, y, w, h = box
+    sx, sy = scale_xy
+    ox, oy = origin_xy
+    x0, y0 = round((x-ox)*sx), round((y-oy)*sy)
+    x1, y1 = max(x0, round((x+w-ox)*sx)-1), max(y0, round((y+h-oy)*sy)-1)
+    length = max(1, min(8, min(x1-x0, y1-y0)//4))
+    draw = ImageDraw.Draw(image)
+    for px, py, dx, dy in ((x0, y0, 1, 1), (x1, y0, -1, 1),
+                           (x0, y1, 1, -1), (x1, y1, -1, -1)):
+        draw.line([(px+dx*min(length, x1-x0), py), (px, py),
+                   (px, py+dy*min(length, y1-y0))], fill=color, width=1)
+
+
+def preview_card(original: np.ndarray, result: np.ndarray, box, info: dict,
+                 asset: Image.Image, new_box=None):
+    new_box = info["metrics"]["new_box_xywh"] if new_box is None else new_box
+    panels = (("Original", original, box, (85, 220, 135)),
+              ("Replaced", result, new_box, (40, 210, 255)))
     canvas = Image.new("RGB", (1200, 780), (25, 29, 35))
     label(canvas, (20, 10), f"{info['video'][:70]} / frame {info['frame']} / asset {info['asset_id']}", 19)
     label(canvas, (20, 40), f"{info['asset_model'][:90]} | GRAYSCALE SYNTHESIS / NOT A REAL CAPTURE", 16)
-    for k, (name, array) in enumerate((("ORIGINAL", original), ("REPLACED", result))):
+    for k, (name, array, bbox, color) in enumerate(panels):
         full = Image.fromarray(array).convert("RGB")
         full.thumbnail((580, 326))
+        draw_corner_box(full, bbox, (full.width/array.shape[1], full.height/array.shape[0]), color=color)
         canvas.paste(full, (10+k*600, 96))
-        label(canvas, (15+k*600, 70), name + " / full frame", 18)
+        label(canvas, (15+k*600, 70), name.upper() + " / " + ("original bbox" if k == 0 else "updated bbox"), 18, color)
     x, y, w, h = box
     span = max(48, int(math.ceil(max(w, h)*2.0)))
     l = max(0, min(original.shape[1]-span, int(x+w/2-span/2)))
     t = max(0, min(original.shape[0]-span, int(y+h/2-span/2)))
-    for k, (name, array) in enumerate((("Original", original), ("Replaced", result))):
+    for k, (name, array, bbox, color) in enumerate(panels):
         crop = Image.fromarray(array[t:t+span, l:l+span]).convert("RGB")
         crop = crop.resize((288, 288), Image.Resampling.NEAREST)
+        draw_corner_box(crop, bbox, (288/span, 288/span), (l, t), color)
         canvas.paste(crop, (12+k*302, 462))
-        label(canvas, (12+k*302, 434), f"{name} / {288/span:.1f}x pixel view", 16)
+        label(canvas, (12+k*302, 434), f"{name} / {288/span:.1f}x pixel view", 16, color)
     asset = asset.copy().convert("RGBA")
     asset.thumbnail((260, 190))
     tile = Image.new("RGB", (270, 205), (160, 165, 170))
@@ -370,14 +392,68 @@ def preview_card(original: np.ndarray, result: np.ndarray, box, info: dict, asse
     label(canvas, (620, 434), "Source cutout / enlarged", 16)
     m = info["metrics"]
     lines = ["Geometry long edge:", f"{max(w,h):.2f} px -> {max(m['geometric_size_wh']):.2f} px",
+             "Label bbox W x H:", f"{w:.1f} x {h:.1f} -> {new_box[2]:.1f} x {new_box[3]:.1f}",
              "Foreground contrast:", f"{m['source_contrast']:.1f} -> {m['output_contrast']:.1f}",
-             f"Blur sigma: {m['blur_sigma_px']:.2f} px", "Outside edit mask:", "0 changed pixels",
-             "No GT/prediction overlay"]
+             f"Blur sigma: {m['blur_sigma_px']:.2f} px", "Outside mask: 0 changes",
+             "1px corners / no cross"]
     for k, line in enumerate(lines):
         label(canvas, (910, 463+k*29), line, 16)
     label(canvas, (620, 690), "Size refers to original 1920px frame" if original.shape[1] == 1920 else "Size refers to original frame", 15)
     label(canvas, (620, 716), "Inset is display zoom, not a larger training target", 14)
     return canvas
+
+
+def preview_overview(root: Path, previews: list[str]):
+    if not previews:
+        return
+    thumb = Image.new("RGB", (1200, math.ceil(len(previews)/2)*390), (25, 29, 35))
+    for n, p in enumerate(previews):
+        card = Image.open(root / p).resize((600, 390), Image.Resampling.LANCZOS)
+        thumb.paste(card, ((n % 2)*600, (n//2)*390))
+    thumb.save(root / "preview_contact_sheet.jpg", quality=95)
+
+
+def render_previews(args):
+    """Render existing saved labels/images without regenerating training data."""
+    manifest = json.loads(args.manifest.read_text())
+    root = args.manifest.parent
+    if sha256(args.catalog) != manifest["catalog_sha256"]:
+        raise ValueError("Catalog differs from the one used for synthesis")
+    assets = {a["id"]: a for a in json.loads(args.catalog.read_text())["records"]}
+    candidates = [s for s in manifest["samples"] if s["status"] == "replaced"]
+    selected = [s for s in candidates if s.get("preview")] or candidates
+    if args.limit < 1:
+        raise ValueError("limit must be positive")
+    fresh_directory(args.output)
+    records, previews = [], []
+    for info in selected[:args.limit]:
+        source, output = Path(info["source_image"]), safe_path(root, info["image"])
+        target_label = safe_path(root, info["label"])
+        if sha256(source) != info["source_sha256"] or sha256(output) != info["output_sha256"]:
+            raise ValueError("Source/output image changed since synthesis")
+        original = np.asarray(Image.open(source).convert("L"))
+        result = np.asarray(Image.open(output).convert("L"))
+        boxes = parse_boxes(target_label.read_text(), result.shape[1], result.shape[0])
+        if len(boxes) != 1 or not np.allclose(boxes[0], info["metrics"]["new_box_xywh"], atol=1e-4, rtol=0):
+            raise ValueError(f"Saved YOLO label differs from synthesis manifest: {target_label}")
+        asset = assets[info["asset_id"]]
+        cutout = safe_path(args.catalog.parent, asset["cutout"])
+        if sha256(cutout) != asset["cutout_sha256"]:
+            raise ValueError("Cutout checksum changed")
+        card = preview_card(original, result, info["metrics"]["original_box_xywh"], info,
+                            Image.open(cutout), new_box=boxes[0])
+        name = f"{len(previews)+1:02d}_{output.stem}_bbox.png"
+        card.save(args.output / name)
+        previews.append(name)
+        records.append(dict(preview=name, saved_label=str(target_label.resolve()),
+                            label_sha256=sha256(target_label), rendered_box_xywh=boxes[0],
+                            original_box_xywh=info["metrics"]["original_box_xywh"]))
+    preview_overview(args.output, previews)
+    dump(args.output / "preview_manifest.json", dict(source_manifest=str(args.manifest.resolve()),
+         source_manifest_sha256=sha256(args.manifest), training_files_modified=False,
+         style="1px corners after resize; green original bbox, cyan saved synthetic bbox; no cross",
+         previews=records))
+    print(json.dumps({"previews": len(previews), "training_files_modified": False}), flush=True)
 
 
 def synthesize(args):
@@ -448,9 +524,10 @@ def synthesize(args):
             info["saved_png_outside_mask_changed_pixels"] = 0
             samples.append(info)
             if info["status"] == "replaced" and len(previews) < args.preview_count and per_video.get(video, 0) < 2 and variant == 0:
-                card = preview_card(gray, output, boxes[0], info, Image.fromarray(rgba))
-                pp = f"previews/{len(previews)+1:02d}_{stem}.jpg"
-                card.save(args.output / pp, quality=96)
+                saved_boxes = parse_boxes((args.output / info["label"]).read_text(), w, h)
+                card = preview_card(gray, output, boxes[0], info, Image.fromarray(rgba), new_box=saved_boxes[0])
+                pp = f"previews/{len(previews)+1:02d}_{stem}.png"
+                card.save(args.output / pp)
                 previews.append(pp)
                 per_video[video] = per_video.get(video, 0) + 1
                 info["preview"] = pp
@@ -468,12 +545,7 @@ def synthesize(args):
                                "Holdout name guard and input hashes do not detect renamed/overlapping videos.",
                                "Outputs are review candidates; do not concatenate all variants into training without rebalancing."])
     dump(args.output / "manifest.json", result)
-    if previews:
-        thumb = Image.new("RGB", (1200, math.ceil(len(previews)/2)*390), (25, 29, 35))
-        for n, p in enumerate(previews):
-            card = Image.open(args.output / p).resize((600, 390), Image.Resampling.LANCZOS)
-            thumb.paste(card, ((n % 2)*600, (n//2)*390))
-        thumb.save(args.output / "preview_contact_sheet.jpg", quality=95)
+    preview_overview(args.output, previews)
     print(json.dumps({"counts": counts, "previews": previews, "seconds": result["seconds"]}), flush=True)
 
 
@@ -498,6 +570,12 @@ def main():
     s.add_argument("--max-ring-std", type=float, default=6.0)
     s.add_argument("--blur-sigma", type=float, help="Override 0.65px approximate blur, in original-frame pixels")
     s.set_defaults(func=synthesize)
+    p = sub.add_parser("preview", help="Draw original/updated bboxes from an existing synthesis run")
+    p.add_argument("--manifest", type=Path, required=True)
+    p.add_argument("--catalog", type=Path, required=True)
+    p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--limit", type=int, default=10)
+    p.set_defaults(func=render_previews)
     args = parser.parse_args()
     cv2.setNumThreads(2)
     args.func(args)

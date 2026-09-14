@@ -9,8 +9,8 @@ from PIL import Image
 import pytest
 
 from scripts.anti_uav.synthesize_gray_drone_replacements import (
-    SkipSample, native_cutout, normalize_box, parse_boxes, replace_target,
-    safe_path, sha256, stable_seed, synthesize, validate_samples, workbook_pictures,
+    SkipSample, draw_corner_box, native_cutout, normalize_box, parse_boxes, replace_target,
+    render_previews, safe_path, sha256, stable_seed, synthesize, validate_samples, workbook_pictures,
 )
 
 
@@ -102,6 +102,18 @@ def test_source_guard_and_determinism(tmp_path):
     assert stable_seed(2, "video", 1) != stable_seed(2, "video", 2)
 
 
+def test_corners_draw_after_scaling_without_cross():
+    im = Image.new("RGB", (160, 120), (100, 100, 100))
+    color = (40, 210, 255)
+    draw_corner_box(im, [20, 30, 16, 12], scale_xy=(3, 3), origin_xy=(10, 20), color=color)
+    data = np.asarray(im)
+    assert tuple(data[30, 30]) == color
+    assert tuple(data[65, 77]) == color
+    assert tuple(data[48, 54]) == (100, 100, 100)
+    assert tuple(data[31, 34]) == (100, 100, 100)  # not a 3px enlarged line
+    assert tuple(data[30, 54]) == (100, 100, 100)  # corners, not a closed rectangle
+
+
 def test_end_to_end_outputs_and_negative_preservation(tmp_path):
     gray, box = scene()
     sources = []
@@ -131,3 +143,16 @@ def test_end_to_end_outputs_and_negative_preservation(tmp_path):
             assert np.all(np.asarray(Image.open(args.output/s["image"])) == 150)
     with pytest.raises(FileExistsError):
         synthesize(args)
+    before = {p: sha256(p) for p in args.output.rglob("*") if p.is_file()}
+    pa = argparse.Namespace(manifest=args.output/"manifest.json", catalog=c,
+                            output=tmp_path/"bbox_previews", limit=2)
+    render_previews(pa)
+    rendered = json.loads((pa.output/"preview_manifest.json").read_text())
+    assert len(rendered["previews"]) == 2
+    assert not rendered["training_files_modified"]
+    assert before == {p: sha256(p) for p in before}
+    assert Image.open(pa.output/rendered["previews"][0]["preview"]).size == (1200, 780)
+    (args.output/result["samples"][0]["label"]).write_text("0 .5 .5 .1 .1\n")
+    pa.output = tmp_path/"mismatched_label_previews"
+    with pytest.raises(ValueError, match="Saved YOLO label differs"):
+        render_previews(pa)

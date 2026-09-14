@@ -90,7 +90,7 @@ training-only manifest; never use held-out frames as synthesis backgrounds.
    Do not interpret "same long edge" as "same width, height and occupied area".
 9. Save lossless PNGs, labels, edit masks, metrics and previews. Reload PNGs and
    assert that every pixel outside the edit mask equals the decoded source gray
-   pixel. JPEG preview pages are not the training images.
+   pixel. Preview overlays are never burned into training images.
 
 ## Outputs
 
@@ -103,9 +103,26 @@ training-only manifest; never use held-out frames as synthesis backgrounds.
 - `samples/masks/`: editable-region masks, all zero for unchanged samples.
 - `samples/manifest.json`: per-sample provenance, asset assignment, metrics,
   skip reasons, timing and explicit limitations.
-- `samples/previews/`: original/replaced full frames, equal-scale pixel crops,
-  source cutout and numerical checks. No GT boxes, prediction boxes or crosses.
+- `samples/previews/`: PNG original/replaced full frames, equal-scale pixel crops,
+  source cutout and numerical checks. Green corners show original label boxes;
+  cyan corners show the saved updated YOLO labels. Lines are drawn after resizing
+  at 1 display pixel, with no cross or text over the target.
 - `samples/preview_contact_sheet.jpg`: overview of the comparison pages.
+
+To add bbox overlays to a previously generated run without modifying any training
+image or label, use a new output directory:
+
+```bash
+python scripts/anti_uav/synthesize_gray_drone_replacements.py preview \
+  --manifest deliverables/my_drone_synthesis/samples/manifest.json \
+  --catalog deliverables/my_drone_synthesis/catalog/catalog.json \
+  --output deliverables/my_drone_synthesis/previews_bbox --limit 10
+```
+
+The renderer reads the actual saved YOLO labels, verifies agreement with the
+synthesis manifest and checks source/output/cutout hashes. The old box appears
+only on the original panel; the new box only on the synthetic panel. Preview PNGs
+and `preview_manifest.json` are separate from the lossless training images.
 
 Unreliable positive replacements are saved as the unchanged original with their
 original label. Negative frames remain unchanged. Each full variant preserves

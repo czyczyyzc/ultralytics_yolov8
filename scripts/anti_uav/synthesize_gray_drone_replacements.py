@@ -15,6 +15,7 @@ import math
 from pathlib import Path
 import posixpath
 import re
+import sys
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -23,6 +24,9 @@ import cv2
 import numpy as np
 import openpyxl
 from PIL import Image, ImageDraw, ImageFont
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.anti_uav.gray_temporal_background import BackgroundUnavailable, TemporalBackgrounds
 
 
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -210,7 +214,8 @@ class SkipSample(ValueError):
 
 
 def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: int,
-                   max_ring_std=6.0, blur_sigma: float | None = None):
+                   max_ring_std=6.0, blur_sigma: float | None = None,
+                   temporal=None, video_id=None, frame_index=None):
     """Approximate a smooth-sky replacement; reject hard cases, do not hallucinate."""
     if gray.ndim != 2 or gray.dtype != np.uint8:
         raise ValueError("Expected uint8 grayscale frame")
@@ -256,13 +261,22 @@ def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: i
     if len(fg) < 3 or contrast < max(4.0, 3*ring_std):
         raise SkipSample("foreground_contrast_not_reliable")
     flo, fhi = np.percentile(fg, [5, 95])
-    # On low-texture sky, a fitted plane avoids Telea's directional fill streaks.
-    # Blend its edge back to the original ring. This does not recover hidden truth.
-    rng = np.random.default_rng(seed)
-    noise = rng.choice(residual[valid] - np.mean(residual[valid]), size=patch.shape)
-    distance = cv2.distanceTransform(erase, cv2.DIST_L2, 5)
-    blend = np.clip(distance/min(3, max(1, pad-1)), 0, 1)
-    clean = patch.astype(np.float32)*(1-blend) + (design @ coef + noise)*blend
+    background_metrics = dict(background_method="legacy_sky_plane_plus_independent_noise")
+    if temporal is not None:
+        try:
+            clean, matte, background_metrics = temporal.reconstruct(
+                gray, box, video_id, frame_index, (left, top, side))
+        except BackgroundUnavailable as e:
+            raise SkipSample(str(e)) from e
+        erase = (matte > 0).astype(np.uint8)*255
+    else:
+        # Explicit legacy ablation only. The CLI now requires temporal donors by
+        # default; a missing/unsafe donor must not silently fall back to this fill.
+        rng = np.random.default_rng(seed)
+        noise = rng.choice(residual[valid] - np.mean(residual[valid]), size=patch.shape)
+        distance = cv2.distanceTransform(erase, cv2.DIST_L2, 5)
+        blend = np.clip(distance/min(3, max(1, pad-1)), 0, 1)
+        clean = patch.astype(np.float32)*(1-blend) + (design @ coef + noise)*blend
     alpha = rgba[:, :, 3].astype(np.float32)/255
     lum = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2GRAY).astype(np.float32)
     values = lum[alpha > 0.8]
@@ -319,8 +333,8 @@ def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: i
                    foreground_residual_p05_p95=[float(flo), float(fhi)],
                    changed_pixels=int(np.count_nonzero(result != gray)),
                    outside_mask_changed_pixels=outside,
-                   label_policy="bbox of blurred alpha > 0.15; may differ from geometric size",
-                   background_method="robust_sky_plane_plus_ring_residual_noise_edge_blend")
+                   label_policy="bbox of blurred alpha > 0.15; may differ from geometric size")
+    metrics.update(background_metrics)
     return result, mask, newbox, metrics
 
 
@@ -398,8 +412,12 @@ def preview_card(original: np.ndarray, result: np.ndarray, box, info: dict,
              "1px corners / no cross"]
     for k, line in enumerate(lines):
         label(canvas, (910, 463+k*29), line, 16)
-    label(canvas, (620, 690), "Size refers to original 1920px frame" if original.shape[1] == 1920 else "Size refers to original frame", 15)
-    label(canvas, (620, 716), "Inset is display zoom, not a larger training target", 14)
+    if "donor_frame" in m:
+        label(canvas, (620, 690), f"BG: real frame {m['donor_frame']} ({m['donor_offset']:+d})", 15)
+        label(canvas, (620, 716), "Contour repair / no independent noise fill", 14)
+    else:
+        label(canvas, (620, 690), "BG: legacy rectangle + independent noise", 14)
+        label(canvas, (620, 716), "Review only / not seamless background", 14)
     return canvas
 
 
@@ -462,6 +480,10 @@ def synthesize(args):
     source = json.loads(args.source_manifest.read_text())
     root = args.source_root or args.source_manifest.parent
     validate_samples(source, root, ["Video00004"] + args.exclude_video)
+    mode = getattr(args, "background_mode", "temporal")
+    if mode == "temporal" and not getattr(args, "temporal_registry", None):
+        raise ValueError("Temporal background mode requires --temporal-registry; no synthetic-fill fallback")
+    temporal = TemporalBackgrounds(args.temporal_registry, ["Video00004"] + args.exclude_video) if mode == "temporal" else None
     catalog_data = json.loads(args.catalog.read_text())
     eligible = {a["id"]: a for a in catalog_data["records"] if a.get("cutout")}
     ids = args.asset_ids.split(",") if args.asset_ids else sorted(eligible, key=lambda s: int(s))
@@ -508,7 +530,7 @@ def synthesize(args):
                 else:
                     output, mask, newbox, metrics = replace_target(
                         gray, boxes[0], rgba, stable_seed(args.seed, key, variant),
-                        args.max_ring_std, args.blur_sigma)
+                        args.max_ring_std, args.blur_sigma, temporal, video, int(frame))
                     output_label = normalize_box(newbox, w, h)
                     info.update(status="replaced", metrics=metrics)
             except SkipSample as e:
@@ -534,11 +556,14 @@ def synthesize(args):
         print(json.dumps({"frame": frame, "video": video, "outputs": len(samples)}), flush=True)
     counts = {s: sum(r["status"] == s for r in samples)
               for s in ("replaced", "positive_preserved", "negative_preserved")}
+    if temporal is not None:
+        temporal.close()
     result = dict(source_manifest=str(args.source_manifest.resolve()),
                   source_manifest_sha256=sha256(args.source_manifest), catalog_sha256=sha256(args.catalog),
                   seed=args.seed, variants=args.variants, assigned_assets=assigned, counts=counts,
                   seconds=time.perf_counter()-started, previews=previews, samples=samples,
-                  training_lists_modified=False, eligible_asset_ids=ids,
+                  training_lists_modified=False, eligible_asset_ids=ids, background_mode=mode,
+                  temporal_registry_sha256=sha256(args.temporal_registry) if temporal is not None else None,
                   limitations=["Frame prototype, not optical-flow/video-consistent synthesis.",
                                "Hidden background and blur are approximated, not measured ground truth.",
                                "Native alpha does not certify asset identity, viewpoint, or licensing.",
@@ -569,6 +594,8 @@ def main():
     s.add_argument("--exclude-video", action="append", default=[])
     s.add_argument("--max-ring-std", type=float, default=6.0)
     s.add_argument("--blur-sigma", type=float, help="Override 0.65px approximate blur, in original-frame pixels")
+    s.add_argument("--background-mode", choices=["temporal", "legacy-plane"], default="temporal")
+    s.add_argument("--temporal-registry", type=Path, help="Original videos + approved manifest/COCO paths")
     s.set_defaults(func=synthesize)
     p = sub.add_parser("preview", help="Draw original/updated bboxes from an existing synthesis run")
     p.add_argument("--manifest", type=Path, required=True)

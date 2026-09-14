@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import cv2
 import openpyxl
 from openpyxl.drawing.image import Image as XLImage
 from PIL import Image
@@ -11,6 +12,9 @@ import pytest
 from scripts.anti_uav.synthesize_gray_drone_replacements import (
     SkipSample, draw_corner_box, native_cutout, normalize_box, parse_boxes, replace_target,
     render_previews, safe_path, sha256, stable_seed, synthesize, validate_samples, workbook_pictures,
+)
+from scripts.anti_uav.gray_temporal_background import (
+    BackgroundUnavailable, TemporalBackgrounds, recover_contour, register_neighbor,
 )
 
 
@@ -132,7 +136,8 @@ def test_end_to_end_outputs_and_negative_preservation(tmp_path):
     c.write_text(json.dumps(dict(records=[dict(id="1", model="test", cutout=a.name, cutout_sha256=sha256(a))])))
     args = argparse.Namespace(source_manifest=manifest, source_root=None, catalog=c,
                               output=tmp_path/"out", variants=2, preview_count=0,
-                              max_ring_std=6.0, blur_sigma=None, seed=1, exclude_video=[], asset_ids="1")
+                              max_ring_std=6.0, blur_sigma=None, seed=1, exclude_video=[], asset_ids="1",
+                              background_mode="legacy-plane", temporal_registry=None)
     synthesize(args)
     result = json.loads((args.output/"manifest.json").read_text())
     assert result["counts"] == dict(replaced=2, positive_preserved=0, negative_preserved=2)
@@ -156,3 +161,67 @@ def test_end_to_end_outputs_and_negative_preservation(tmp_path):
     pa.output = tmp_path/"mismatched_label_previews"
     with pytest.raises(ValueError, match="Saved YOLO label differs"):
         render_previews(pa)
+    args.background_mode = "temporal"
+    with pytest.raises(ValueError, match="requires --temporal-registry"):
+        synthesize(args)
+
+
+def temporal_scene():
+    rng = np.random.default_rng(30)
+    background = np.clip(150+cv2.GaussianBlur(rng.normal(0, 10, (240, 320)).astype(np.float32),
+                                            (7, 7), 1.0), 0, 255).astype(np.uint8)
+    reference = background.copy()
+    reference[116:124, 140:180] = 80
+    reference[100:140, 155:165] = 80
+    donor = background.copy()
+    donor[60:70, 240:270] = 80
+    return background, reference, donor
+
+
+def test_temporal_contour_is_not_a_rectangle():
+    background, reference, _ = temporal_scene()
+    matte, metrics = recover_contour(reference, background.astype(np.float32), [140, 100, 40, 40])
+    ys, xs = np.where(matte > 0)
+    assert metrics["foreground_core_pixels"] > 0
+    assert not np.all(matte[ys.min():ys.max()+1, xs.min():xs.max()+1] > 0)
+    clean = reference*(1-matte)+background*matte
+    assert np.allclose(clean, background)
+    assert matte[95, 135] == 0
+
+
+def test_temporal_registration_ignores_moving_target():
+    background, reference, donor = temporal_scene()
+    affine, info = register_neighbor(reference, donor, [[140,100,40,40]], [[240,60,30,10]])
+    assert np.allclose(affine, np.eye(2, 3), atol=0.15)
+    assert info["registration"] == "LK_forward_backward_RANSAC"
+
+
+def test_temporal_repair_rejects_donor_target_and_preserves_real_background():
+    background, reference, donor = temporal_scene()
+    engine = TemporalBackgrounds.__new__(TemporalBackgrounds)
+    engine.offsets, engine.cache = (2,), {}
+    record = dict(eligible={100,102}, boxes={100:[[140,100,40,40]],102:[[240,60,30,10]]},
+                  video_sha256="checked", coco_sha256="checked", approved_manifest_sha256="checked")
+    engine.records = {"training_video": record}
+    engine.read = lambda r, f: reference if f == 100 else donor
+    clean, matte, metrics = engine.reconstruct(reference, [140,100,40,40], "training_video", 100, (100,60,120))
+    assert metrics["donor_offset"] == 2
+    assert np.mean(np.abs(clean-background[60:180,100:220])) < 0.5
+    assert np.array_equal(clean[matte == 0], reference[60:180,100:220][matte == 0])
+    engine.cache.clear()
+    engine.read = lambda r, f: reference
+    record["boxes"][102] = record["boxes"][100]
+    with pytest.raises(BackgroundUnavailable, match="no_safe_temporal_donor"):
+        engine.reconstruct(reference, [140,100,40,40], "training_video", 100, (100,60,120))
+    with pytest.raises(BackgroundUnavailable, match="GT_differs"):
+        engine.reconstruct(reference, [141,100,40,40], "training_video", 100, (100,60,120))
+
+
+def test_temporal_registry_rejects_holdout_before_accessing_video(tmp_path):
+    approved = tmp_path/"approved.json"
+    approved.write_text(json.dumps({"video":{"name":"Video00004.mp4"}}))
+    registry = tmp_path/"registry.json"
+    registry.write_text(json.dumps({"videos":[{"video":"missing.mp4", "approved_manifest":approved.name,
+                                              "coco":"missing.json"}]}))
+    with pytest.raises(ValueError, match="Held-out temporal donor"):
+        TemporalBackgrounds(registry)

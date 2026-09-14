@@ -19,6 +19,7 @@ python scripts/anti_uav/synthesize_gray_drone_replacements.py synthesize \
   --catalog deliverables/my_drone_synthesis/catalog/catalog.json \
   --source-manifest deliverables/self_collected_gray_training_samples_20260914/manifest.json \
   --asset-ids 1,330,332 \
+  --temporal-registry /path/to/training_video_registry.json \
   --variants 3 --preview-count 10 --seed 20260914 \
   --output deliverables/my_drone_synthesis/samples
 ```
@@ -62,6 +63,36 @@ supplied with repeated `--exclude-video`. This is an identity/name guard, not
 proof against renamed or overlapping clips. Only supply an already audited
 training-only manifest; never use held-out frames as synthesis backgrounds.
 
+The default background mode is now `temporal`. Supply exact original training
+videos and their approved manifest/COCO annotation files in a registry:
+
+```json
+{
+  "videos": [
+    {
+      "video": "original_training_clip.mp4",
+      "approved_manifest": "approved_manifest.json",
+      "coco": "coco/annotations.json"
+    }
+  ]
+}
+```
+
+Registry paths are relative to the registry file, or absolute. This uses the
+video-labeler approved export schema: `video.sha256`, `frames.indexBase=0`, included
+and excluded frame indices, hashed `files`, and COCO images with `frame_index`.
+COCO `image_id` is NOT assumed to equal the zero-based video frame index. Both
+video and COCO hashes are verified against the approved manifest. Donors must be
+from the exact same original video and reviewed frames; uncertain/unreviewed and
+held-out frames are excluded. The source image must match the decoded frame and
+its box must agree with that frame's approved annotation.
+
+If a registry entry or a safe donor is unavailable, the original sample is kept
+with a skip reason. There is no automatic plane/noise fallback. The old method
+can only be requested explicitly with `--background-mode legacy-plane` for
+ablation. It can create visible rectangular texture patches and should not be
+used as training-quality synthesis.
+
 ## Processing
 
 1. Match embedded Excel pictures to metadata by drawing anchors/relationships.
@@ -76,8 +107,18 @@ training-only manifest; never use held-out frames as synthesis backgrounds.
    backgrounds and unreliable target contrast. Supported target dimensions are
    at least 3 px on the short edge and at most 160 px on the long edge, in the
    original frame, not the resized network input.
-5. Approximate the hidden sky with the fitted plane plus sampled local residual
-   noise and an edge blend. Expand the erase region to include rotor/codec halos.
+5. Search neighboring frames at offsets +/-10, 20, 40 and 80. Exclude every
+   annotated donor target and frame borders. Use forward/backward-checked LK
+   features and RANSAC to estimate camera motion, with masked ECC for low-texture
+   sky. Apply the warp to the real donor image and correct low-frequency local
+   brightness drift. Local background MAE must be <=3 gray levels and p95 error
+   <=8. Source-vs-donor residuals define connected target/rotor/codec-halo masks;
+   dilate and feather that contour, not an entire rectangular box. Require full
+   valid donor coverage of the repair support and mean boundary change <=1.5
+   gray levels. Preserve original background pixels outside this contour. Choose
+   one suitable real donor per source frame, avoiding multi-frame texture averaging
+   and independent random-noise fills. These checks are conservative heuristics,
+   not proof that the optical scene or sensor noise is perfectly reproduced.
 6. Match the original geometric long edge, preserve the new aircraft's aspect
    ratio, and place it at the original GT center. A 4x supersampled premultiplied
    alpha projection avoids transparent-color fringes. Match robust signed target
@@ -124,6 +165,22 @@ synthesis manifest and checks source/output/cutout hashes. The old box appears
 only on the original panel; the new box only on the synthetic panel. Preview PNGs
 and `preview_manifest.json` are separate from the lossless training images.
 
+Compare a previous run against the temporal revision with identical source and
+asset identities:
+
+```bash
+python scripts/anti_uav/compare_gray_background_repair.py \
+  --old-manifest deliverables/old_run/manifest.json \
+  --new-manifest deliverables/temporal_run/manifest.json \
+  --output deliverables/background_comparison
+```
+
+This generates three-way original/old/new crops plus binary edit-mask comparisons.
+The comparison includes no training modifications. New temporal metrics in the
+synthesis manifest record the donor frame, approved hashes, affine transform,
+registration evidence, background residuals, boundary change, contour support and
+rejection reasons.
+
 Unreliable positive replacements are saved as the unchanged original with their
 original label. Negative frames remain unchanged. Each full variant preserves
 the input frame count and positive/negative count. This does not automatically
@@ -132,10 +189,14 @@ sampler and replace only a chosen fraction of positive slots after review.
 
 ## Limits and Experiment Use
 
-This version operates on extracted frames, not a video stream. Asset identity is
-consistent within a video, but per-frame photometric estimates and sampled noise
-are not temporally smoothed. It does not estimate 3D pose, preserve occlusions,
-recover the true hidden background, or simulate rolling shutter/rotor motion.
+This version outputs extracted frames, not a rendered continuous video stream.
+It reads real neighboring video frames to repair the background. Asset identity
+is consistent within each video/variant, but donor choices, photometric estimates
+and registration are not yet constrained across a whole synthesized sequence.
+It does not estimate 3D pose, preserve foreground occlusions, guarantee perfect
+hidden-background recovery, or simulate rolling shutter/rotor motion. Warping
+changes donor noise statistics; neighboring exposures and codec blocks can differ.
+High-pass boundary statistics are reported as diagnostics, not a realism score.
 These results must not be presented as real footage or as 334 newly captured
 drone types. A single product view does not imply multiple real viewpoints.
 
@@ -159,4 +220,7 @@ temporary non-package directory and run it with `PYTHONPATH` set to the reposito
 root and `pytest --noconftest`. The actual module under test remains the repository
 script. Tests cover anchor-to-row mapping, matte checks, deterministic compositing,
 geometry/contrast/background invariants, transparent-color halos, invalid labels,
-holdout/path guards, negative preservation and saved output files.
+holdout/path guards, negative preservation and saved output files. Temporal tests
+also cover nonrectangular contour support, moving-target exclusion during camera
+registration, actual background recovery on known synthetic fixtures, donor-target
+overlap rejection, no-silent-fallback policy and held-out donor rejection.

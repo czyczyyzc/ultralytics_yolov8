@@ -20,6 +20,7 @@ def test_weighted_exposure_and_pixel_scale():
 
 def test_exclusive_bins():
     assert [bucket(x) for x in (4, 4.1, 6, 7, 33)] == ["le4", "le6", "le6", "le8", "gt32"]
+    assert bucket(6.00000009) == "le6"
 
 
 def test_label_mismatch_detection():

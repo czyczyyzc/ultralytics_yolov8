@@ -20,7 +20,7 @@ def quantiles(values):
 
 def bucket(long_edge):
     for limit in (4, 6, 8, 12, 16, 32):
-        if long_edge <= limit:
+        if long_edge <= limit + 1e-3:  # Avoid normalized-label roundoff changing integer-pixel bins.
             return f"le{limit}"
     return "gt32"
 
@@ -159,7 +159,7 @@ def main():
         diffs[stage] = {k: [x.get(k), y.get(k)] for k in x.keys() | y.keys() if x.get(k) != y.get(k)}
     result = dict(metadata=metadata, args_diff=diffs, old_dataset=old, new_dataset=new,
                   common_label_comparison=compare_labels(oi, ni),
-                  size_policy="Long-edge exclusive bins in input pixels before augmentation; schedule weighted.",
+                  size_policy="Long-edge exclusive bins in input pixels before augmentation; schedule weighted; 0.001px boundary tolerance.",
                   limitation="Exposure/label audit identifies changes, not causal effect. No holdout-based model selection.")
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(result, indent=2) + "\n")

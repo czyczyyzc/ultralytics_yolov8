@@ -60,3 +60,36 @@ def test_append_keeps_old_repeats_excludes_whole_val(tmp_path):
     old = ["old.jpg", "old.jpg", "negative.jpg"]
     result = append_unseen(old, records, {"seen"}, {"validation"})
     assert result == old+[str(tmp_path/"new/000.jpg")]
+
+
+def test_negative_mining_keeps_positive_and_video_counts():
+    pytest.importorskip("torch")
+    from collections import Counter
+    from scripts.anti_uav.mine_rebalanced_negatives import replace_easy_negatives
+    positives = ["/images/videoA/positive.jpg"]*5
+    negatives = [f"/images/videoA/{i:06d}.jpg" for i in range(0, 200, 20)]
+    scores = {p: dict(score=.9 if i == 0 else 0., sharpness=10.) for i, p in enumerate(negatives)}
+    result, changes = replace_easy_negatives(positives+negatives, scores)
+    assert len(changes) == 2
+    assert result.count(positives[0]) == 5
+    assert Counter(result)[negatives[0]] == 3
+    assert len(result) == 15
+
+
+def test_selection_fitness_prioritizes_fixed_gray_recall_precision():
+    pytest.importorskip("torch")
+    from scripts.anti_uav.gray_deployment_trainer import deployment_fitness
+    assert deployment_fitness(1., 1., 1.) == 1.
+    assert deployment_fitness(.8, .9, .5) > deployment_fitness(.6, .9, .5)
+
+
+def test_scale_metrics_include_tiny_and_full_frame_without_double_matching():
+    pytest.importorskip("torch")
+    from scripts.anti_uav.gray_deployment_trainer import scale_masks, matched_ground_truth
+    boxes = np.array([[0., 0., 8., 8.], [0., 0., 16., 12.], [0., 0., 1920., 1080.]])
+    masks = scale_masks(boxes, (1080, 1920), (544, 960))
+    np.testing.assert_array_equal(masks["long_4to8px"], [True, True, False])
+    np.testing.assert_array_equal(masks["area_ge80pct"], [False, False, True])
+    assert len(matched_ground_truth(np.array([[.9, .8], [.7, .1]]))) == 1
+    assert len(matched_ground_truth(np.empty((0, 3)))) == 0
+    assert len(matched_ground_truth(np.empty((3, 0)))) == 0

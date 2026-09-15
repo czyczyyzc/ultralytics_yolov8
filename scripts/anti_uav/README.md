@@ -209,7 +209,6 @@ Useful tuning flags:
 - `--tracker-score-thresh`
 - `--min-confidence`
 - `--area-min-px`
-- `--area-max-ratio`
 - `--aspect-min`
 - `--aspect-max`
 - `--border-margin`
@@ -219,6 +218,18 @@ Useful tuning flags:
 - `--nanotrack-config`
 - `--nanotrack-snapshot`
 - `--nanotrack-device`
+
+Valid detections have no area ceiling, including boxes covering the full frame.
+Replay and board defaults do not reject boxes by minimum size, aspect ratio or
+border proximity. The obsolete `--area-max-ratio` option has been removed.
+Confidence filtering and NMS still remove low-confidence and duplicate predictions;
+they do not remove large boxes solely because of their size.
+
+Full-scale training augmentation preserves the original training list and positive
+repetitions. Donor quality checks only select additional context-zoom samples; they
+never remove a small target from the original training data. Area fractions refer
+to bounding-box area, not the drone silhouette. Cropped close-ups are synthetic
+scale augmentation and do not replace evaluation on real close-range footage.
 
 ## RK3588 persistent performance governor
 

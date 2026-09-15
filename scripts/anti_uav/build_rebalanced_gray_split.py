@@ -127,7 +127,7 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--validation-video-token", default="stationary_video00009")
     p.add_argument("--val-stride", type=int, default=10)
-    p.add_argument("--zoom-count", type=int, default=1536)
+    p.add_argument("--zoom-count", type=int, default=1000)
     a = p.parse_args()
     if a.output.exists():
         raise FileExistsError(a.output)

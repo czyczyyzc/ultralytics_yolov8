@@ -42,6 +42,7 @@ def test_full_frame_zoom_and_labels():
 
 
 def test_zoom_is_deterministic_and_geometry_bounded():
+    import json
     image = np.zeros((1080, 1920, 3), dtype=np.uint8)
     a = context_zoom(image, [[600, 300, 1100, 600]], np.random.default_rng(5), area_range=(.25, .4))
     b = context_zoom(image, [[600, 300, 1100, 600]], np.random.default_rng(5), area_range=(.25, .4))
@@ -49,6 +50,7 @@ def test_zoom_is_deterministic_and_geometry_bounded():
     np.testing.assert_array_equal(a[0], b[0])
     assert a[2] == b[2]
     assert .25 <= a[2]["area_fraction"] <= .4
+    assert json.loads(json.dumps(a[2])) == a[2]
 
 
 def test_append_keeps_old_repeats_excludes_whole_val(tmp_path):

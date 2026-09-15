@@ -58,7 +58,7 @@ def context_zoom(image, boxes_xyxy, rng, area_range=(.25, .65), max_upscale=4., 
     return resized, updated, dict(crop_xywh=[ox, oy, crop_w, crop_h],
                                   source_box=boxes[0].tolist(), output_box=updated[0].tolist(),
                                   area_fraction=fraction, retained_fraction=float(retained),
-                                  upscale=max(960/crop_w, 544/crop_h), partial=retained < .999)
+                                  upscale=max(960/crop_w, 544/crop_h), partial=bool(retained < .999))
 
 
 def yolo_rows(boxes, width=960, height=544):

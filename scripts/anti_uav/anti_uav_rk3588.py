@@ -975,9 +975,8 @@ class BoardYoloDetectionAdapter:
         self.roi_expand = roi_expand
         self.timer = timer
         self.filters = [
-            anti_uav_module.AreaFilter(min_area_px=16),
-            anti_uav_module.AspectRatioFilter(min_ratio=0.25, max_ratio=4.0),
-            anti_uav_module.BorderFilter(margin_px=6),
+            # Small, close-up and truncated UAVs must not be rejected by scene-size heuristics.
+            anti_uav_module.AreaFilter(),
         ]
 
     def __call__(self, frame: np.ndarray):

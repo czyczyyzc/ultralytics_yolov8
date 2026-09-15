@@ -179,16 +179,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tile-overlap", type=float, default=0.2, help="Tile overlap ratio.")
     parser.add_argument("--input-mode", default="rgb", choices=("rgb", "gray", "ir"), help="Detector preprocessing mode.")
     parser.add_argument("--clahe", action="store_true", help="Apply CLAHE in gray/IR preprocessing.")
-    parser.add_argument("--area-min-px", type=float, default=9.0, help="Reject detections smaller than this area.")
-    parser.add_argument(
-        "--area-max-ratio",
-        type=float,
-        default=0.25,
-        help="Reject detections covering more than this fraction of the frame.",
-    )
-    parser.add_argument("--aspect-min", type=float, default=0.1, help="Minimum bbox aspect ratio kept by the filter.")
-    parser.add_argument("--aspect-max", type=float, default=10.0, help="Maximum bbox aspect ratio kept by the filter.")
-    parser.add_argument("--border-margin", type=int, default=1, help="Reject detections sitting on the border margin.")
+    parser.add_argument("--area-min-px", type=float, default=0.0, help="Optional minimum area; default keeps every valid size.")
+    parser.add_argument("--aspect-min", type=float, default=0.0, help="Optional minimum bbox aspect ratio.")
+    parser.add_argument("--aspect-max", type=float, default=float("inf"), help="Optional maximum bbox aspect ratio.")
+    parser.add_argument("--border-margin", type=int, default=0, help="Optional border exclusion margin.")
     parser.add_argument(
         "--disable-roi-redetect",
         action="store_true",
@@ -256,7 +250,7 @@ def resolve_anti_uav_sequence(sequence_root: Path, modality: str) -> tuple[Path,
 def build_detector(model, args: argparse.Namespace):
     class_names = [name.strip() for name in args.target_classes.split(",") if name.strip()]
     filters = [
-        solutions.AreaFilter(min_area_px=args.area_min_px, max_area_ratio=args.area_max_ratio),
+        solutions.AreaFilter(min_area_px=args.area_min_px),
         solutions.AspectRatioFilter(min_ratio=args.aspect_min, max_ratio=args.aspect_max),
         solutions.BorderFilter(margin_px=args.border_margin),
     ]

@@ -778,17 +778,19 @@ class DetectionFilter(ABC):
 
 
 class AreaFilter(DetectionFilter):
-    """Reject detections that are too small or too large for the configured scene."""
+    """Reject invalid boxes, with an optional minimum area; never impose an upper size limit."""
 
-    def __init__(self, min_area_px: float = 9.0, max_area_ratio: float = 0.25):
+    def __init__(self, min_area_px: float = 0.0):
+        if not np.isfinite(min_area_px) or min_area_px < 0:
+            raise ValueError("min_area_px must be finite and nonnegative")
         self.min_area_px = min_area_px
-        self.max_area_ratio = max_area_ratio
 
     def keep(self, detection: Detection, frame: np.ndarray) -> bool:
+        del frame
         x1, y1, x2, y2 = detection.bbox
-        area = max((x2 - x1) * (y2 - y1), 0.0)
-        frame_area = max(float(frame.shape[0] * frame.shape[1]), 1.0)
-        return area >= self.min_area_px and area / frame_area <= self.max_area_ratio
+        if not np.isfinite([x1, y1, x2, y2]).all() or x2 <= x1 or y2 <= y1:
+            return False
+        return (x2-x1)*(y2-y1) >= self.min_area_px
 
 
 class AspectRatioFilter(DetectionFilter):

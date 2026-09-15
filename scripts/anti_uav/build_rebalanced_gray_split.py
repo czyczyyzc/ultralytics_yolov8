@@ -72,6 +72,8 @@ def build_zoom(records, output, split, count, seed):
     rng = np.random.default_rng(seed)
     eligible = []
     for label in records:
+        if Path(label["im_file"]).parent.name == "rgb":
+            continue  # Keep RGB originals in the schedule, but do not magnify baked-in camera HUDs.
         h, w = label["shape"]
         boxes = np.asarray(label["bboxes"]).reshape(-1, 4)
         if len(boxes) == 1 and min(boxes[0, 2:]*[w, h]) >= 48 and max(boxes[0, 2:]*[w, h]) >= 96:
@@ -128,6 +130,7 @@ def main():
     p.add_argument("--validation-video-token", default="stationary_video00009")
     p.add_argument("--val-stride", type=int, default=10)
     p.add_argument("--zoom-count", type=int, default=1000)
+    p.add_argument("--reuse-native-split", type=Path, help="Reuse already verified native validation frames, not zooms.")
     a = p.parse_args()
     if a.output.exists():
         raise FileExistsError(a.output)
@@ -157,7 +160,25 @@ def main():
     a.output.mkdir(parents=True)
     base_list = a.output/"train_append_only.txt"
     base_list.write_text("\n".join(schedule)+"\n")
-    native_val, val_labels = extract_validation(val[0], a.output, a.val_stride)
+    if a.reuse_native_split:
+        previous = json.loads((a.reuse_native_split/"manifest.json").read_text())
+        assert previous["validation_video"] == val[0] and previous["validation_stride"] == a.val_stride
+        assert previous["old_train_sha256"] == sha256_file(Path(old_data["train"]))
+        assert sha256_file(Path(val[0]["video"])) == val[0]["sha256"]
+        task_manifest = json.loads((Path(val[0]["task"])/"manifest.json").read_text())
+        assert sha256_file(Path(val[0]["task"])/"manifest.json") == val[0]["manifest_sha256"]
+        native_val = (a.reuse_native_split/"val_native.txt").read_text().splitlines()
+        included, _ = validate_frame_sets(task_manifest)
+        assert {int(Path(x).stem) for x in native_val} == {i for i in included if i % a.val_stride == 0}
+        val_labels = []
+        for path in native_val:
+            text = label_path(Path(path)).read_text()
+            assert text == (Path(val[0]["task"])/"yolo/labels"/f"{Path(path).stem}.txt").read_text()
+            assert Path(path).is_file()
+            boxes = np.array([[float(v) for v in line.split()[1:]] for line in text.splitlines() if line.strip()]).reshape(-1, 4)
+            val_labels.append(dict(im_file=path, shape=(task_manifest["video"]["frameHeight"], task_manifest["video"]["frameWidth"]), bboxes=boxes))
+    else:
+        native_val, val_labels = extract_validation(val[0], a.output, a.val_stride)
     train_zoom, zoom_reports = build_zoom([all_labels[x] for x in sorted(set(schedule))], a.output,
                                          "zoom_train", a.zoom_count, 20260915)
     val_zoom, val_zoom_reports = build_zoom(val_labels, a.output, "zoom_val", 64, 20260916)
@@ -180,6 +201,7 @@ def main():
                     append_only_negative_fraction=negatives/len(schedule), zoom_training_samples=len(train_zoom),
                     final_entries=len(final), final_negative_fraction=negatives/len(final),
                     zoom_validation_samples=len(val_zoom),
+                    zoom_source_policy="Self-collected gray training only; RGB originals retained, never zoom their baked-in HUDs.",
                     source_training_positive_paths=[x for x in sorted(set(schedule)) if len(all_labels[x]["bboxes"])],
                     train_video_hashes=sorted(set(new_manifest["base_audit"]["training_video_hashes"].values()) |
                                              {r["sha256"] for r in new_manifest["approved_tasks"] if r["sha256"] not in val_hashes}),

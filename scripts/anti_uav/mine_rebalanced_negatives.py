@@ -64,6 +64,7 @@ def main():
     p.add_argument("--dataset", type=Path, required=True)
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--device", default="6")
+    p.add_argument("--reuse-scores", type=Path, help="Reuse audited teacher scores for exactly the same negative paths.")
     args = p.parse_args()
     cv2.setNumThreads(1)
     manifest = json.loads((args.dataset/"manifest.json").read_text())
@@ -80,17 +81,13 @@ def main():
     trained_manifest = json.loads((train_data.parent/"manifest.json").read_text())
     trained_hashes = {x["sha256"] for x in trained_manifest["videos"].values()}
     assert manifest["validation_video"]["sha256"] not in trained_hashes
-    scores = {}
-    for index, result in enumerate(model.predict(source=str(negative_list), imgsz=[544, 960], batch=32,
-                                                  conf=.01, iou=.45, max_det=100, device=args.device,
-                                                  rect=False, stream=True, verbose=False), 1):
-        gray = cv2.cvtColor(cv2.resize(result.orig_img, (480, 270)), cv2.COLOR_BGR2GRAY)
-        boxes = result.boxes.data.cpu().numpy()
-        scores[result.path] = dict(score=float(boxes[:, 4].max()) if len(boxes) else 0.,
-                                   sharpness=float(cv2.Laplacian(gray, cv2.CV_32F).var()),
-                                   boxes=boxes.tolist())
-        if index % 1000 == 0:
-            print(f"Mined {index}/{len(negatives)} verified train negatives", flush=True)
+    if args.reuse_scores:
+        cached = json.loads(args.reuse_scores.read_text())
+        assert cached["model"] == str(args.model)
+        assert set(cached["scores"]) == set(negatives)
+        scores = cached["scores"]
+    else:
+        scores = score_negatives(model, negative_list, args.device, len(negatives))
     assert set(scores) == set(negatives)
     scores_path.write_text(json.dumps(dict(model=str(args.model), scores=scores), indent=2)+"\n")
     schedule = (args.dataset/"train_with_zoom.txt").read_text().splitlines()
@@ -107,6 +104,21 @@ def main():
                   changes=changes)
     (args.dataset/"hard_negative_manifest.json").write_text(json.dumps(report, indent=2)+"\n")
     print(json.dumps({k:v for k,v in report.items() if k != "changes"}, indent=2))
+
+
+def score_negatives(model, negative_list, device, count):
+    scores = {}
+    for index, result in enumerate(model.predict(source=str(negative_list), imgsz=[544, 960], batch=32,
+                                                  conf=.01, iou=.45, max_det=100, device=device,
+                                                  rect=False, stream=True, verbose=False), 1):
+        gray = cv2.cvtColor(cv2.resize(result.orig_img, (480, 270)), cv2.COLOR_BGR2GRAY)
+        boxes = result.boxes.data.cpu().numpy()
+        scores[result.path] = dict(score=float(boxes[:, 4].max()) if len(boxes) else 0.,
+                                   sharpness=float(cv2.Laplacian(gray, cv2.CV_32F).var()),
+                                   boxes=boxes.tolist())
+        if index % 1000 == 0:
+            print(f"Mined {index}/{count} verified train negatives", flush=True)
+    return scores
 
 
 if __name__ == "__main__":

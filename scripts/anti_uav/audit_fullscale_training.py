@@ -50,6 +50,12 @@ def main():
     old_cache = np.load(Path(old_data["train"]).with_suffix(".cache"), allow_pickle=True).item()
     old_positive = Counter(r["im_file"] for r in old_cache["labels"] if len(r["bboxes"]))
     assert all(Counter(final)[path] == count for path, count in old_positive.items())
+    small_entries = 0
+    for row in old_cache["labels"]:
+        h, w = row["shape"]
+        wh = np.asarray(row["bboxes"]).reshape(-1, 4)[:, 2:]*[w, h]
+        long_edge = wh.max(axis=1)*min(960/w, 544/h)
+        small_entries += int(((long_edge >= 4) & (long_edge <= 8)).sum())
     assert {r["source"] for r in zoom["train"]} <= set(base)
     assert not {r["source"] for r in zoom["validation"]} & set(base)
     area = np.array([r["area_fraction"] for r in zoom["train"]])
@@ -57,6 +63,7 @@ def main():
     counts, _ = np.histogram(area, bins=bins)
     audit = dict(old_schedule_entries=len(old), old_prefix_preserved=True,
                  old_positive_entries_preserved=sum(old_positive.values()),
+                 old_4to8px_box_entries_preserved=small_entries,
                  native_train_entries=len(base), augmented_train_entries=len(final),
                  train_zoom_samples=len(area), train_zoom_at_least_80pct=int((area >= .8).sum()),
                  train_zoom_area_bins=bins, train_zoom_area_counts=counts.tolist(),

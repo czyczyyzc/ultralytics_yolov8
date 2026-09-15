@@ -129,7 +129,7 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--validation-video-token", default="stationary_video00009")
     p.add_argument("--val-stride", type=int, default=10)
-    p.add_argument("--zoom-count", type=int, default=1000)
+    p.add_argument("--zoom-count", type=int, default=480)
     p.add_argument("--reuse-native-split", type=Path, help="Reuse already verified native validation frames, not zooms.")
     a = p.parse_args()
     if a.output.exists():

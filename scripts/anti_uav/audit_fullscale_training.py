@@ -49,7 +49,8 @@ def main():
     assert Counter(p for p in final if p in positives) == Counter(p for p in base if p in positives)
     old_cache = np.load(Path(old_data["train"]).with_suffix(".cache"), allow_pickle=True).item()
     old_positive = Counter(r["im_file"] for r in old_cache["labels"] if len(r["bboxes"]))
-    assert all(Counter(final)[path] == count for path, count in old_positive.items())
+    final_counts = Counter(final)
+    assert all(final_counts[path] == count for path, count in old_positive.items())
     small_entries = 0
     for row in old_cache["labels"]:
         h, w = row["shape"]

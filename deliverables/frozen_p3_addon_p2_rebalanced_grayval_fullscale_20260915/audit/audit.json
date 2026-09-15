@@ -1,0 +1,37 @@
+{
+  "old_schedule_entries": 86505,
+  "old_prefix_preserved": true,
+  "old_positive_entries_preserved": 73529,
+  "old_4to8px_box_entries_preserved": 30464,
+  "native_train_entries": 89748,
+  "augmented_train_entries": 90228,
+  "train_zoom_samples": 480,
+  "train_zoom_at_least_80pct": 78,
+  "train_zoom_area_bins": [
+    0.0,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    0.8,
+    0.99,
+    1.001
+  ],
+  "train_zoom_area_counts": [
+    0,
+    48,
+    96,
+    96,
+    162,
+    30,
+    48
+  ],
+  "train_zoom_unique_sources": 220,
+  "maximum_source_reuse": 4,
+  "maximum_upscale": 4.0,
+  "area_definition": "GT bounding-box area / image area, not foreground silhouette area",
+  "limitation": "Synthetic context crops include truncated close-ups; not proof of real close-range recall.",
+  "negative_replacements": 461,
+  "negative_entries": 13312,
+  "negative_fraction": 0.14753734982488806
+}

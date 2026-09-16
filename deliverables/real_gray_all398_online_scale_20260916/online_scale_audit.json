@@ -1,0 +1,52 @@
+{
+  "sampled_draws": 1592,
+  "covered_donors": 398,
+  "area_bins": [
+    0,
+    0.02,
+    0.1,
+    0.25,
+    0.5,
+    0.8,
+    1.001
+  ],
+  "sampled_area_counts": [
+    0,
+    518,
+    456,
+    438,
+    142,
+    38
+  ],
+  "partial_count": 38,
+  "partial_requested": 231,
+  "max_resize": 3.983402489626556,
+  "min_retained": 0.6127136266289642,
+  "seed": 20260916,
+  "note": "QA draws only. Training re-samples, not a saved augmentation training set.",
+  "native_slots": 89748,
+  "total_slots": 91340,
+  "eligible_donors": 398,
+  "views_per_donor": 4,
+  "loader_smoke": {
+    "mixed_batch_shapes": [
+      [
+        4,
+        3,
+        544,
+        960
+      ],
+      [
+        4,
+        3,
+        544,
+        960
+      ]
+    ],
+    "base_slots": 89748,
+    "total_slots": 91340,
+    "seed_reproducible": true,
+    "resampled_on_repeat": true,
+    "workers": 2
+  }
+}

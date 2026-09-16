@@ -63,12 +63,14 @@ def main():
                     fitness="0.5 * native-gray F2(conf=.03) + 0.3 * native-gray AP50 + 0.2 * native-gray AP50-95",
                     nms_iou=.45, conf_floor=.001, test_selection=False,
                     zoom_validation="Reported separately; never affects checkpoint selection",
-                    online_scale=split.get("online_scale"), fixed_validation=a.fixed_validation,
+                    online_scale=split.get("online_scale"), label_sampling=split.get("label_sampling"), fixed_validation=a.fixed_validation,
                     initial_train_data=str(initial_data), git_commit=subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip())
     if a.resume_p3:
         previous = json.loads((a.run_dir/"protocol.json").read_text())
         if previous.get("fixed_validation", False) != a.fixed_validation:
             raise ValueError("Cannot change validation shape when resuming checkpoint selection")
+        if previous.get("label_sampling") != split.get("label_sampling"):
+            raise ValueError("Cannot change native exposure sampling when resuming")
         for key in ("dataset", "initial_p3", "epochs", "batch", "input_hw", "seed", "online_scale"):
             if previous[key] != protocol[key]:
                 raise ValueError(f"Resume must preserve protocol field: {key}")

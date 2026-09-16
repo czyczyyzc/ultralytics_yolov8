@@ -39,3 +39,30 @@ def test_fixed_validation_preserves_native_box_and_shape(tmp_path):
         validator.device = torch.device("cpu")
         prepared = validator._prepare_batch(0, batch)
         np.testing.assert_allclose(prepared["bbox"].numpy(), [[720, 405, 1200, 675]], atol=.001)
+
+
+def test_label_pool_covers_all_negatives_and_keeps_anchors(tmp_path):
+    from scripts.anti_uav.label_pool_sampling import NativeExposureSampler
+    class Dataset:
+        labels = [dict(im_file=f"/images/{i}.jpg", cls=np.ones((1, 1)) if i < 4 else np.empty((0, 1)))
+                  for i in range(14)]
+        def __len__(self):
+            return len(self.labels)
+    pool = tmp_path / "negative.txt"
+    pool.write_text("\n".join(f"/images/{i}.jpg" for i in range(6, 14)))
+    cfg = dict(negative_pool=str(pool), negative_pool_count=8, negatives_per_epoch=3, anchor_slots=6)
+    sampler = NativeExposureSampler(Dataset(), cfg)
+    seen, orders = set(), []
+    for epoch in range(3):
+        sampler.set_epoch(epoch)
+        indices = list(sampler)
+        assert len(indices) == len(set(indices)) == len(sampler) == 9
+        assert set(range(6)) <= set(indices)
+        seen.update(set(indices) - set(range(6)))
+        orders.append(indices)
+    assert seen == set(range(6, 14))
+    sampler.set_epoch(1)
+    assert list(sampler) == orders[1]
+    Dataset.labels[6]["cls"] = np.ones((1, 1))
+    with pytest.raises(ValueError, match="positive label"):
+        NativeExposureSampler(Dataset(), cfg)

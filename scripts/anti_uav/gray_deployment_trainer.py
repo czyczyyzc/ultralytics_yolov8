@@ -141,6 +141,24 @@ class FixedShapeGrayValidator(GrayDeploymentValidator):
 
 
 class FixedShapeSelectionMixin:
+    def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
+        if mode != "train":
+            return super().get_dataloader(dataset_path, batch_size, rank, mode)
+        if rank not in (-1, 0) or self.args.close_mosaic:
+            raise ValueError("Native exposure sampling requires single-GPU training and close_mosaic=0")
+        import torch
+        from torch.utils.data import DataLoader
+        from ultralytics.data.build import seed_worker
+        from scripts.anti_uav.label_pool_sampling import NativeExposureSampler, set_native_sampler_epoch
+        dataset = self.build_dataset(dataset_path, mode, batch_size)
+        sampler = NativeExposureSampler(dataset, self.data.get("label_sampling"), self.args.seed)
+        if set_native_sampler_epoch not in self.callbacks["on_train_epoch_start"]:
+            self.callbacks["on_train_epoch_start"].append(set_native_sampler_epoch)
+        generator = torch.Generator().manual_seed(self.args.seed)
+        return DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=self.args.workers,
+                          pin_memory=True, collate_fn=dataset.collate_fn, worker_init_fn=seed_worker,
+                          generator=generator, persistent_workers=False)
+
     def build_dataset(self, img_path, mode="train", batch=None):
         if mode != "val":
             return super().build_dataset(img_path, mode, batch)

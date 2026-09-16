@@ -37,10 +37,11 @@ def main():
     p.add_argument("--video-root", type=Path, required=True)
     p.add_argument("--old-root", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
-    p.add_argument("--positive-stride", type=int, default=3)
-    p.add_argument("--negative-stride", type=int, default=20)
+    p.add_argument("--positive-stride", type=int, default=1)
+    p.add_argument("--negative-stride", type=int, default=1)
+    p.add_argument("--negative-fraction", type=float, default=.15)
     a = p.parse_args()
-    if a.output.exists() or min(a.positive_stride, a.negative_stride) < 1:
+    if a.output.exists() or min(a.positive_stride, a.negative_stride) < 1 or not 0 < a.negative_fraction < 1:
         raise ValueError("Use a fresh output and positive sample strides")
     cv2.setNumThreads(1)
     config = yaml.safe_load((a.source / "train_hardneg_gray_monitor.yaml").read_text())
@@ -62,7 +63,7 @@ def main():
     append_samples(base, [], val_text.splitlines())
     a.output.mkdir(parents=True)
     (a.output / "snapshot.json").write_bytes(a.snapshot.read_bytes())
-    records, additions, positive_count, negative_count = [], [], 0, 0
+    records, additions, negative_pool, positive_count, negative_count = [], [], [], 0, 0
     for row in rows:
         task = Path(row["task"])
         before = sha256_file(task / "manifest.json")
@@ -76,6 +77,7 @@ def main():
         if not pos:
             raise ValueError(f"No positive sample from new video: {task}")
         additions.extend(map(str, pos + neg))
+        negative_pool.extend(map(str, neg))
         positive_count += len(pos)
         negative_count += len(neg)
         records.append(record)
@@ -84,8 +86,18 @@ def main():
     train_file = a.output / "train_hardneg.txt"
     train_file.write_text("\n".join(schedule) + "\n")
     (a.output / "val_monitor.txt").write_text(val_text)
+    positives = source["append_only_positive"] + positive_count
+    desired_negatives = round(positives * a.negative_fraction / (1 - a.negative_fraction))
+    budget = desired_negatives - source["negative"]
+    if not 0 < budget <= len(negative_pool):
+        raise ValueError("Cannot achieve target ratio while preserving old exposure; do not remove old slots")
+    pool_file = a.output / "new_negative_pool.txt"
+    pool_file.write_text("\n".join(sorted(negative_pool)) + "\n")
     config = dict(path=str(a.output), train=str(train_file),
-                  val=str(a.output / "val_monitor.txt"), names=config["names"])
+                  val=str(a.output / "val_monitor.txt"), names=config["names"],
+                  label_sampling=dict(negative_pool=str(pool_file), negative_pool_count=len(negative_pool),
+                                      negatives_per_epoch=budget, anchor_slots=len(base) + positive_count,
+                                      target_negative_fraction=a.negative_fraction))
     (a.output / "train_hardneg_gray_monitor.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     negative = source["negative"] + negative_count
     manifest = dict(source, schema="native_approved_expansion.v1", source_dataset=str(a.source),
@@ -93,10 +105,13 @@ def main():
                     snapshot_sha256=sha256_file(a.snapshot), appended_videos=records,
                     original_gray_training_videos=len(source["train_video_hashes"]) + len(records),
                     train_video_hashes=sorted(set(source["train_video_hashes"]) | {r["sha256"] for r in records}),
-                    append_only_entries=len(schedule), final_entries=len(schedule),
-                    append_only_positive=source["append_only_positive"] + positive_count,
+                    append_only_entries=len(schedule), candidate_entries=len(schedule),
+                    final_entries=positives + desired_negatives, epoch_positive=positives,
+                    epoch_negative=desired_negatives, additional_negatives_per_epoch=budget,
+                    negative_pool_coverage_epochs=(len(negative_pool) + budget - 1) // budget,
+                    append_only_positive=positives,
                     negative=negative, append_only_negative_fraction=negative / len(schedule),
-                    final_negative_fraction=negative / len(schedule), added_positive_samples=positive_count,
+                    final_negative_fraction=desired_negatives / (positives + desired_negatives), added_positive_samples=positive_count,
                     added_negative_samples=negative_count, positive_stride=a.positive_stride,
                     negative_stride=a.negative_stride, baseline_prefix_exactly_preserved=True,
                     native_schedule_sha256=sha256_file(train_file), training_started=False,

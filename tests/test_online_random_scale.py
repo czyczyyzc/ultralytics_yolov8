@@ -56,3 +56,11 @@ def test_gray_jitter_preserves_channels_shape_and_dtype():
     result = gray_capture_jitter(np.full((100, 100, 3), 120, dtype=np.uint8), np.random.default_rng(5))
     assert result.dtype == np.uint8 and result.shape == (100, 100, 3)
     np.testing.assert_array_equal(result[:, :, 0], result[:, :, 2])
+
+
+def test_border_serialization_roundoff_does_not_drop_donor():
+    image = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    _, box, meta = random_context_crop(image, [-.001, 500, 140., 602.], np.random.default_rng(1))
+    assert box.min() >= 0 and meta['retained_fraction'] >= .6
+    with pytest.raises(ValueError):
+        random_context_crop(image, [-10, 500, 140, 602], np.random.default_rng(1))

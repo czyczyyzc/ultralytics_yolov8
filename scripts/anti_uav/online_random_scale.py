@@ -39,13 +39,16 @@ def random_context_crop(image, box, rng, max_upscale=4., partial_probability=.15
     if max_upscale < 1 or not 0 <= partial_probability <= 1:
         raise ValueError("Invalid crop settings")
     h, w = image.shape[:2]
-    box = np.asarray(box, dtype=np.float64)
+    box = np.asarray(box, dtype=np.float64).copy()
+    if not np.isfinite(box).all() or max(-box[0], -box[1], box[2]-w, box[3]-h) > .01:
+        raise ValueError("Source GT must lie within the image (0.01px serialization tolerance)")
+    # YOLO decimal serialization can move a border coordinate by about 0.001px.
+    box[[0, 2]] = box[[0, 2]].clip(0, w)
+    box[[1, 3]] = box[[1, 3]].clip(0, h)
     x1, y1, x2, y2 = box
     bw, bh = x2-x1, y2-y1
-    if not np.isfinite(box).all() or min(bw, bh) < 48 or max(bw, bh) < 96:
+    if min(bw, bh) < 48-.01 or max(bw, bh) < 96-.01:
         raise ValueError("Not an eligible native-resolution donor")
-    if x1 < 0 or y1 < 0 or x2 > w or y2 > h:
-        raise ValueError("Source GT must lie within the image")
     ratio, area = 960/544, bw*bh
     max_cw = min(w, int(h*ratio))
     min_cw = int(np.ceil(max(960/max_upscale, (544/max_upscale+.5)*ratio)))

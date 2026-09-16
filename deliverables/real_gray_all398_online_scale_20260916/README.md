@@ -1,7 +1,8 @@
 # All-donor online random scale
 
 This is an opt-in augmentation implementation and verified data configuration.
-No new long training run has been started. The completed 2026-09-15 experiment
+A new long training run was launched on 2026-09-16 at the user's request; see
+`TRAINING_RUN.md` for the launch record. The completed 2026-09-15 experiment
 and its 480 fixed augmentation images are preserved for comparison.
 
 ## Recipe

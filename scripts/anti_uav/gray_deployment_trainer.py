@@ -128,3 +128,39 @@ class GrayP3Trainer(GraySelectionMixin, LovoDetectionTrainer):
 
 class GrayAddOnTrainer(GraySelectionMixin, FrozenP3AddOnP2Trainer):
     pass
+
+
+class FixedShapeGrayValidator(GrayDeploymentValidator):
+    """New experiments only: assert the real deployment canvas for every batch."""
+
+    def preprocess(self, batch):
+        result = super().preprocess(batch)
+        if tuple(result["img"].shape[2:]) != (544, 960):
+            raise ValueError(f"Expected fixed 544x960 validation: {result['img'].shape}")
+        return result
+
+
+class FixedShapeSelectionMixin:
+    def build_dataset(self, img_path, mode="train", batch=None):
+        if mode != "val":
+            return super().build_dataset(img_path, mode, batch)
+        from ultralytics.data import build_yolo_dataset
+        from ultralytics.utils.torch_utils import de_parallel
+        args = copy(self.args)
+        args.rect = False
+        stride = max(int(de_parallel(self.model).stride.max()) if self.model else 0, 32)
+        return build_yolo_dataset(args, img_path, batch, self.data, mode=mode, rect=False, stride=stride)
+
+    def get_validator(self):
+        self.loss_names = "box_loss", "cls_loss", "dfl_loss"
+        args = copy(self.args)
+        args.rect, args.conf, args.iou, args.max_det = False, .001, .45, 100
+        return FixedShapeGrayValidator(self.test_loader, save_dir=self.save_dir, args=args, _callbacks=self.callbacks)
+
+
+class FixedShapeGrayP3Trainer(FixedShapeSelectionMixin, GrayP3Trainer):
+    pass
+
+
+class FixedShapeGrayAddOnTrainer(FixedShapeSelectionMixin, GrayAddOnTrainer):
+    pass

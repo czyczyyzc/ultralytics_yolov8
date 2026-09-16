@@ -19,6 +19,7 @@ import torch
 import yaml
 
 from scripts.anti_uav.gray_deployment_trainer import GrayP3Trainer, GrayAddOnTrainer, GrayDeploymentValidator
+from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayP3Trainer, FixedShapeGrayAddOnTrainer, FixedShapeGrayValidator
 from scripts.anti_uav.train_frozen_p3_addon_p2 import initialize_addon_model, DEFAULT_CFG, verify_legacy_outputs
 from ultralytics import YOLO
 from ultralytics.utils import SETTINGS
@@ -35,6 +36,8 @@ def main():
     p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--validate-only", action="store_true")
     p.add_argument("--resume-p3", action="store_true", help="Resume saved P3 optimizer/EMA, then run the pending add-on stage.")
+    p.add_argument("--fixed-validation", action="store_true", help="Use an asserted 544x960 canvas in new controlled experiments.")
+    p.add_argument("--skip-final-test", action="store_true", help="Let a parent paired-experiment runner evaluate both arms together.")
     a = p.parse_args()
     a.run_dir.mkdir(parents=True, exist_ok=True)
     lock = (a.run_dir/"pipeline.lock").open("a")
@@ -60,10 +63,12 @@ def main():
                     fitness="0.5 * native-gray F2(conf=.03) + 0.3 * native-gray AP50 + 0.2 * native-gray AP50-95",
                     nms_iou=.45, conf_floor=.001, test_selection=False,
                     zoom_validation="Reported separately; never affects checkpoint selection",
-                    online_scale=split.get("online_scale"),
+                    online_scale=split.get("online_scale"), fixed_validation=a.fixed_validation,
                     initial_train_data=str(initial_data), git_commit=subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip())
     if a.resume_p3:
         previous = json.loads((a.run_dir/"protocol.json").read_text())
+        if previous.get("fixed_validation", False) != a.fixed_validation:
+            raise ValueError("Cannot change validation shape when resuming checkpoint selection")
         for key in ("dataset", "initial_p3", "epochs", "batch", "input_hw", "seed", "online_scale"):
             if previous[key] != protocol[key]:
                 raise ValueError(f"Resume must preserve protocol field: {key}")
@@ -94,7 +99,7 @@ def main():
     try:
         if a.validate_only:
             status("validation_smoke")
-            metrics = model.val(data=str(data), validator=GrayDeploymentValidator, imgsz=[544,960], device=a.device,
+            metrics = model.val(data=str(data), validator=FixedShapeGrayValidator if a.fixed_validation else GrayDeploymentValidator, imgsz=[544,960], device=a.device,
                                 batch=32, workers=4, rect=False, conf=.001, iou=.45, max_det=100,
                                 plots=False, project=str(a.run_dir), name="smoke")
             (a.run_dir/"validation_smoke.json").write_text(json.dumps(metrics.gray_selection,indent=2)+"\n")
@@ -113,7 +118,7 @@ def main():
         status("training_p3")
         model.add_callback("on_fit_epoch_end", lambda trainer: status("training_p3", epoch=trainer.epoch+1,
                                                                        fitness=float(trainer.fitness)))
-        model.train(trainer=GrayP3Trainer, resume=a.resume_p3, project=str(a.run_dir/"training_p3"), name="p3",
+        model.train(trainer=FixedShapeGrayP3Trainer if a.fixed_validation else GrayP3Trainer, resume=a.resume_p3, project=str(a.run_dir/"training_p3"), name="p3",
                     lr0=.0001, warmup_epochs=0, **common)
         p3 = a.run_dir/"training_p3/p3/weights/best.pt"
         status("initialize_addon")
@@ -123,13 +128,16 @@ def main():
         addon.add_callback("on_fit_epoch_end", lambda trainer: status("training_addon", epoch=trainer.epoch+1,
                                                                        fitness=float(trainer.fitness)))
         status("training_addon")
-        addon.train(trainer=GrayAddOnTrainer, project=str(a.run_dir/"training_addon"), name="p2",
+        addon.train(trainer=FixedShapeGrayAddOnTrainer if a.fixed_validation else GrayAddOnTrainer, project=str(a.run_dir/"training_addon"), name="p2",
                     lr0=.001, warmup_epochs=1, **common)
         freezes = {}
         for ckpt in ("best", "last"):
             freezes[ckpt] = verify_legacy_outputs(YOLO(str(p3)).model,
                              YOLO(str(a.run_dir/f"training_addon/p2/weights/{ckpt}.pt")).model)
         (a.run_dir/"frozen_checks.json").write_text(json.dumps(freezes,indent=2)+"\n")
+        if a.skip_final_test:
+            status("weights_ready", note="No holdout evaluation performed; parent runner will compare both arms.")
+            return
         holdout = Path("/mnt/andrew/anti_uav_model_refinement/data/real_gray_yolo_lovo_positive_mixed_v1_20260828/folds/holdout_Video00004")
         models = {"old_p3":next((a.old_run/"training_p3").glob("*/weights/best.pt")),
                   "old_addon":a.old_run/"training_addon/final/weights/best.pt", "new_p3":p3,

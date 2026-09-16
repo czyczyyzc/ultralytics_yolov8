@@ -49,6 +49,8 @@ def main():
     data = a.dataset/"train_hardneg_gray_monitor.yaml"
     manifest = json.loads((a.dataset/"manifest.json").read_text())
     split = yaml.safe_load(data.read_text())
+    if split.get("label_sampling") and not a.fixed_validation:
+        raise ValueError("Label-pool datasets require --fixed-validation and the native exposure trainer")
     train_paths = Path(split["train"]).read_text().splitlines()
     val_paths = Path(split["val"]).read_text().splitlines()
     assert not set(train_paths) & set(val_paths)

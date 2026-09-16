@@ -139,12 +139,21 @@ class FixedShapeGrayValidator(GrayDeploymentValidator):
             raise ValueError(f"Expected fixed 544x960 validation: {result['img'].shape}")
         return result
 
+    def get_stats(self):
+        stats = super().get_stats()
+        for (group, conf), counts in self.fixed.items():
+            for key in ("tp", "fp", "fn", "frames"):
+                stats[f"{group}/c{conf:.2f}/{key.upper()}"] = counts[key]
+        self.metrics.gray_selection = dict(stats)
+        return stats
+
 
 class FixedShapeSelectionMixin:
     def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
         if mode != "train":
             return super().get_dataloader(dataset_path, batch_size, rank, mode)
-        if rank not in (-1, 0) or self.args.close_mosaic:
+        import os
+        if int(os.environ.get("WORLD_SIZE", "1")) > 1 or rank not in (-1, 0) or self.args.close_mosaic:
             raise ValueError("Native exposure sampling requires single-GPU training and close_mosaic=0")
         import torch
         from torch.utils.data import DataLoader

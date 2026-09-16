@@ -66,3 +66,38 @@ def test_label_pool_covers_all_negatives_and_keeps_anchors(tmp_path):
     Dataset.labels[6]["cls"] = np.ones((1, 1))
     with pytest.raises(ValueError, match="positive label"):
         NativeExposureSampler(Dataset(), cfg)
+
+
+def test_real_training_loader_cycles_negative_pool(tmp_path):
+    pytest.importorskip("torch")
+    import cv2
+    from collections import defaultdict
+    from ultralytics.cfg import get_cfg
+    from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayP3Trainer
+    images, labels = tmp_path / "images", tmp_path / "labels"
+    images.mkdir(); labels.mkdir()
+    for i in range(5):
+        cv2.imwrite(str(images / f"{i}.jpg"), np.zeros((108, 192, 3), dtype=np.uint8))
+        (labels / f"{i}.txt").write_text("0 0.5 0.5 0.2 0.2\n" if i < 2 else "")
+    pool = tmp_path / "negative.txt"
+    pool.write_text("\n".join(str(images / f"{i}.jpg") for i in (3, 4)))
+    trainer = object.__new__(FixedShapeGrayP3Trainer)
+    trainer.args = get_cfg(overrides=dict(imgsz=[544, 960], rect=False, task="detect", workers=2,
+                                         close_mosaic=0, mosaic=0., mixup=0., copy_paste=0., seed=7))
+    trainer.model, trainer.callbacks = None, defaultdict(list)
+    trainer.data = dict(names={0: "drone"}, nc=1, label_sampling=dict(negative_pool=str(pool),
+                        negative_pool_count=2, negatives_per_epoch=1, anchor_slots=3))
+    trainer.train_loader = trainer.get_dataloader(str(images), batch_size=2, rank=-1)
+    seen = []
+    for epoch in range(2):
+        trainer.epoch = epoch
+        for callback in trainer.callbacks["on_train_epoch_start"]:
+            callback(trainer)
+        paths = []
+        for batch in trainer.train_loader:
+            assert tuple(batch["img"].shape[1:]) == (3, 544, 960)
+            paths.extend(batch["im_file"])
+        assert len(paths) == 4 and len(set(paths)) == 4
+        assert {str(images / f"{i}.jpg") for i in range(3)} <= set(paths)
+        seen.extend(paths)
+    assert set(seen) == {str(images / f"{i}.jpg") for i in range(5)}

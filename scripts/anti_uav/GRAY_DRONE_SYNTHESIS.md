@@ -135,6 +135,39 @@ used as training-quality synthesis.
 
 ## Outputs
 
+### Isolated Batch From the Current Training Pool
+
+`build_gray_replacement_batch.py` consumes the `native_approved_expansion.v1`
+dataset manifest and its exact `train_hardneg.txt`. It intersects approved video
+SHA256 identities and actual scheduled image paths, rejects the held-out video
+hashes, and excludes uncertain/unreviewed frames. Only approved single-target
+frames supported by the temporal repair method are eligible. Older videos without
+this approved registry are not silently used. All original training data remains
+unchanged, including targets outside the synthesis size range.
+
+```bash
+python scripts/anti_uav/build_gray_replacement_batch.py \
+  --dataset /mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_28videos_20260916 \
+  --catalog /mnt/andrew/anti_uav_model_refinement/data/drone_asset_catalog_20260916/catalog.json \
+  --output /mnt/andrew/anti_uav_model_refinement/data/real_gray_replacement_candidates_20260916 \
+  --per-video 20 --variants 4 --previews 16 --exclude-assets 24,25
+```
+
+The fresh output contains successful replacements only, with lossless single-channel
+PNGs, updated labels, edit masks, provenance, `accepted.jsonl`, `summary.json`, and
+`train_synthetic.txt`. Rejected replacements are logged rather than copied into
+the new image directory. Source selection balances videos and target short-edge
+strata at a hypothetical 960x544 letterbox input; it is not a new training sampler.
+Assets vary across frames, so these files are detector augmentation candidates,
+not a temporally consistent tracker sequence. IDs 24 and 25 in this catalog are
+excluded because their images include a remote control. Visual review and licensing
+review are still required for the remaining assets.
+
+The batch does not start training or append to any active list. It is positive-only:
+review it first, then use a separate controlled experiment with an explicit positive
+replacement fraction and the existing negative ratio. `status.json` reports running,
+complete or failed; a failed job's partial files are not a completed dataset.
+
 - `catalog/catalog.json`: metadata, raw picture provenance, cutout hashes/status.
 - `catalog/raw/`: all extracted workbook pictures.
 - `catalog/cutouts/`: usable native-alpha candidates only.

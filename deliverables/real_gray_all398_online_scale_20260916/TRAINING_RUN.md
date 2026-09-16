@@ -39,6 +39,20 @@ At launch verification, epoch 1 was advancing with finite box / class / DFL loss
 and approximately 10.4GB training GPU memory. No completion or performance gain
 is claimed by this record.
 
+## Interrupted Run and Recovery
+
+The original process failed on 2026-09-16 during P3 epoch 15 (479/1428 batches)
+due to an integer crop-feasibility bug. Fourteen completed epochs were preserved;
+add-on P2 had not started. See `RESULTS_20260916.md` for the measured comparison
+and validation-shape caveat. Do not interpret the original launch PID as active.
+
+Fix commit: `84a793c`. Recovery PID: `1292464`, same GPU 6, using `--resume-p3`.
+Recovery log: `pipeline_resume_20260916.log`; live state remains `status.json`.
+Failed-state backups are in `failure_backup_20260916/`, and a `recovery_*.json`
+record stores the checkpoint and code revisions. Optimizer and EMA are restored;
+the interrupted epoch is rerun before the pending 15-epoch add-on stage.
+The original protocol and log are preserved. No full-model improvement is claimed.
+
 ## Outputs and Comparison
 
 The runner automatically proceeds to add-on training, verifies frozen legacy P3

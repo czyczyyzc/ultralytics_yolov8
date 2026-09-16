@@ -5,6 +5,10 @@ A new long training run was launched on 2026-09-16 at the user's request; see
 `TRAINING_RUN.md` for the launch record. The completed 2026-09-15 experiment
 and its 480 fixed augmentation images are preserved for comparison.
 
+Status update: the original launch failed in P3 epoch 15. The crop bug was fixed
+and checkpoint recovery launched; see `RESULTS_20260916.md` for the recovery and
+matched-epoch evaluation. The interim P3 results do not show an overall gain.
+
 ## Recipe
 
 - Preserve all 89,748 native training slots, including positive repetitions and hard-negative replacements.

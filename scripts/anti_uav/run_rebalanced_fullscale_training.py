@@ -56,6 +56,7 @@ def main():
                     fitness="0.5 * native-gray F2(conf=.03) + 0.3 * native-gray AP50 + 0.2 * native-gray AP50-95",
                     nms_iou=.45, conf_floor=.001, test_selection=False,
                     zoom_validation="Reported separately; never affects checkpoint selection",
+                    online_scale=split.get("online_scale"),
                     initial_train_data=str(initial_data), git_commit=subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip())
     (a.run_dir/"protocol.json").write_text(json.dumps(protocol,indent=2)+"\n")
     def status(stage, **extra):

@@ -105,6 +105,16 @@ class GrayDeploymentValidator(DetectionValidator):
 
 
 class GraySelectionMixin:
+    def build_dataset(self, img_path, mode="train", batch=None):
+        dataset = super().build_dataset(img_path, mode, batch)
+        config = self.data.get("online_scale")
+        if mode == "train" and config:
+            if self.args.mosaic or self.args.mixup or self.args.copy_paste:
+                raise ValueError("Online context views must not be mixed with Mosaic/MixUp/CopyPaste")
+            from scripts.anti_uav.online_random_scale import OnlineScaleDataset
+            dataset = OnlineScaleDataset(dataset, config)
+        return dataset
+
     def get_validator(self):
         self.loss_names = "box_loss", "cls_loss", "dfl_loss"
         args = copy(self.args)

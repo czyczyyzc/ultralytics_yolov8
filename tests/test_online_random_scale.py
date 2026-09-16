@@ -64,3 +64,15 @@ def test_border_serialization_roundoff_does_not_drop_donor():
     assert box.min() >= 0 and meta['retained_fraction'] >= .6
     with pytest.raises(ValueError):
         random_context_crop(image, [-10, 500, 140, 602], np.random.default_rng(1))
+
+
+def test_fractional_integer_span_regression_seed105():
+    from scripts.anti_uav.online_random_scale import sample_context_geometry
+    box = [819.8259902000427, 622.9060158133507, 1016.916983127594, 760.4930225014687]
+    for seed in range(200):
+        meta = sample_context_geometry((1080, 1920), box, np.random.default_rng(seed))
+        assert meta['retained_fraction'] >= .6 and meta['upscale'] <= 4
+    meta = sample_context_geometry((1080, 1920), box, np.random.default_rng(105), max_attempts=0)
+    assert meta['geometry_fallback'] and not meta['partial']
+    assert meta['retained_fraction'] == 1.
+    assert np.min(meta['output_box']) >= 0

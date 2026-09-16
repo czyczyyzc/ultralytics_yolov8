@@ -34,11 +34,11 @@ def pixel_box(row):
     return np.array([x-bw/2, y-bh/2, x+bw/2, y+bh/2], dtype=np.float64)
 
 
-def random_context_crop(image, box, rng, max_upscale=4., partial_probability=.15):
-    """Sample feasible size bins, then continuously sample area within a bin."""
+def sample_context_geometry(image_hw, box, rng, max_upscale=4., partial_probability=.15, max_attempts=48):
+    """Sample integer crop geometry, with a full-object fallback for valid donors."""
     if max_upscale < 1 or not 0 <= partial_probability <= 1:
         raise ValueError("Invalid crop settings")
-    h, w = image.shape[:2]
+    h, w = image_hw
     box = np.asarray(box, dtype=np.float64).copy()
     if not np.isfinite(box).all() or max(-box[0], -box[1], box[2]-w, box[3]-h) > .01:
         raise ValueError("Source GT must lie within the image (0.01px serialization tolerance)")
@@ -52,7 +52,10 @@ def random_context_crop(image, box, rng, max_upscale=4., partial_probability=.15
     ratio, area = 960/544, bw*bh
     max_cw = min(w, int(h*ratio))
     min_cw = int(np.ceil(max(960/max_upscale, (544/max_upscale+.5)*ratio)))
-    full_min = max(min_cw, int(np.ceil(max(bw, (bh+.5)*ratio))))
+    # A fractional GT interval may need one more integer pixel than ceil(box size).
+    span_w = int(np.ceil(x2))-int(np.floor(x1))
+    span_h = int(np.ceil(y2))-int(np.floor(y1))
+    full_min = max(min_cw, span_w, int(np.ceil((span_h+.5)*ratio)))
     if full_min > max_cw:
         raise ValueError("No full-object crop fits; refuse to silently drop the GT")
     request_partial = bool(rng.random() < partial_probability)
@@ -66,7 +69,7 @@ def random_context_crop(image, box, rng, max_upscale=4., partial_probability=.15
             feasible = [(min_area, max_area)]
         # Choose a bin once so failed geometry does not always bias toward smaller sizes.
         interval = feasible[int(rng.integers(len(feasible)))]
-        for _ in range(48):
+        for _ in range(max_attempts):
             desired = float(np.exp(rng.uniform(np.log(interval[0]), np.log(interval[1]))))
             cw = int(np.clip(round(np.sqrt(area*ratio/desired)), low_cw, max_cw))
             if allow_partial:
@@ -93,13 +96,30 @@ def random_context_crop(image, box, rng, max_upscale=4., partial_probability=.15
             fraction = float(np.prod(clipped[2:]-clipped[:2])/(cw*ch))
             if retained < (.6 if allow_partial else .999) or not interval[0]*.99 <= fraction <= interval[1]*1.01:
                 continue
-            output = cv2.resize(image[oy:oy+ch, ox:ox+cw], (960, 544), interpolation=cv2.INTER_LINEAR)
             updated = clipped*[960/cw, 544/ch, 960/cw, 544/ch]
-            return output, updated, dict(crop_xywh=[ox, oy, cw, ch], output_box=updated.tolist(),
-                                         area_fraction=fraction, retained_fraction=retained,
-                                         upscale=max(960/cw, 544/ch), partial=retained < .999,
-                                         requested_partial=request_partial)
-    raise RuntimeError("Unable to sample a legal crop; inspect donor geometry")
+            return dict(crop_xywh=[ox, oy, cw, ch], output_box=updated.tolist(),
+                        area_fraction=fraction, retained_fraction=retained,
+                        upscale=max(960/cw, 544/ch), partial=retained < .999,
+                        requested_partial=request_partial, geometry_fallback=False)
+    # Rejection sampling must never terminate a long run or silently drop its GT.
+    cw, ch = max_cw, int(round(max_cw/ratio))
+    left, right = max(0, int(np.ceil(x2-cw))), min(w-cw, int(np.floor(x1)))
+    top, bottom = max(0, int(np.ceil(y2-ch))), min(h-ch, int(np.floor(y1)))
+    if left > right or top > bottom or max(960/cw, 544/ch) > max_upscale:
+        raise ValueError("Donor cannot fit the configured aspect ratio and pixel budget")
+    ox, oy = (left+right)//2, (top+bottom)//2
+    updated = (box-[ox, oy, ox, oy])*[960/cw, 544/ch, 960/cw, 544/ch]
+    return dict(crop_xywh=[ox, oy, cw, ch], output_box=updated.tolist(), area_fraction=float(area/(cw*ch)),
+                retained_fraction=1., upscale=max(960/cw, 544/ch), partial=False,
+                requested_partial=request_partial, geometry_fallback=True)
+
+
+def random_context_crop(image, box, rng, max_upscale=4., partial_probability=.15):
+    """Read native pixels only after selecting and verifying the crop geometry."""
+    meta = sample_context_geometry(image.shape[:2], box, rng, max_upscale, partial_probability)
+    ox, oy, cw, ch = meta["crop_xywh"]
+    output = cv2.resize(image[oy:oy+ch, ox:ox+cw], (960, 544), interpolation=cv2.INTER_LINEAR)
+    return output, np.asarray(meta["output_box"], dtype=np.float64), meta
 
 
 def gray_capture_jitter(image, rng):

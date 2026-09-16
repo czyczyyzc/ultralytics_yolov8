@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -33,8 +34,11 @@ def main():
     p.add_argument("--device", default="6")
     p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--validate-only", action="store_true")
+    p.add_argument("--resume-p3", action="store_true", help="Resume saved P3 optimizer/EMA, then run the pending add-on stage.")
     a = p.parse_args()
     a.run_dir.mkdir(parents=True, exist_ok=True)
+    lock = (a.run_dir/"pipeline.lock").open("a")
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     SETTINGS.update(dict(sync=False, wandb=False, clearml=False, comet=False, dvc=False, hub=False,
                          mlflow=False, neptune=False, raytune=False))
     torch.set_num_threads(4)
@@ -58,7 +62,29 @@ def main():
                     zoom_validation="Reported separately; never affects checkpoint selection",
                     online_scale=split.get("online_scale"),
                     initial_train_data=str(initial_data), git_commit=subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip())
-    (a.run_dir/"protocol.json").write_text(json.dumps(protocol,indent=2)+"\n")
+    if a.resume_p3:
+        previous = json.loads((a.run_dir/"protocol.json").read_text())
+        for key in ("dataset", "initial_p3", "epochs", "batch", "input_hw", "seed", "online_scale"):
+            if previous[key] != protocol[key]:
+                raise ValueError(f"Resume must preserve protocol field: {key}")
+        checkpoint = a.run_dir/"training_p3/p3/weights/last.pt"
+        state = torch.load(checkpoint, map_location="cpu", weights_only=False)
+        if state.get("optimizer") is None or not 0 <= state["epoch"] < a.epochs-1:
+            raise ValueError("P3 checkpoint lacks a resumable optimizer or has already completed")
+        if Path(state["train_args"]["data"]).resolve() != data.resolve() or (a.run_dir/"training_addon").exists():
+            raise ValueError("Unexpected dataset or an existing add-on stage")
+        recovery = dict(checkpoint=str(checkpoint), completed_epochs=state["epoch"]+1,
+                        original_commit=previous["git_commit"], recovery_commit=protocol["git_commit"],
+                        time=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                        note="Optimizer/EMA restored; interrupted epoch rerun. RNG stream is not bit-exact across restart.")
+        recovery_path = a.run_dir/f"recovery_{time.time_ns()}.json"
+        recovery_path.write_text(json.dumps(recovery, indent=2)+"\n")
+        del state
+        model = YOLO(str(checkpoint))
+    else:
+        if not a.validate_only and ((a.run_dir/"training_p3").exists() or (a.run_dir/"training_addon").exists()):
+            raise FileExistsError("Refuse to overwrite existing training")
+        (a.run_dir/"protocol.json").write_text(json.dumps(protocol,indent=2)+"\n")
     def status(stage, **extra):
         state = dict(stage=stage, pid=os.getpid(), time=time.strftime("%Y-%m-%dT%H:%M:%S%z"), **extra)
         temp = a.run_dir/"status.tmp"
@@ -74,7 +100,7 @@ def main():
             (a.run_dir/"validation_smoke.json").write_text(json.dumps(metrics.gray_selection,indent=2)+"\n")
             status("validation_smoke_complete")
             return
-        if (a.run_dir/"training_p3").exists() or (a.run_dir/"training_addon").exists():
+        if not a.resume_p3 and ((a.run_dir/"training_p3").exists() or (a.run_dir/"training_addon").exists()):
             raise FileExistsError("Refuse to overwrite existing training")
         common = dict(data=str(data), imgsz=[544,960], epochs=a.epochs, patience=a.epochs,
                       batch=64, device=a.device, workers=8, exist_ok=False, optimizer="AdamW",
@@ -87,7 +113,7 @@ def main():
         status("training_p3")
         model.add_callback("on_fit_epoch_end", lambda trainer: status("training_p3", epoch=trainer.epoch+1,
                                                                        fitness=float(trainer.fitness)))
-        model.train(trainer=GrayP3Trainer, project=str(a.run_dir/"training_p3"), name="p3",
+        model.train(trainer=GrayP3Trainer, resume=a.resume_p3, project=str(a.run_dir/"training_p3"), name="p3",
                     lr0=.0001, warmup_epochs=0, **common)
         p3 = a.run_dir/"training_p3/p3/weights/best.pt"
         status("initialize_addon")

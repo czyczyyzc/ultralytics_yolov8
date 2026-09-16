@@ -1,5 +1,11 @@
 # Online random-scale training launch: 2026-09-16
 
+Latest operator decision: stopped by user on 2026-09-16 after requesting restoration
+of native augmentation. The resumed process group 1292464 is no longer running;
+the pending add-on stage will not run. All saved checkpoints and logs are retained.
+See `../real_gray_native_augmentation_restored_20260916/README.md` for the prepared
+replacement configuration. No replacement training job has been launched.
+
 Host: `root@47.107.185.207`
 Physical GPU: `6` (A100 80GB).
 Launch PID: `3566740`. The existing approximately 0.6GB Triton service was retained.

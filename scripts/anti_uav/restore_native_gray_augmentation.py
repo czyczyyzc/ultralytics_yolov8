@@ -60,4 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    print(json.dumps(restore(args.source, args.output), indent=2))
+    audit = restore(args.source, args.output)
+    keys = ("final_entries", "negative", "final_negative_fraction", "online_additional_slots",
+            "zoom_training_samples", "native_schedule_sha256", "training_started")
+    print(json.dumps({key: audit[key] for key in keys}, indent=2))

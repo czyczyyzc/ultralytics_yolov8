@@ -1,0 +1,30 @@
+{
+  "time": "2026-09-16T16:48:57.426325+08:00",
+  "old": {
+    "entries": 86505,
+    "unique_image_paths": 59207,
+    "gray_unique_image_paths": 23434,
+    "rgb_unique_image_paths": 35773,
+    "gray_entries": 50732,
+    "rgb_entries": 35773,
+    "gray_video_directories": 10
+  },
+  "current": {
+    "entries": 89748,
+    "unique_image_paths": 61989,
+    "gray_unique_image_paths": 26253,
+    "rgb_unique_image_paths": 35736,
+    "gray_entries": 53975,
+    "rgb_entries": 35773,
+    "gray_video_directories": 14
+  },
+  "approved_tasks": 23,
+  "approved_unique_videos": 23,
+  "old_archive_unique_videos": 7,
+  "union_unique_videos": 30,
+  "archive_approved_overlap": 0,
+  "approved_raw_frames": 105783,
+  "restored_dataset": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_native_augmentation_restored_20260916",
+  "deduplication": "Image counts deduplicated by absolute path, not pixel hash; video union by manifest SHA256, not rehashed this turn.",
+  "new_untrained_videos": 14
+}

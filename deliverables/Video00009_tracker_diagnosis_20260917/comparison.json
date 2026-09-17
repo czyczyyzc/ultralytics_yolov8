@@ -1,0 +1,420 @@
+{
+  "scope": "Full original Video00009, fixed conf=0.03 PT FP32; not the every-10th-frame validation subset",
+  "total_video_frames": 14201,
+  "reviewed_frames": 14199,
+  "excluded_frames": [
+    9362,
+    9363
+  ],
+  "positive_frames": 7982,
+  "negative_frames": 6217,
+  "gt_boxes": 7982,
+  "matching": "single-GT highest IoU, IoU>=0.50; extra boxes are FP",
+  "exact_baseline_replay_verified": true,
+  "no_deployment_configuration_changed": true,
+  "detector_visible_frames": 8468,
+  "raw_track_visible_frames": 8202,
+  "confirmed_track_visible_frames": 7553,
+  "whole_frame_suppression": {
+    "unmatched_below_birth_0.10": 266,
+    "only_unconfirmed_tracks": 649
+  },
+  "removed_boxes": {
+    "unmatched_below_birth_0.10": 543,
+    "unconfirmed_hits_lt3": 803
+  },
+  "lost_gt_detections": {
+    "confirmation_hits_lt3": 192,
+    "birth_gate": 24
+  },
+  "metrics": {
+    "detector": {
+      "tp": 5302,
+      "fp": 3806,
+      "fn": 2680,
+      "frames_with_output": 8467,
+      "outputs": 9108,
+      "precision": 0.5821256038647343,
+      "recall": 0.6642445502380355,
+      "f1": 0.6204798127559977
+    },
+    "tracker_raw": {
+      "tp": 5278,
+      "fp": 3288,
+      "fn": 2704,
+      "frames_with_output": 8202,
+      "outputs": 8566,
+      "precision": 0.6161568993696007,
+      "recall": 0.6612377850162866,
+      "f1": 0.6379018612521151
+    },
+    "tracker_current": {
+      "tp": 5086,
+      "fp": 2677,
+      "fn": 2896,
+      "frames_with_output": 7553,
+      "outputs": 7763,
+      "precision": 0.6551590879814505,
+      "recall": 0.6371836632422951,
+      "f1": 0.6460463639250555
+    },
+    "birth0.10_hits2": {
+      "tp": 5162,
+      "fp": 2822,
+      "fn": 2820,
+      "frames_with_output": 7740,
+      "outputs": 7984,
+      "precision": 0.6465430861723447,
+      "recall": 0.6467050864445001,
+      "f1": 0.6466240761618439
+    },
+    "birth0.03_hits3": {
+      "tp": 5084,
+      "fp": 2752,
+      "fn": 2898,
+      "frames_with_output": 7584,
+      "outputs": 7836,
+      "precision": 0.6488004083716181,
+      "recall": 0.636933099473816,
+      "f1": 0.6428119863446705
+    },
+    "birth0.03_hits2": {
+      "tp": 5163,
+      "fp": 2967,
+      "fn": 2819,
+      "frames_with_output": 7811,
+      "outputs": 8130,
+      "precision": 0.6350553505535055,
+      "recall": 0.6468303683287396,
+      "f1": 0.6408887785501488
+    },
+    "birth0.03_hits1": {
+      "tp": 5302,
+      "fp": 3806,
+      "fn": 2680,
+      "frames_with_output": 8467,
+      "outputs": 9108,
+      "precision": 0.5821256038647343,
+      "recall": 0.6642445502380355,
+      "f1": 0.6204798127559977
+    }
+  },
+  "examples": {
+    "2196": {
+      "frame_index": 2196,
+      "time_seconds": 21.96,
+      "reviewed": true,
+      "gt_count": 1,
+      "detector_count": 1,
+      "raw_track_count": 1,
+      "shown_count": 0,
+      "blank_reason": "only_unconfirmed_tracks",
+      "removed": [
+        {
+          "box": [
+            817.0135498046875,
+            798.7789306640625,
+            829.2816162109375,
+            806.8927001953125,
+            0.3305676281452179
+          ],
+          "reason": "unconfirmed_hits_lt3",
+          "raw_track": {
+            "id": 4,
+            "box": [
+              817.0135498046875,
+              798.7789306640625,
+              829.2816162109375,
+              806.8927001953125
+            ],
+            "score": 0.3305676281452179,
+            "confirmed": false,
+            "predicted": false,
+            "age": 1,
+            "hits": 1,
+            "time_since_update_sec": 0.0
+          },
+          "best_gt_iou": 0.6850687568622947
+        }
+      ],
+      "lost_tp_reason": "confirmation_hits_lt3",
+      "detections": [
+        [
+          817.0135498046875,
+          798.7789306640625,
+          829.2816162109375,
+          806.8927001953125,
+          0.3305676281452179
+        ]
+      ],
+      "raw_tracks": [
+        {
+          "id": 4,
+          "box": [
+            817.0135498046875,
+            798.7789306640625,
+            829.2816162109375,
+            806.8927001953125
+          ],
+          "score": 0.3305676281452179,
+          "confirmed": false,
+          "predicted": false,
+          "age": 1,
+          "hits": 1,
+          "time_since_update_sec": 0.0
+        }
+      ],
+      "gt": [
+        [
+          818.0,
+          800.0,
+          828.0,
+          807.0
+        ]
+      ],
+      "counts": {
+        "detector": [
+          1,
+          0,
+          0
+        ],
+        "tracker_current": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    "2197": {
+      "frame_index": 2197,
+      "time_seconds": 21.97,
+      "reviewed": true,
+      "gt_count": 1,
+      "detector_count": 1,
+      "raw_track_count": 1,
+      "shown_count": 0,
+      "blank_reason": "only_unconfirmed_tracks",
+      "removed": [
+        {
+          "box": [
+            819.6038818359375,
+            800.5365600585938,
+            832.7030029296875,
+            809.9845581054688,
+            0.31455740332603455
+          ],
+          "reason": "unconfirmed_hits_lt3",
+          "raw_track": {
+            "id": 4,
+            "box": [
+              819.6038818359375,
+              800.5365600585938,
+              832.7030029296875,
+              809.9845581054688
+            ],
+            "score": 0.31455740332603455,
+            "confirmed": false,
+            "predicted": false,
+            "age": 2,
+            "hits": 2,
+            "time_since_update_sec": 0.0
+          },
+          "best_gt_iou": 0.7250588000357292
+        }
+      ],
+      "lost_tp_reason": "confirmation_hits_lt3",
+      "detections": [
+        [
+          819.6038818359375,
+          800.5365600585938,
+          832.7030029296875,
+          809.9845581054688,
+          0.31455740332603455
+        ]
+      ],
+      "raw_tracks": [
+        {
+          "id": 4,
+          "box": [
+            819.6038818359375,
+            800.5365600585938,
+            832.7030029296875,
+            809.9845581054688
+          ],
+          "score": 0.31455740332603455,
+          "confirmed": false,
+          "predicted": false,
+          "age": 2,
+          "hits": 2,
+          "time_since_update_sec": 0.0
+        }
+      ],
+      "gt": [
+        [
+          821.0,
+          801.0,
+          831.0,
+          810.0
+        ]
+      ],
+      "counts": {
+        "detector": [
+          1,
+          0,
+          0
+        ],
+        "tracker_current": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    "2212": {
+      "frame_index": 2212,
+      "time_seconds": 22.12,
+      "reviewed": true,
+      "gt_count": 1,
+      "detector_count": 1,
+      "raw_track_count": 0,
+      "shown_count": 0,
+      "blank_reason": "unmatched_below_birth_0.10",
+      "removed": [
+        {
+          "box": [
+            1180.331787109375,
+            778.5982055664062,
+            1193.758544921875,
+            787.9074096679688,
+            0.08078119903802872
+          ],
+          "reason": "unmatched_below_birth_0.10",
+          "raw_track": null,
+          "best_gt_iou": 0.690269578118083
+        }
+      ],
+      "lost_tp_reason": "birth_gate",
+      "detections": [
+        [
+          1180.331787109375,
+          778.5982055664062,
+          1193.758544921875,
+          787.9074096679688,
+          0.08078119903802872
+        ]
+      ],
+      "raw_tracks": [],
+      "gt": [
+        [
+          1181.0,
+          780.0,
+          1192.0,
+          788.0
+        ]
+      ],
+      "counts": {
+        "detector": [
+          1,
+          0,
+          0
+        ],
+        "tracker_current": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    "9000": {
+      "frame_index": 9000,
+      "time_seconds": 90.0,
+      "reviewed": true,
+      "gt_count": 1,
+      "detector_count": 1,
+      "raw_track_count": 1,
+      "shown_count": 0,
+      "blank_reason": "only_unconfirmed_tracks",
+      "removed": [
+        {
+          "box": [
+            1117.4022216796875,
+            447.60565185546875,
+            1127.4515380859375,
+            454.93194580078125,
+            0.13033248484134674
+          ],
+          "reason": "unconfirmed_hits_lt3",
+          "raw_track": {
+            "id": 329,
+            "box": [
+              1117.4022216796875,
+              447.60565185546875,
+              1127.4515380859375,
+              454.93194580078125
+            ],
+            "score": 0.13033248484134674,
+            "confirmed": false,
+            "predicted": false,
+            "age": 41,
+            "hits": 2,
+            "time_since_update_sec": 0.0
+          },
+          "best_gt_iou": 0.3259795695432251
+        }
+      ],
+      "detections": [
+        [
+          1117.4022216796875,
+          447.60565185546875,
+          1127.4515380859375,
+          454.93194580078125,
+          0.13033248484134674
+        ]
+      ],
+      "raw_tracks": [
+        {
+          "id": 329,
+          "box": [
+            1117.4022216796875,
+            447.60565185546875,
+            1127.4515380859375,
+            454.93194580078125
+          ],
+          "score": 0.13033248484134674,
+          "confirmed": false,
+          "predicted": false,
+          "age": 41,
+          "hits": 2,
+          "time_since_update_sec": 0.0
+        }
+      ],
+      "gt": [
+        [
+          1119.0,
+          450.0,
+          1125.0,
+          454.0
+        ]
+      ],
+      "counts": {
+        "detector": [
+          0,
+          1,
+          1
+        ],
+        "tracker_current": [
+          0,
+          0,
+          1
+        ]
+      }
+    }
+  },
+  "input_sha256": {
+    "deliverables/Video00009_expanded28_20260917/predictions.jsonl": "c1edc4cd5b13756389a33351d631066cc7c4bb9b1c19420ceae33233112ddc29",
+    "deliverables/Video00009_expanded28_tracker_20260917/tracks.jsonl": "8a2a2ca890a6c65e6f2e1856e645ad0d26c4d0cf7f58374bda6d83f7ec8fded6",
+    ".codex_work/video00009_tracker_diagnosis/approved_manifest.json": "b8ce6dc0f1948438004d92d6769c9e6bf6112eb9f7d46935da02837145ab2a0c",
+    ".codex_work/video00009_tracker_diagnosis/annotations.json": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91"
+  },
+  "note": "Ablations use the SAME >=0.03 cache. No 0.01-0.03 detections exist here. GT is used only for offline scoring, not tracker decisions. Unique track IDs are not ID-switch metrics. These are diagnostics on a model-selection video, not independent held-out tuning results."
+}

@@ -1,0 +1,62 @@
+{
+  "name": "low",
+  "metrics": {
+    "tp": 5095,
+    "fp": 2848,
+    "fn": 2887,
+    "frames_with_output": 7636,
+    "outputs": 7943,
+    "precision": 0.6414452977464434,
+    "recall": 0.6383112002004511,
+    "f1": 0.6398744113029828
+  },
+  "metrics_display_score_ge003": {
+    "tp": 5085,
+    "fp": 2704,
+    "fn": 2897,
+    "frames_with_output": 7563,
+    "outputs": 7789,
+    "precision": 0.6528437540120683,
+    "recall": 0.6370583813580556,
+    "f1": 0.6448544797412973
+  },
+  "diagnostics": {
+    "missed_tp_frames": 217,
+    "missed_tp_with_eligible_confirmed_competitor": 15,
+    "missed_tp_with_any_eligible_track": 76,
+    "missed_tp_selected_tentative": 193,
+    "missed_tp_no_eligible_association": 140
+  },
+  "visible_ids": 169,
+  "matched_gt_id_changes_including_gaps": 156,
+  "matched_gt_id_changes_adjacent_frames": 36,
+  "matched_gt_id_changes_with_continuous_positive_gt": 152,
+  "metric_warning": "ID changes are explicit single-GT diagnostics, NOT standard MOTChallenge IDSW/IDF1. Wall time includes ctypes/Python overhead on this host, not board FPS.",
+  "tracker_update_mean_ms": 0.00533977705795348,
+  "baseline_exact": false,
+  "reviewed_frames": 14199,
+  "total_frames": 14201,
+  "config": {
+    "high": 0.03,
+    "low": 0.01,
+    "birth": 0.1,
+    "min_hits": 3,
+    "buffer_sec": 1.0,
+    "prediction_sec": 0.0,
+    "first": 0.92,
+    "second": 0.92,
+    "confirmed_first": false
+  },
+  "library_sha256": "af55ce7ca27d8a411364e200fdad5085da977abcbd77a55b6bb8fe6587b57e39",
+  "detector_cache_sha256": "c1edc4cd5b13756389a33351d631066cc7c4bb9b1c19420ceae33233112ddc29",
+  "supplement": {
+    "predictions_sha256": "3b581641c5abeae63f40ea555c232847b46c5f8792ca0c51dc6befe331fd3eb7",
+    "low_detections_added": 1260
+  },
+  "provenance": {
+    "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+    "weights_sha256": "61e9a3669f964e59e96e9b2a24bf7705b945e184ed5a0628be33ee44d8b4bb59",
+    "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+    "audit_script_sha256": "da50c4db50498c0528ada38815e298d8fd7d0cd770a68843199ce725c45dbba2"
+  }
+}

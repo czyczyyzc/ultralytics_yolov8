@@ -2,11 +2,13 @@
 #define RK_TRACKER_DIAGNOSTICS
 #include "tracker_c_api.cpp"
 
+#ifndef RK_TRACKER_LEGACY_TRACE
 extern "C" int rk_tracker_set_confirmed_first(void* tracker, int enabled) {
     if (!tracker) return -1;
     static_cast<rk_tracker::DetectorBasedTracker*>(tracker)->diagnostic_confirmed_first(enabled != 0);
     return 0;
 }
+#endif
 
 extern "C" int rk_tracker_assign(const double* costs, int rows, int cols,
                                   double threshold, int* output) {

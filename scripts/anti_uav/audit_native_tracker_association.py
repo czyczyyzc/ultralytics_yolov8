@@ -99,6 +99,7 @@ def main():
     stats, events, rows, ids = Counter(), [], [], set()
     last_matched_id, last_matched_frame = None, None
     consecutive_switches = all_observation_switches = 0
+    identity_events = []
     tracking_ms = []
     try:
         for i, record in enumerate(detections):
@@ -136,6 +137,11 @@ def main():
                 if last_matched_id is not None and best["id"] != last_matched_id:
                     all_observation_switches += 1
                     consecutive_switches += last_matched_frame == i-1
+                    continuously_annotated = all(j in include and gt[j] for j in range(last_matched_frame, i+1))
+                    identity_events.append(dict(previous_frame=last_matched_frame, frame_index=i,
+                        previous_id=last_matched_id, track_id=best["id"],
+                        adjacent_frames=last_matched_frame == i-1,
+                        gt_present_in_every_intervening_reviewed_frame=continuously_annotated))
                 last_matched_id, last_matched_frame = best["id"], i
             if dtp > stp:
                 candidates = [j for j, b in enumerate(boxes) if b[4] >= .03 and box_iou(b, gt[i][0]) >= .5]
@@ -157,18 +163,23 @@ def main():
     finally:
         tracker.close()
     score, _ = evaluate(rows, gt, include, .5)
+    high_only_score, _ = evaluate([[t for t in row if t["score"] >= .03] for row in rows], gt, include, .5)
     args.output.mkdir(parents=True)
     (args.output / "tracks.jsonl").write_text("".join(json.dumps(dict(frame_index=i, displayed_tracks=r))+"\n" for i,r in enumerate(rows)))
     (args.output / "missed_tp_events.json").write_text(json.dumps(events, indent=2)+"\n")
-    result = dict(name=args.name, metrics=score, diagnostics=dict(stats),
+    (args.output / "identity_change_events.json").write_text(json.dumps(identity_events, indent=2)+"\n")
+    result = dict(name=args.name, metrics=score, metrics_display_score_ge003=high_only_score, diagnostics=dict(stats),
         visible_ids=len(ids), matched_gt_id_changes_including_gaps=all_observation_switches,
         matched_gt_id_changes_adjacent_frames=consecutive_switches,
+        matched_gt_id_changes_with_continuous_positive_gt=sum(e["gt_present_in_every_intervening_reviewed_frame"] for e in identity_events),
         metric_warning="ID changes are explicit single-GT diagnostics, NOT standard MOTChallenge IDSW/IDF1. Wall time includes ctypes/Python overhead on this host, not board FPS.",
         tracker_update_mean_ms=float(np.mean(tracking_ms)), baseline_exact=args.expect_baseline,
         reviewed_frames=len(include), total_frames=len(detections),
         config=dict(high=.03, low=.01, birth=.1, min_hits=3, buffer_sec=1., prediction_sec=0., first=.92, second=.92,
                     confirmed_first=args.confirmed_first),
-        library_sha256=sha(args.library), detector_cache_sha256=sha(dpath), supplement=supplement)
+        library_sha256=sha(args.library), detector_cache_sha256=sha(dpath), supplement=supplement,
+        provenance=dict(source_sha256=ds["source_sha256"], weights_sha256=ds["weights_sha256"],
+                        coco_sha256=sha(args.coco), audit_script_sha256=sha(Path(__file__))))
     (args.output / "summary.json").write_text(json.dumps(result, indent=2)+"\n")
     print(json.dumps(result, indent=2))
 

@@ -1,6 +1,8 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <functional>
+#include <random>
 #include <vector>
 
 #include "detector_based_tracker.hpp"
@@ -151,6 +153,49 @@ void test_opt_in_confirmed_priority() {
     }
 }
 
+void test_assignment_matches_brute_force_objective() {
+    std::mt19937 generator(20260917);
+    std::uniform_real_distribution<double> random_cost(0.0, 1.3);
+    constexpr double threshold = 0.92;
+    for (int rows = 1; rows <= 3; ++rows) {
+        for (int cols = 1; cols <= 3; ++cols) {
+            for (int sample = 0; sample < 100; ++sample) {
+                std::vector<std::vector<double>> costs(rows, std::vector<double>(cols));
+                for (auto& row : costs) for (double& cost : row) cost = random_cost(generator);
+                double best = std::numeric_limits<double>::infinity();
+                std::function<void(int, unsigned, double, int)> search = [&](int row, unsigned used, double cost, int matches) {
+                    if (row == rows) {
+                        best = std::min(best, cost + (cols - matches) * threshold);
+                        return;
+                    }
+                    search(row + 1, used, cost + threshold, matches);
+                    for (int col = 0; col < cols; ++col) {
+                        if (!(used & (1U << col)) && costs[row][col] < threshold) {
+                            search(row + 1, used | (1U << col), cost + costs[row][col], matches + 1);
+                        }
+                    }
+                };
+                search(0, 0, 0.0, 0);
+                const auto assignment = rk_tracker::detail::hungarian_assignment(costs, threshold);
+                double actual = 0.0;
+                unsigned used = 0;
+                int matches = 0;
+                for (int row = 0; row < rows; ++row) {
+                    const int col = assignment[row];
+                    if (col < 0) { actual += threshold; continue; }
+                    assert(!(used & (1U << col)));
+                    assert(costs[row][col] < threshold);
+                    used |= 1U << col;
+                    ++matches;
+                    actual += costs[row][col];
+                }
+                actual += (cols - matches) * threshold;
+                assert(std::abs(actual - best) < 1e-9);
+            }
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -163,6 +208,7 @@ int main() {
     test_assignment_boundary_and_nonfinite_costs();
     test_expiry_before_association();
     test_opt_in_confirmed_priority();
+    test_assignment_matches_brute_force_objective();
     std::cout << "detector_based_tracker tests passed\n";
     return 0;
 }

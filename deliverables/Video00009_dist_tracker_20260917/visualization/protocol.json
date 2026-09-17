@@ -1,0 +1,41 @@
+{
+  "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+  "intervals_zero_based_end_exclusive": [
+    [
+      950,
+      990
+    ],
+    [
+      2190,
+      2230
+    ],
+    [
+      8985,
+      9025
+    ],
+    [
+      11940,
+      11980
+    ]
+  ],
+  "frames": 160,
+  "source_fps": 100,
+  "playback_fps": 10,
+  "candidate": "deliverables/Video00009_dist_tracker_20260917/full/conf003_unfused_gmc",
+  "candidate_title": "Dist public",
+  "candidate_config": {
+    "tracker_type": "botsort",
+    "track_high_thresh": 0.03,
+    "track_low_thresh": 0.01,
+    "new_track_thresh": 0.1,
+    "track_buffer": 30,
+    "match_thresh": 0.8,
+    "fuse_score": false,
+    "gmc_method": "sparseOptFlow",
+    "proximity_thresh": 0.5,
+    "appearance_thresh": 0.25,
+    "with_reid": false
+  },
+  "note": "10x slow diagnostic montage. Offline GT used ONLY to center inspection crops, never drawn or supplied to tracker. All four columns use original detector boxes. Last column separates pending detections from stable IDs; it is NOT improved tracking recall.",
+  "output_sha256": "6145722701d16e2c4a8dc147a4f4acdf5750f322743a2b03b51ae98e7efb693e"
+}

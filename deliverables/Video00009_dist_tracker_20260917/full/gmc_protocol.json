@@ -1,0 +1,9 @@
+{
+  "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+  "frames": 14201,
+  "downscale": 2,
+  "method": "unmodified upstream sparseOptFlow, causal previous/current images only",
+  "implementation_sha256": "914e78468cee189700565c9be7f1e35e23485085f956e1fad7700c73a19d9f08",
+  "cache_sha256": "72adad46938304add2b12b8aeef790f14f26298625e1ac60d3ca0d08b4e49a1e",
+  "seconds": 224.66397967375815
+}

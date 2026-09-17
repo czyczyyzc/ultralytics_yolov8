@@ -24,16 +24,29 @@ Script:
 
 The batch was launched at 2026-09-16 17:48:32 +0800, PID 2363872, using an
 independent `.venv_gray_synthesis` environment, CPU affinity 126,127 and nice 15.
-It uses no GPU. Check the server `status.json` for completion. The current
-Frozen-P3 + Add-on P2 training run is not restarted or modified.
+It used no GPU and completed at 2026-09-16 18:08:09 +0800 after about 19.6 minutes.
+The Frozen-P3 + Add-on P2 training run was not restarted or modified. These
+synthetic candidates were not used in that run.
 
-The first independently checked snapshot contains 211 accepted images from
-three training videos, using 52 distinct catalog IDs. All 211 image and label
-hashes passed; a spread of saved images was also decoded again to check the
-unchanged background. This is a partial snapshot while generation continues,
-not the final batch count. `verification_snapshot.json` records this check.
-On completion, the server writes `summary.json`, `manifest.json`,
-`train_synthetic.txt` and a complete `status.json`.
+Final output: 856 accepted grayscale images, 856 YOLO label files, 856 edit masks
+and 16 comparison previews. There are 219 distinct replaced source frames from
+17 training videos, using all 53 eligible catalog IDs. The generator selected 360
+source frames from 18 videos; unsafe repairs and duplicate outputs were not saved
+as new training images. This is not 856 independently captured frames.
+
+`summary.json`, `manifest.json`, `train_synthetic.txt` and `status.json` now contain
+the final result. `verification_snapshot.json` is the older partial 211-image check,
+not the final count. Local previews and the contact sheet have been synchronized.
+
+Source-size strata use the original bbox short edge after hypothetical 960x544
+letterboxing, not the new rendered bbox or the detector report's long-edge bins:
+
+| Source short edge | Accepted variants |
+| --- | ---: |
+| <=8 px | 381 |
+| >8 to 16 px | 240 |
+| >16 to 32 px | 145 |
+| >32 px | 90 |
 
 ## Selection And Output
 
@@ -75,3 +88,9 @@ These are isolated synthesis tests, not the complete YOLO test suite.
 The generator checks source and catalog hashes, saved PNG equality, bbox
 normalization, pixel identity outside edit masks and training-configuration hashes.
 Local previews are copies of the server files, not new synthesis runs.
+
+On 2026-09-17 a separate full audit reread all 856 output/source images, masks
+and labels. All hashes and updated boxes matched; decoded pixels outside every
+mask were unchanged; no held-out video hash was present; protected training
+configuration hashes were unchanged. See `verification_final.json`. This audit
+does not replace manual visual review or evaluation of training benefit.

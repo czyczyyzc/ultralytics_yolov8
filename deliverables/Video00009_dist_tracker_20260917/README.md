@@ -90,3 +90,23 @@ Server CPU association took about 3.22 seconds for 14,201 frames; original-resol
 All 21 related Python tracker tests pass on the server. Locally 20 pass and one existing renderer test is blocked by the system Python missing `psutil`; the new adapter's three tests pass locally and on the server. Video metadata, selected original-frame panels and a frame decoded from the encoded MP4 were checked. Final result archive SHA256 matches between server and local: `89bcd9628206e3b7007d97ee8594b76ea4d9f2c164aa332f00438b0a4a05f52a`.
 
 Code was synchronized using local Git push followed by server Git pull from a bundle. No model, board binary, startup service or deployment preset was replaced. The previously started TrackTrack experiment and native continuity-policy work were paused, not enabled by this experiment. Video00004 and multi-object/reappearance scenes still need independent checks before choosing a deployment replacement.
+
+## Full-Length Visualization
+
+The full video is `full_visualization/Video00009_Dist_public_GMC_conf003_full.mp4`, under the local directory `/Users/czyczyyzc/Documents/codes/ultralytics_yolov8/deliverables/Video00009_dist_tracker_20260917/`. It contains all 14,201 consecutive source frames at the original 100 FPS: 142.01 seconds, H264, 1600x784, no audio. The playback rate is not a hardware inference-speed measurement.
+
+This is a rendering of the exact `final/conf003_unfused_gmc/tracks.jsonl` result, not another inference or parameter-selection run. Only `displayed_tracks` (confirmed, currently observed tracks) are drawn using the associated detector boxes and original IDs. There is no GT, pending-detection overlay, predicted/interpolated box, ID remapping, area filter or skipped empty frame. The two right-hand insets follow the highest-score observed tracks. They are cropped from the clean source and resized before drawing one-pixel corners, with adaptive crop size to retain large targets. No GT is read, including for crop positioning.
+
+`scripts/anti_uav/render_cached_tracker_result_video.py` verifies source/model/detection provenance, frame counts and timestamps, unique track/observation assignments, and each displayed box against its associated original detection. `full_visualization/protocol.json` and `summary.json` record input/output hashes and rendering metadata. This full-video output count includes the two uncertain frames omitted only from evaluation, so it is not necessarily identical to the reviewed-subset count in the comparison table.
+
+Reproduce locally with a fresh output directory:
+
+```bash
+python3 scripts/anti_uav/render_cached_tracker_result_video.py \
+  --source .codex_work/video00009_tracker_diagnosis/Video00009_original.mp4 \
+  --detector-dir deliverables/Video00009_expanded28_20260917 \
+  --tracker-dir deliverables/Video00009_dist_tracker_20260917/final/conf003_unfused_gmc \
+  --output deliverables/Video00009_dist_tracker_20260917/full_visualization
+```
+
+Rendering needs only Python, NumPy, OpenCV and ffmpeg/ffprobe; it does not import YOLO, load model weights, use a GPU, or require the upstream tracker runtime. The dedicated renderer tests can run independently with `python3 -m unittest discover -s tests -p test_render_cached_tracker_result_video.py -v`.

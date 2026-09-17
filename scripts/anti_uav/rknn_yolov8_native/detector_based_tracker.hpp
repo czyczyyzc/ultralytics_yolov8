@@ -59,6 +59,8 @@ struct Config {
     double prediction_grace_sec = 0.0;
     double fallback_fps = 107.0;
     int min_hits = 2;
+    // Experimental policy, off until validated beyond the diagnostic clip.
+    bool confirmed_first = false;
 };
 
 namespace detail {
@@ -87,7 +89,12 @@ inline std::vector<int> hungarian_assignment(
     const double invalid_cost = unmatched_cost + 1000.0;
     std::vector<std::vector<double>> square(size, std::vector<double>(size, invalid_cost));
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) square[row][col] = costs[row][col];
+        // Reject inadmissible edges before optimization, not only after assignment.
+        for (int col = 0; col < cols; ++col) {
+            if (std::isfinite(costs[row][col]) && costs[row][col] < unmatched_cost) {
+                square[row][col] = costs[row][col];
+            }
+        }
         square[row][cols + row] = unmatched_cost;
     }
     for (int col = 0; col < cols; ++col) {
@@ -227,6 +234,8 @@ public:
         int image_height = 0,
         const CameraMotion& camera_motion = {}) {
         timestamp_sec = normalize_timestamp(timestamp_sec);
+        // Expired IDs must not be revived by a detection arriving after the buffer.
+        remove_expired_tracks(timestamp_sec);
         for (Track& track : tracks_) track.predict(timestamp_sec, camera_motion);
 
         std::vector<int> high_detections;
@@ -244,9 +253,19 @@ public:
         std::vector<bool> matched_track(tracks_.size(), false);
         std::vector<bool> matched_detection(detections.size(), false);
 
-        associate(
-            active_tracks, high_detections, detections, config_.first_match_cost,
-            matched_track, matched_detection);
+        if (config_.confirmed_first) {
+            std::vector<int> confirmed_tracks, tentative_tracks;
+            for (int index : active_tracks) {
+                (tracks_[index].hits >= config_.min_hits ? confirmed_tracks : tentative_tracks).push_back(index);
+            }
+            associate(confirmed_tracks, high_detections, detections, config_.first_match_cost,
+                      matched_track, matched_detection);
+            associate(tentative_tracks, high_detections, detections, config_.first_match_cost,
+                      matched_track, matched_detection);
+        } else {
+            associate(active_tracks, high_detections, detections, config_.first_match_cost,
+                      matched_track, matched_detection);
+        }
 
         std::vector<int> unmatched_tracks;
         for (int index : active_tracks) {
@@ -266,12 +285,6 @@ public:
             }
         }
 
-        tracks_.erase(
-            std::remove_if(tracks_.begin(), tracks_.end(), [&](const Track& track) {
-                return track.time_since_update(timestamp_sec) > config_.track_buffer_sec;
-            }),
-            tracks_.end());
-
         std::vector<TrackOutput> outputs;
         outputs.reserve(tracks_.size());
         for (const Track& track : tracks_) {
@@ -290,7 +303,42 @@ public:
 
     std::size_t active_track_count() const { return tracks_.size(); }
 
+#ifdef RK_TRACKER_DIAGNOSTICS
+    void diagnostic_confirmed_first(bool enabled) { config_.confirmed_first = enabled; }
+
+    // Read-only cost audit; compiled only into the offline tracing bridge.
+    std::vector<std::array<double, 15>> diagnostic_costs(
+        const std::vector<Detection>& detections, double timestamp_sec) const {
+        auto state = *this;
+        timestamp_sec = state.normalize_timestamp(timestamp_sec);
+        state.remove_expired_tracks(timestamp_sec);
+        std::vector<std::array<double, 15>> rows;
+        for (auto& track : state.tracks_) {
+            track.predict(timestamp_sec, {});
+            const auto observed = track.last_observation_xyxy();
+            const auto predicted = track.xyxy();
+            for (std::size_t index = 0; index < detections.size(); ++index) {
+                rows.push_back({static_cast<double>(track.id), static_cast<double>(index),
+                    static_cast<double>(track.hits), static_cast<double>(track.age),
+                    track.time_since_update(timestamp_sec), association_cost(track, detections[index]),
+                    observed[0], observed[1], observed[2], observed[3],
+                    predicted[0], predicted[1], predicted[2], predicted[3],
+                    track.mahalanobis(detections[index])});
+            }
+        }
+        return rows;
+    }
+#endif
+
 private:
+    void remove_expired_tracks(double timestamp_sec) {
+        tracks_.erase(
+            std::remove_if(tracks_.begin(), tracks_.end(), [&](const auto& track) {
+                return track.time_since_update(timestamp_sec) > config_.track_buffer_sec;
+            }),
+            tracks_.end());
+    }
+
     struct Track {
         int id;
         int class_id;

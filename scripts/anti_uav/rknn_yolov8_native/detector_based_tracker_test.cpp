@@ -98,6 +98,59 @@ void test_camera_motion_hook() {
     assert(std::abs(shifted.front().y1 - (first.front().y1 - 10.0f)) < 0.1f);
 }
 
+void test_assignment_rejects_invalid_edges_before_optimization() {
+    const auto result = rk_tracker::detail::hungarian_assignment({{0.10, 0.93}, {0.20, 10.0}}, 0.92);
+    assert((result == std::vector<int>{0, -1}));
+}
+
+void test_assignment_boundary_and_nonfinite_costs() {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    assert((rk_tracker::detail::hungarian_assignment({{0.92, nan, inf, -inf}}, 0.92) ==
+            std::vector<int>{-1}));
+    assert((rk_tracker::detail::hungarian_assignment({{nan, 0.2}, {0.1, inf}}, 0.92) ==
+            std::vector<int>{1, 0}));
+    assert(rk_tracker::detail::hungarian_assignment({}, 0.92).empty());
+    assert((rk_tracker::detail::hungarian_assignment({{}, {}}, 0.92) == std::vector<int>{-1, -1}));
+}
+
+void test_expiry_before_association() {
+    rk_tracker::Config config;
+    config.min_hits = 1;
+    config.track_buffer_sec = 1.0;
+    rk_tracker::DetectorBasedTracker tracker(config);
+    const auto first = tracker.update({detection(100.0f, 100.0f)}, 0.0);
+    const auto within = tracker.update({detection(100.0f, 100.0f)}, 0.5);
+    assert(within.front().track_id == first.front().track_id);
+    const auto boundary = tracker.update({detection(100.0f, 100.0f)}, 1.5);
+    assert(boundary.front().track_id == first.front().track_id);
+    const auto expired = tracker.update({detection(100.0f, 100.0f)}, 2.51);
+    assert(expired.size() == 1);
+    assert(expired.front().track_id != first.front().track_id);
+    assert(tracker.active_track_count() == 1);
+    tracker.update({}, 4.0);
+    assert(tracker.active_track_count() == 0);
+}
+
+void test_opt_in_confirmed_priority() {
+    for (bool priority : {false, true}) {
+        rk_tracker::Config config;
+        config.min_hits = 3;
+        config.confirmed_first = priority;
+        rk_tracker::DetectorBasedTracker tracker(config);
+        int stable_id = -1;
+        for (int frame = 0; frame < 3; ++frame) {
+            stable_id = tracker.update({detection(100, 100)}, frame / 100.0).front().track_id;
+        }
+        const auto split = tracker.update({detection(100, 100), detection(112, 100)}, 0.03);
+        assert(split.size() == 2);
+        const auto next = tracker.update({detection(112, 100)}, 0.04);
+        assert(next.size() == 1);
+        assert((next.front().track_id == stable_id) == priority);
+        assert(next.front().confirmed == priority);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -106,6 +159,10 @@ int main() {
     test_two_targets_keep_distinct_ids();
     test_non_monotonic_timestamp_fallback();
     test_camera_motion_hook();
+    test_assignment_rejects_invalid_edges_before_optimization();
+    test_assignment_boundary_and_nonfinite_costs();
+    test_expiry_before_association();
+    test_opt_in_confirmed_priority();
     std::cout << "detector_based_tracker tests passed\n";
     return 0;
 }

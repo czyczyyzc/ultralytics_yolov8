@@ -39,7 +39,7 @@ def probe(path):
     return data["streams"][0]
 
 
-def panel(frame, boxes, index, count, fps, title):
+def panel(frame, boxes, index, count, fps, title, *, tracks=None):
     from scripts.anti_uav.render_pt_detector_pair_video import draw_corner_box, boxes_in_crop
 
     height, width = frame.shape[:2]
@@ -47,19 +47,27 @@ def panel(frame, boxes, index, count, fps, title):
     canvas = np.full((784, 1600, 3), (25, 29, 35), np.uint8)
     main = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
     sx, sy = 1280 / width, 720 / height
-    for box in boxes:
+    if tracks is not None and len(tracks) != len(boxes):
+        raise ValueError("Track metadata must correspond to each displayed box")
+    for rank, box in enumerate(boxes):
         scaled = box.copy()
         scaled[:4] *= [sx, sy, sx, sy]
         draw_corner_box(main, scaled, color, 1)
+        if tracks is not None:
+            label_x = int(np.clip(scaled[0], 0, 1170))
+            label_y = int(np.clip(scaled[1] - 7, 16, 712))
+            cv2.putText(main, f"ID {tracks[rank]['id']}", (label_x, label_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, .42, color, 1, cv2.LINE_AA)
     canvas[64:, :1280] = main
     cv2.putText(canvas, title, (16, 25), cv2.FONT_HERSHEY_SIMPLEX, .67, (240, 240, 240), 1, cv2.LINE_AA)
-    cv2.putText(canvas, f"frame {index+1}/{count} | {index/fps:.2f}s | predictions {len(boxes)} | NO GT / NO TRACKER",
+    status = f"predictions {len(boxes)} | NO GT / NO TRACKER" if tracks is None else f"confirmed tracks {len(tracks)} | NO GT / RK-BoT-SORT"
+    cv2.putText(canvas, f"frame {index+1}/{count} | {index/fps:.2f}s | {status}",
                 (16, 52), cv2.FONT_HERSHEY_SIMPLEX, .55, (210, 215, 220), 1, cv2.LINE_AA)
     cv2.putText(canvas, "TOP-SCORE CROPS", (1292, 91), cv2.FONT_HERSHEY_SIMPLEX, .52, (220, 225, 230), 1, cv2.LINE_AA)
     for rank in range(2):
         y = 125 + rank * 285
         if rank >= len(boxes):
-            cv2.putText(canvas, "NO DETECTION", (1325, y + 105), cv2.FONT_HERSHEY_SIMPLEX,
+            cv2.putText(canvas, "NO DETECTION" if tracks is None else "NO CONFIRMED TRACK", (1290, y + 105), cv2.FONT_HERSHEY_SIMPLEX,
                         .52, (130, 135, 140), 1, cv2.LINE_AA)
             continue
         box = boxes[rank]
@@ -73,11 +81,12 @@ def panel(frame, boxes, index, count, fps, title):
         for zoom_box in zoom_boxes:
             draw_corner_box(crop, zoom_box, color, 1)
         canvas[y:y+200, 1280:] = crop
-        cv2.putText(canvas, f"rank {rank+1} | score {box[4]:.3f} | {320/crop_w:.1f}x", (1290, y+225),
+        identity = f"rank {rank+1}" if tracks is None else f"ID {tracks[rank]['id']}"
+        cv2.putText(canvas, f"{identity} | score {box[4]:.3f} | {320/crop_w:.1f}x", (1290, y+225),
                     cv2.FONT_HERSHEY_SIMPLEX, .47, color, 1, cv2.LINE_AA)
     cv2.putText(canvas, "Crop positions follow", (1292, 724), cv2.FONT_HERSHEY_SIMPLEX, .46,
                 (190, 195, 200), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "scores, not target IDs.", (1292, 746), cv2.FONT_HERSHEY_SIMPLEX, .46,
+    cv2.putText(canvas, "scores, not target IDs." if tracks is None else "scores; IDs are tracked.", (1292, 746), cv2.FONT_HERSHEY_SIMPLEX, .46,
                 (190, 195, 200), 1, cv2.LINE_AA)
     return canvas
 

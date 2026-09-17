@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-09-17T03:53:50.787528+00:00",
+  "batch": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_replacement_handoff_smoke_20260917",
+  "verified_images": 7,
+  "source_frames": 7,
+  "source_videos": 7,
+  "assets": 7,
+  "file_hashes_valid": true,
+  "label_boxes_match_recorded_geometry": true,
+  "pixels_outside_edit_mask_unchanged": true,
+  "heldout_video_overlap": false,
+  "protected_training_inputs_unchanged": true,
+  "seconds": 0.44,
+  "limitation": "Integrity audit only; not visual realism, asset licensing, independent silhouette accuracy or training-benefit validation."
+}

@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-09-17T03:52:51.655422+00:00",
+  "batch": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_replacement_candidates_20260916",
+  "verified_images": 856,
+  "source_frames": 219,
+  "source_videos": 17,
+  "assets": 53,
+  "file_hashes_valid": true,
+  "label_boxes_match_recorded_geometry": true,
+  "pixels_outside_edit_mask_unchanged": true,
+  "heldout_video_overlap": false,
+  "protected_training_inputs_unchanged": true,
+  "seconds": 34.38,
+  "limitation": "Integrity audit only; not visual realism, asset licensing, independent silhouette accuracy or training-benefit validation."
+}

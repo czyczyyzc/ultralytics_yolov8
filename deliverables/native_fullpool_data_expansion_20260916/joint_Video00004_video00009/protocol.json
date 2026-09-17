@@ -1,0 +1,31 @@
+{
+  "source_splits": [
+    "Video00004",
+    "gray_validation"
+  ],
+  "frames_per_split": [
+    2359,
+    1421
+  ],
+  "frames": 3780,
+  "expected_GT": 1245,
+  "input_hw": [
+    544,
+    960
+  ],
+  "device": 6,
+  "batch": 32,
+  "conf_floor": 0.001,
+  "report_conf": [
+    0.01,
+    0.03,
+    0.05
+  ],
+  "nms_iou": 0.45,
+  "match_iou": 0.5,
+  "half": false,
+  "validation_used_for_checkpoint_selection": true,
+  "Video00009_is_sampled_not_all_raw_frames": true,
+  "joint_list_sha256": "69b64c635e837f9a0125fe64ec8cb7f58e1695c860aa39f8c8bbae45dae12e41",
+  "started": "2026-09-17T11:01:16+0800"
+}

@@ -103,6 +103,7 @@ def main():
     bot = importlib.import_module("ultralytics.trackers.bot_sort")
     gmc_module = importlib.import_module("ultralytics.trackers.utils.gmc")
     matching = importlib.import_module("ultralytics.trackers.utils.matching")
+    base_track = importlib.import_module("ultralytics.trackers.basetrack").BaseTrack
     import torch
     torch.set_num_threads(1)
     cv2.setNumThreads(2)
@@ -191,7 +192,8 @@ def main():
             kf_metrics, _ = evaluate(smooth,gt,included,.5)
             result = dict(name=name,config=config,metrics=measured,kalman_box_metrics=kf_metrics,
                 identity_diagnostics=identity_counts(frames,gt,included),
-                visible_ids=len(visible_ids),created_ids=len(all_ids),max_id=max(all_ids,default=0),
+                visible_ids=len(visible_ids),observed_candidate_ids=len(all_ids),
+                allocated_ids=int(base_track._count),max_id=max(all_ids,default=0),
                 detector_cache_sha256=digest(cache),provenance=provenance,
                 timing=dict(host=platform.node(),cpu=platform.processor(),tracker_seconds=sum(elapsed),
                     tracker_only_fps=len(elapsed)/sum(elapsed),gmc_seconds=sum(gmc_times) if use_gmc else 0,

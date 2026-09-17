@@ -35,9 +35,13 @@ def main():
     p.add_argument("--candidate", type=Path, required=True)
     p.add_argument("--coco", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--candidate-title", default="Candidate")
+    p.add_argument("--filename", default="Video00009_tracker_visual_diagnosis_10x_slow.mp4")
     args = p.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
+    if Path(args.filename).name != args.filename or not args.filename.endswith(".mp4"):
+        raise ValueError("Filename must be a simple .mp4 basename")
     def read_rows(path):
         return [json.loads(line) for line in path.read_text().splitlines()]
     det = read_rows(args.detector_dir / "predictions.jsonl")
@@ -65,12 +69,17 @@ def main():
     gt = {images[a["image_id"]]:a["bbox"] for a in coco["annotations"]}
     intervals = [(950,990),(2190,2230),(8985,9025),(11940,11980)]
     args.output.mkdir(parents=True)
-    destination = args.output / "Video00009_tracker_visual_diagnosis_10x_slow.mp4"
+    destination = args.output / args.filename
     cap = cv2.VideoCapture(str(args.source))
     command = ["ffmpeg","-hide_banner","-loglevel","error","-n","-f","rawvideo","-pix_fmt","bgr24",
                "-s","1920x720","-r","10","-i","pipe:0","-an","-c:v","libx264","-preset","veryfast",
                "-crf","18","-threads","2","-pix_fmt","yuv420p","-movflags","+faststart",str(destination)]
-    titles = ["Detector conf 0.03", "Original: confirmed only", "Candidate: confirmed only", "Candidate: DET + stable ID"]
+    titles = ["Detector conf 0.03", "Original: confirmed only",
+              f"{args.candidate_title}: confirmed", f"{args.candidate_title}: DET + ID"]
+    if "active_first" in candidate_config:
+        candidate_footer = f'Active-first {int(candidate_config["active_first"])} / match {candidate_config["first"]:.2f} / hits {candidate_config["min_hits"]}'
+    else:
+        candidate_footer = f'Match {candidate_config["match_thresh"]:.2f} / score fuse {int(candidate_config["fuse_score"])} / GMC {candidate_config["gmc_method"]}'
     count = 0
     with (args.output / "encode.log").open("x") as log:
         encoder = subprocess.Popen(command,stdin=subprocess.PIPE,stderr=log)
@@ -109,7 +118,7 @@ def main():
                         cv2.putText(canvas,f'frame {index} | {index/100:.2f}s | boxes {len(records)}',(xcol+8,53),cv2.FONT_HERSHEY_SIMPLEX,.48,(200,205,210),1,cv2.LINE_AA)
                         cv2.putText(canvas,"CLEAN SOURCE CROP / NO GT BOX",(xcol+8,366),cv2.FONT_HERSHEY_SIMPLEX,.47,(190,195,200),1,cv2.LINE_AA)
                         footer = ("Same detector cache / NO predicted boxes", "Original matching / confirmed only",
-                                  f'Active-first {int(candidate_config["active_first"])} / match {candidate_config["first"]:.2f} / hits {candidate_config["min_hits"]}',
+                                  candidate_footer,
                                   "Yellow DET pending is NOT a stable ID")[col]
                         cv2.putText(canvas,footer,(xcol+8,696),cv2.FONT_HERSHEY_SIMPLEX,.41,(190,195,200),1,cv2.LINE_AA)
                     encoder.stdin.write(canvas.tobytes())
@@ -128,6 +137,7 @@ def main():
     (args.output / "protocol.json").write_text(json.dumps(dict(
         source_sha256=summary["source_sha256"],intervals_zero_based_end_exclusive=intervals,
         frames=count,source_fps=100,playback_fps=10,candidate=str(args.candidate),
+        candidate_title=args.candidate_title, candidate_config=candidate_config,
         note="10x slow diagnostic montage. Offline GT used ONLY to center inspection crops, never drawn or supplied to tracker. All four columns use original detector boxes. Last column separates pending detections from stable IDs; it is NOT improved tracking recall.",
         output_sha256=hashlib.sha256(destination.read_bytes()).hexdigest()),indent=2)+"\n")
     print(destination)

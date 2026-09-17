@@ -1,0 +1,602 @@
+{
+  "scope": "Video00009 validation-only parameter sweep, not a new independent test",
+  "changes": "Only match cost, birth score, min hits and buffer; confirmed_first=false, no predicted display, no low supplementation",
+  "metric_warning": "Identity diagnostics are not MOTChallenge IDSW/IDF1. Fewer changes can also come from wrong merges. No preset is deployed.",
+  "frames": 14201,
+  "reviewed_frames": 14199,
+  "detector_metrics": {
+    "tp": 5302,
+    "fp": 3806,
+    "fn": 2680,
+    "frames_with_output": 8467,
+    "outputs": 9108,
+    "precision": 0.5821256038647343,
+    "recall": 0.6642445502380355,
+    "f1": 0.6204798127559977
+  },
+  "provenance": {
+    "detector_cache_sha256": "c1edc4cd5b13756389a33351d631066cc7c4bb9b1c19420ceae33233112ddc29",
+    "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+    "tracker_header_sha256": "478843705d66a9ae32b83886b3bcd12c40fb722cba33a6fe6e69e20219c99cc5",
+    "library_sha256": "8d811857dbad37e17c7a11f3dada9fd9c97dfbb2dd015a46707cb5d0cdd849bd",
+    "weights_sha256": "61e9a3669f964e59e96e9b2a24bf7705b945e184ed5a0628be33ee44d8b4bb59",
+    "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86"
+  },
+  "results": [
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5086,
+        "fp": 2675,
+        "fn": 2896,
+        "frames_with_output": 7553,
+        "outputs": 7761,
+        "precision": 0.65532792165958,
+        "recall": 0.6371836632422951,
+        "f1": 0.6461284380359525
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 157,
+        "continuous_gt_id_changes": 153,
+        "adjacent_tp_frame_id_changes": 35
+      }
+    },
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.1,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5162,
+        "fp": 2820,
+        "fn": 2820,
+        "frames_with_output": 7739,
+        "outputs": 7982,
+        "precision": 0.6467050864445001,
+        "recall": 0.6467050864445001,
+        "f1": 0.6467050864445001
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 197,
+        "continuous_gt_id_changes": 193,
+        "adjacent_tp_frame_id_changes": 54
+      }
+    },
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.03,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5085,
+        "fp": 2754,
+        "fn": 2897,
+        "frames_with_output": 7585,
+        "outputs": 7839,
+        "precision": 0.6486796785304249,
+        "recall": 0.6370583813580556,
+        "f1": 0.6428165097022944
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 158,
+        "continuous_gt_id_changes": 154,
+        "adjacent_tp_frame_id_changes": 35
+      }
+    },
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.03,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5163,
+        "fp": 2968,
+        "fn": 2819,
+        "frames_with_output": 7810,
+        "outputs": 8131,
+        "precision": 0.6349772475710245,
+        "recall": 0.6468303683287396,
+        "f1": 0.6408490039098863
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 206,
+        "continuous_gt_id_changes": 202,
+        "adjacent_tp_frame_id_changes": 60
+      }
+    },
+    {
+      "config": {
+        "match": 0.94,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5124,
+        "fp": 2759,
+        "fn": 2858,
+        "frames_with_output": 7643,
+        "outputs": 7883,
+        "precision": 0.6500063427629075,
+        "recall": 0.6419443748433976,
+        "f1": 0.645950204853451
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 143,
+        "continuous_gt_id_changes": 139,
+        "adjacent_tp_frame_id_changes": 39
+      }
+    },
+    {
+      "config": {
+        "match": 0.94,
+        "birth": 0.1,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5184,
+        "fp": 2905,
+        "fn": 2798,
+        "frames_with_output": 7814,
+        "outputs": 8089,
+        "precision": 0.640870317715416,
+        "recall": 0.64946128789777,
+        "f1": 0.6451372036587644
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 177,
+        "continuous_gt_id_changes": 173,
+        "adjacent_tp_frame_id_changes": 57
+      }
+    },
+    {
+      "config": {
+        "match": 0.94,
+        "birth": 0.03,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5128,
+        "fp": 2846,
+        "fn": 2854,
+        "frames_with_output": 7692,
+        "outputs": 7974,
+        "precision": 0.6430900426385754,
+        "recall": 0.6424455023803558,
+        "f1": 0.6427676109300576
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 145,
+        "continuous_gt_id_changes": 141,
+        "adjacent_tp_frame_id_changes": 42
+      }
+    },
+    {
+      "config": {
+        "match": 0.94,
+        "birth": 0.03,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5187,
+        "fp": 3062,
+        "fn": 2795,
+        "frames_with_output": 7895,
+        "outputs": 8249,
+        "precision": 0.6288034913322827,
+        "recall": 0.6498371335504886,
+        "f1": 0.6391473107017436
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 182,
+        "continuous_gt_id_changes": 178,
+        "adjacent_tp_frame_id_changes": 60
+      }
+    },
+    {
+      "config": {
+        "match": 0.96,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5181,
+        "fp": 2859,
+        "fn": 2801,
+        "frames_with_output": 7782,
+        "outputs": 8040,
+        "precision": 0.6444029850746269,
+        "recall": 0.6490854422450514,
+        "f1": 0.6467357383597553
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 98,
+        "continuous_gt_id_changes": 94,
+        "adjacent_tp_frame_id_changes": 21
+      }
+    },
+    {
+      "config": {
+        "match": 0.96,
+        "birth": 0.1,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5221,
+        "fp": 2983,
+        "fn": 2761,
+        "frames_with_output": 7912,
+        "outputs": 8204,
+        "precision": 0.636396879570941,
+        "recall": 0.654096717614633,
+        "f1": 0.6451254170270605
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 121,
+        "continuous_gt_id_changes": 117,
+        "adjacent_tp_frame_id_changes": 34
+      }
+    },
+    {
+      "config": {
+        "match": 0.96,
+        "birth": 0.03,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5183,
+        "fp": 2937,
+        "fn": 2799,
+        "frames_with_output": 7814,
+        "outputs": 8120,
+        "precision": 0.6383004926108374,
+        "recall": 0.6493360060135305,
+        "f1": 0.6437709601291765
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 108,
+        "continuous_gt_id_changes": 104,
+        "adjacent_tp_frame_id_changes": 22
+      }
+    },
+    {
+      "config": {
+        "match": 0.96,
+        "birth": 0.03,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5227,
+        "fp": 3146,
+        "fn": 2755,
+        "frames_with_output": 7992,
+        "outputs": 8373,
+        "precision": 0.6242684820255583,
+        "recall": 0.6548484089200701,
+        "f1": 0.6391929073677773
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 134,
+        "continuous_gt_id_changes": 130,
+        "adjacent_tp_frame_id_changes": 36
+      }
+    },
+    {
+      "config": {
+        "match": 0.98,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5215,
+        "fp": 2961,
+        "fn": 2767,
+        "frames_with_output": 7888,
+        "outputs": 8176,
+        "precision": 0.6378424657534246,
+        "recall": 0.6533450263091957,
+        "f1": 0.6455006807773238
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 58,
+        "continuous_gt_id_changes": 54,
+        "adjacent_tp_frame_id_changes": 11
+      }
+    },
+    {
+      "config": {
+        "match": 0.98,
+        "birth": 0.1,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5241,
+        "fp": 3074,
+        "fn": 2741,
+        "frames_with_output": 7995,
+        "outputs": 8315,
+        "precision": 0.6303066746843055,
+        "recall": 0.6566023552994237,
+        "f1": 0.6431858624286678
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 74,
+        "continuous_gt_id_changes": 70,
+        "adjacent_tp_frame_id_changes": 19
+      }
+    },
+    {
+      "config": {
+        "match": 0.98,
+        "birth": 0.03,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5212,
+        "fp": 3044,
+        "fn": 2770,
+        "frames_with_output": 7905,
+        "outputs": 8256,
+        "precision": 0.6312984496124031,
+        "recall": 0.652969180656477,
+        "f1": 0.6419509791846286
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 81,
+        "continuous_gt_id_changes": 77,
+        "adjacent_tp_frame_id_changes": 16
+      }
+    },
+    {
+      "config": {
+        "match": 0.98,
+        "birth": 0.03,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5248,
+        "fp": 3233,
+        "fn": 2734,
+        "frames_with_output": 8058,
+        "outputs": 8481,
+        "precision": 0.6187949534253037,
+        "recall": 0.6574793284891005,
+        "f1": 0.6375508716515823
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 97,
+        "continuous_gt_id_changes": 93,
+        "adjacent_tp_frame_id_changes": 25
+      }
+    },
+    {
+      "config": {
+        "match": 0.99,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5232,
+        "fp": 3071,
+        "fn": 2750,
+        "frames_with_output": 7986,
+        "outputs": 8303,
+        "precision": 0.6301336866192943,
+        "recall": 0.6554748183412679,
+        "f1": 0.6425544980042984
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 55,
+        "continuous_gt_id_changes": 51,
+        "adjacent_tp_frame_id_changes": 13
+      }
+    },
+    {
+      "config": {
+        "match": 0.99,
+        "birth": 0.1,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5249,
+        "fp": 3171,
+        "fn": 2733,
+        "frames_with_output": 8073,
+        "outputs": 8420,
+        "precision": 0.623396674584323,
+        "recall": 0.6576046103733401,
+        "f1": 0.6400438970857212
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 64,
+        "continuous_gt_id_changes": 60,
+        "adjacent_tp_frame_id_changes": 18
+      }
+    },
+    {
+      "config": {
+        "match": 0.99,
+        "birth": 0.03,
+        "hits": 3,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5233,
+        "fp": 3136,
+        "fn": 2749,
+        "frames_with_output": 7999,
+        "outputs": 8369,
+        "precision": 0.6252837853984945,
+        "recall": 0.6556001002255074,
+        "f1": 0.6400831753409578
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 64,
+        "continuous_gt_id_changes": 60,
+        "adjacent_tp_frame_id_changes": 17
+      }
+    },
+    {
+      "config": {
+        "match": 0.99,
+        "birth": 0.03,
+        "hits": 2,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5258,
+        "fp": 3313,
+        "fn": 2724,
+        "frames_with_output": 8132,
+        "outputs": 8571,
+        "precision": 0.6134640065336601,
+        "recall": 0.6587321473314959,
+        "f1": 0.6352926961880022
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 78,
+        "continuous_gt_id_changes": 74,
+        "adjacent_tp_frame_id_changes": 26
+      }
+    },
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.03,
+        "hits": 1,
+        "buffer": 1.0
+      },
+      "metrics": {
+        "tp": 5302,
+        "fp": 3806,
+        "fn": 2680,
+        "frames_with_output": 8467,
+        "outputs": 9108,
+        "precision": 0.5821256038647343,
+        "recall": 0.6642445502380355,
+        "f1": 0.6204798127559977
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 309,
+        "continuous_gt_id_changes": 305,
+        "adjacent_tp_frame_id_changes": 146
+      }
+    },
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 0.3
+      },
+      "metrics": {
+        "tp": 5064,
+        "fp": 2632,
+        "fn": 2918,
+        "frames_with_output": 7492,
+        "outputs": 7696,
+        "precision": 0.658004158004158,
+        "recall": 0.6344274617890253,
+        "f1": 0.6460007654037505
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 116,
+        "continuous_gt_id_changes": 112,
+        "adjacent_tp_frame_id_changes": 22
+      }
+    },
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 0.5
+      },
+      "metrics": {
+        "tp": 5072,
+        "fp": 2643,
+        "fn": 2910,
+        "frames_with_output": 7509,
+        "outputs": 7715,
+        "precision": 0.6574206092028516,
+        "recall": 0.6354297168629416,
+        "f1": 0.6462381346754158
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 139,
+        "continuous_gt_id_changes": 135,
+        "adjacent_tp_frame_id_changes": 27
+      }
+    },
+    {
+      "config": {
+        "match": 0.92,
+        "birth": 0.1,
+        "hits": 3,
+        "buffer": 2.0
+      },
+      "metrics": {
+        "tp": 5087,
+        "fp": 2695,
+        "fn": 2895,
+        "frames_with_output": 7572,
+        "outputs": 7782,
+        "precision": 0.6536879979439733,
+        "recall": 0.6373089451265347,
+        "f1": 0.6453945699061152
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 165,
+        "continuous_gt_id_changes": 161,
+        "adjacent_tp_frame_id_changes": 36
+      }
+    }
+  ],
+  "best_validation_f1": {
+    "config": {
+      "match": 0.96,
+      "birth": 0.1,
+      "hits": 3,
+      "buffer": 1.0
+    },
+    "metrics": {
+      "tp": 5181,
+      "fp": 2859,
+      "fn": 2801,
+      "frames_with_output": 7782,
+      "outputs": 8040,
+      "precision": 0.6444029850746269,
+      "recall": 0.6490854422450514,
+      "f1": 0.6467357383597553
+    },
+    "identity_diagnostics": {
+      "all_matched_observation_id_changes": 98,
+      "continuous_gt_id_changes": 94,
+      "adjacent_tp_frame_id_changes": 21
+    }
+  }
+}

@@ -8,6 +8,12 @@ extern "C" int rk_tracker_set_confirmed_first(void* tracker, int enabled) {
     static_cast<rk_tracker::DetectorBasedTracker*>(tracker)->diagnostic_confirmed_first(enabled != 0);
     return 0;
 }
+
+extern "C" int rk_tracker_set_active_first(void* tracker, int enabled) {
+    if (!tracker) return -1;
+    static_cast<rk_tracker::DetectorBasedTracker*>(tracker)->diagnostic_active_first(enabled != 0);
+    return 0;
+}
 #endif
 
 extern "C" int rk_tracker_assign(const double* costs, int rows, int cols,

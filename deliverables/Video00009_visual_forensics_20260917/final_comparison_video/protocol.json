@@ -1,0 +1,27 @@
+{
+  "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+  "intervals_zero_based_end_exclusive": [
+    [
+      950,
+      990
+    ],
+    [
+      2190,
+      2230
+    ],
+    [
+      8985,
+      9025
+    ],
+    [
+      11940,
+      11980
+    ]
+  ],
+  "frames": 160,
+  "source_fps": 100,
+  "playback_fps": 10,
+  "candidate": "deliverables/Video00009_visual_forensics_20260917/active_first096",
+  "note": "10x slow diagnostic montage. Offline GT used ONLY to center inspection crops, never drawn or supplied to tracker. All four columns use original detector boxes. Last column separates pending detections from stable IDs; it is NOT improved tracking recall.",
+  "output_sha256": "860fcd63f9fded2f077ceebb9ac53092037d8495998d03bee84df02fcc828a42"
+}

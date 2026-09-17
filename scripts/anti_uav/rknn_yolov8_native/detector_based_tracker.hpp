@@ -61,6 +61,8 @@ struct Config {
     int min_hits = 2;
     // Experimental policy, off until validated beyond the diagnostic clip.
     bool confirmed_first = false;
+    // Preserve admissible continuations before reactivating dormant identities.
+    bool active_first = false;
 };
 
 namespace detail {
@@ -253,7 +255,19 @@ public:
         std::vector<bool> matched_track(tracks_.size(), false);
         std::vector<bool> matched_detection(detections.size(), false);
 
-        if (config_.confirmed_first) {
+        if (config_.active_first) {
+            std::vector<int> observed_confirmed, lost_confirmed, tentative;
+            for (int index : active_tracks) {
+                const auto& track = tracks_[index];
+                if (track.hits < config_.min_hits) tentative.push_back(index);
+                else if (track.consecutive_hits > 0) observed_confirmed.push_back(index);
+                else lost_confirmed.push_back(index);
+            }
+            for (const auto* group : {&observed_confirmed, &lost_confirmed, &tentative}) {
+                associate(*group, high_detections, detections, config_.first_match_cost,
+                          matched_track, matched_detection);
+            }
+        } else if (config_.confirmed_first) {
             std::vector<int> confirmed_tracks, tentative_tracks;
             for (int index : active_tracks) {
                 (tracks_[index].hits >= config_.min_hits ? confirmed_tracks : tentative_tracks).push_back(index);
@@ -305,6 +319,7 @@ public:
 
 #ifdef RK_TRACKER_DIAGNOSTICS
     void diagnostic_confirmed_first(bool enabled) { config_.confirmed_first = enabled; }
+    void diagnostic_active_first(bool enabled) { config_.active_first = enabled; }
 
     // Read-only cost audit; compiled only into the offline tracing bridge.
     std::vector<std::array<double, 15>> diagnostic_costs(

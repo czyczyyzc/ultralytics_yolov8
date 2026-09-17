@@ -196,6 +196,42 @@ void test_assignment_matches_brute_force_objective() {
     }
 }
 
+void test_observed_identity_before_dormant_competitor() {
+    for (bool priority : {false, true}) {
+        rk_tracker::Config config;
+        config.min_hits = 2;
+        config.active_first = priority;
+        rk_tracker::DetectorBasedTracker tracker(config);
+        tracker.update({detection(100,100), detection(112,100)}, 0.0);
+        const auto mature = tracker.update({detection(100,100), detection(112,100)}, .01);
+        assert(mature.size() == 2 && mature[0].confirmed && mature[1].confirmed);
+        const int continuing_id = tracker.update({detection(100,100)}, .02).front().track_id;
+        const auto result = tracker.update({detection(112,100)}, .03);
+        assert(result.size() == 1);
+        assert((result.front().track_id == continuing_id) == priority);
+        // A spatially impossible continuation must still permit another identity.
+        const auto distant = tracker.update({detection(500,300)}, .04);
+        assert(distant.size() == 1 && distant.front().track_id != continuing_id);
+    }
+}
+
+void test_active_first_keeps_distinct_targets_and_recovers_lost() {
+    rk_tracker::Config config;
+    config.min_hits = 2;
+    config.active_first = true;
+    rk_tracker::DetectorBasedTracker tracker(config);
+    int first_id = -1, second_id = -1;
+    for (int frame = 0; frame < 12; ++frame) {
+        std::vector<rk_tracker::Detection> detections{detection(100+frame,100)};
+        if (frame != 3 && frame != 4) detections.push_back(detection(300-frame,150));
+        const auto result = tracker.update(detections, frame/100.0);
+        if (frame == 0) { first_id = result[0].track_id; second_id = result[1].track_id; }
+        assert(result.size() == detections.size());
+        assert(result[0].track_id == first_id);
+        if (result.size() == 2) assert(result[1].track_id == second_id);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -209,6 +245,8 @@ int main() {
     test_expiry_before_association();
     test_opt_in_confirmed_priority();
     test_assignment_matches_brute_force_objective();
+    test_observed_identity_before_dormant_competitor();
+    test_active_first_keeps_distinct_targets_and_recovers_lost();
     std::cout << "detector_based_tracker tests passed\n";
     return 0;
 }

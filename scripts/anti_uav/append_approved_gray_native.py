@@ -30,6 +30,28 @@ def append_samples(base, additions, validation):
     return result
 
 
+def expansion_sampling(source, config, base, added_positive, added_negatives, fraction):
+    """Carry earlier rotating negatives forward, without turning them into anchors."""
+    previous = config.get("label_sampling", {})
+    old_pool = Path(previous["negative_pool"]).read_text().splitlines() if previous else []
+    counts = Counter(base)
+    if len(set(old_pool)) != len(old_pool) or any(counts[p] != 1 for p in old_pool):
+        raise ValueError("Existing negative pool is not unique within the baseline")
+    if previous and (len(old_pool) != previous["negative_pool_count"]
+                     or len(base)-len(old_pool) != previous["anchor_slots"]):
+        raise ValueError("Existing sampler metadata differs from baseline")
+    merged = old_pool + list(added_negatives)
+    if len(set(merged)) != len(merged):
+        raise ValueError("Overlapping old/new negative pools")
+    positives = source["append_only_positive"] + added_positive
+    fixed_negative = source["negative"] - len(old_pool)
+    desired = round(positives * fraction / (1-fraction))
+    budget = desired - fixed_negative
+    if fixed_negative < 0 or not 0 < budget <= len(merged):
+        raise ValueError("Cannot reach the negative fraction without changing old anchor exposure")
+    return merged, positives, desired, budget, len(base)-len(old_pool)+added_positive
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--source", type=Path, required=True)
@@ -67,6 +89,8 @@ def main():
     for row in rows:
         task = Path(row["task"])
         before = sha256_file(task / "manifest.json")
+        if row.get("manifest_sha256") and before != row["manifest_sha256"]:
+            raise ValueError(f"Approved manifest differs from frozen snapshot: {task}")
         live = json.loads((task / "manifest.json").read_text())
         if live["video"]["sha256"] != row["sha256"] or live["video"]["name"] != row["name"]:
             raise ValueError(f"Snapshot source changed: {task}")
@@ -86,23 +110,22 @@ def main():
     train_file = a.output / "train_hardneg.txt"
     train_file.write_text("\n".join(schedule) + "\n")
     (a.output / "val_monitor.txt").write_text(val_text)
-    positives = source["append_only_positive"] + positive_count
-    desired_negatives = round(positives * a.negative_fraction / (1 - a.negative_fraction))
-    budget = desired_negatives - source["negative"]
-    if not 0 < budget <= len(negative_pool):
-        raise ValueError("Cannot achieve target ratio while preserving old exposure; do not remove old slots")
+    negative_pool, positives, desired_negatives, budget, anchors = expansion_sampling(
+        source, config, base, positive_count, negative_pool, a.negative_fraction)
     pool_file = a.output / "new_negative_pool.txt"
     pool_file.write_text("\n".join(sorted(negative_pool)) + "\n")
     config = dict(path=str(a.output), train=str(train_file),
                   val=str(a.output / "val_monitor.txt"), names=config["names"],
                   label_sampling=dict(negative_pool=str(pool_file), negative_pool_count=len(negative_pool),
-                                      negatives_per_epoch=budget, anchor_slots=len(base) + positive_count,
+                                      negatives_per_epoch=budget, anchor_slots=anchors,
                                       target_negative_fraction=a.negative_fraction))
     (a.output / "train_hardneg_gray_monitor.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     negative = source["negative"] + negative_count
     manifest = dict(source, schema="native_approved_expansion.v1", source_dataset=str(a.source),
                     source_train_sha256=sha256_file(Path(yaml.safe_load((a.source / "train_hardneg_gray_monitor.yaml").read_text())["train"])),
-                    snapshot_sha256=sha256_file(a.snapshot), appended_videos=records,
+                    snapshot_sha256=sha256_file(a.snapshot),
+                    appended_videos=source.get("appended_videos", []) + records,
+                    latest_appended_videos=records,
                     original_gray_training_videos=len(source["train_video_hashes"]) + len(records),
                     train_video_hashes=sorted(set(source["train_video_hashes"]) | {r["sha256"] for r in records}),
                     append_only_entries=len(schedule), candidate_entries=len(schedule),
@@ -115,6 +138,7 @@ def main():
                     added_negative_samples=negative_count, positive_stride=a.positive_stride,
                     negative_stride=a.negative_stride, baseline_prefix_exactly_preserved=True,
                     native_schedule_sha256=sha256_file(train_file), training_started=False,
+                    existing_negative_pool_preserved=True, fixed_negative_anchors=negative-len(negative_pool),
                     test_sha256=test_hash, validation_sha256=val_hash,
                     limitation="Whole-video SHA256 isolation; same-session or reencoded overlap is not ruled out.")
     (a.output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

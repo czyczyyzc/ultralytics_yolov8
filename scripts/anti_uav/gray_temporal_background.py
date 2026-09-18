@@ -23,6 +23,45 @@ def file_hash(path):
     return h.hexdigest()
 
 
+def legacy_annotations(entry):
+    """Honor the later training split without rewriting the old evaluation manifest."""
+    manifest_path = Path(entry["legacy_manifest"])
+    if file_hash(manifest_path) != entry["legacy_manifest_sha256"]:
+        raise ValueError("Legacy manifest changed")
+    training_path = Path(entry["training_manifest"])
+    if file_hash(training_path) != entry["training_manifest_sha256"]:
+        raise ValueError("Explicit legacy training split changed")
+    training = json.loads(training_path.read_text())
+    digest = entry["sha256"]
+    if (digest not in training["train_video_hashes"]
+            or digest in (training["test_sha256"], training["validation_sha256"])):
+        raise ValueError("Legacy source is not explicitly allowed by the current training split")
+    manifest = json.loads(manifest_path.read_text())
+    contract = manifest["annotation_contract"]
+    if contract["bbox_format"] != "xywh" or contract["frame_index_base"] != 0:
+        raise ValueError("Unsupported legacy annotation contract")
+    matches = [r for r in manifest["videos"] if r["video_sha256"] == digest]
+    if len(matches) != 1:
+        raise ValueError("Missing/duplicate legacy identity")
+    record = matches[0]
+    annotation = (manifest_path.parent / record["annotation_path"]).resolve()
+    if not annotation.is_relative_to(manifest_path.parent.resolve()):
+        raise ValueError("Legacy annotation path escaped its root")
+    if file_hash(annotation) != record["annotation_sha256"]:
+        raise ValueError("Legacy annotation changed")
+    data = json.loads(annotation.read_text())
+    if len(data["exist"]) != record["frame_count"] or len(data["gt_rect"]) != record["frame_count"]:
+        raise ValueError("Legacy annotation frame count mismatch")
+    boxes = {}
+    for frame, (present, box) in enumerate(zip(data["exist"], data["gt_rect"])):
+        if present not in (0, 1):
+            raise ValueError("Uncertain legacy presence is not supported")
+        if present and (len(box) != 4 or not np.isfinite(box).all() or min(box[2:]) <= 0):
+            raise ValueError("Invalid legacy bbox")
+        boxes[frame] = [box] if present else []
+    return record, boxes
+
+
 def exclusion_mask(shape, boxes, scale=1.0):
     mask = np.zeros(shape, np.uint8)
     for x, y, w, h in boxes:
@@ -140,16 +179,35 @@ def boundary_metrics(reference, clean, matte):
 
 class TemporalBackgrounds:
     """Registry of exact original videos and their approved COCO annotations."""
-    def __init__(self, registry: Path, blocked=("Video00004",), offsets=(10, -10, 20, -20, 40, -40, 80, -80)):
+    def __init__(self, registry: Path, blocked=("Video00004",), offsets=(10, -10, 20, -20, 40, -40, 80, -80),
+                 blocked_hashes=()):
         self.records, self.cache, self.offsets = {}, {}, offsets
         raw = json.loads(Path(registry).read_text())
         for entry in raw["videos"]:
+            if "legacy_manifest" in entry:
+                record, boxes = legacy_annotations(entry)
+                video = Path(record["video_path"])
+                name = video.stem
+                digest = record["video_sha256"]
+                if digest in blocked_hashes or any(b.lower() in name.lower() for b in blocked):
+                    raise ValueError(f"Held-out temporal donor rejected: {name}")
+                if name in self.records or file_hash(video) != digest:
+                    raise ValueError("Duplicate legacy video or video checksum mismatch")
+                capture = cv2.VideoCapture(str(video))
+                if not capture.isOpened():
+                    raise ValueError(f"Cannot open legacy video: {video}")
+                self.records[name] = dict(video=video, metadata=record, boxes=boxes,
+                    capture=capture, eligible=set(boxes), video_sha256=digest,
+                    coco_sha256=record["annotation_sha256"],
+                    approved_manifest_sha256=entry["legacy_manifest_sha256"],
+                    annotation_provenance="legacy_human_adjudicated_visible_json_explicit_training_split")
+                continue
             def path(k):
                 return (Path(registry).parent / entry[k]).resolve()
             video, approved, coco = path("video"), path("approved_manifest"), path("coco")
             meta = json.loads(approved.read_text())
             name = Path(meta["video"]["name"]).stem
-            if any(b.lower() in name.lower() for b in blocked):
+            if meta["video"]["sha256"] in blocked_hashes or any(b.lower() in name.lower() for b in blocked):
                 raise ValueError(f"Held-out temporal donor rejected: {name}")
             if name in self.records:
                 raise ValueError(f"Duplicate temporal video: {name}")
@@ -255,6 +313,10 @@ class TemporalBackgrounds:
                     source_decode_mae=source_error, ring_mae=mae, ring_p95_abs_error=p95,
                     donor_to_reference_affine=matrix.tolist(), donor_exclusion_coverage=1.0,
                     **registration, **contour, **boundary)
+                if r.get("annotation_provenance"):
+                    metrics["annotation_provenance"] = r["annotation_provenance"]
+                    metrics["legacy_annotation_sha256"] = metrics.pop("approved_coco_sha256")
+                    metrics["legacy_manifest_sha256"] = metrics.pop("approved_manifest_sha256")
                 score = mae + 0.001*abs(offset)
                 if best is None or score < best[0]:
                     best = score, clean, matte, metrics

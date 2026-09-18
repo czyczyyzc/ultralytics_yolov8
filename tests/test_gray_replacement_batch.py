@@ -74,13 +74,13 @@ def test_batch_publishes_success_only_and_preserves_inputs(tmp_path, monkeypatch
     catalog.write_text("{}")
     meta = dict(test_sha256="test", validation_sha256="val", validation_video=dict(video="heldout.mp4"))
     row = dict(video="train.mp4", sha256="123456789abcdef", task="/task")
-    monkeypatch.setattr(batch, "training_records", lambda _: (meta, [row], {}))
+    monkeypatch.setattr(batch, "training_records", lambda *_: (meta, [row], {}))
     monkeypatch.setattr(batch, "load_assets", lambda *_: [(dict(id="1", model="test"), np.zeros((2, 2, 4), np.uint8))])
     sources = [dict(frame=i, image=str(source), label=str(lab), box=box, width=320, height=240, size_bin="gt32") for i in (0, 20)]
     monkeypatch.setattr(batch, "candidate_frames", lambda *_: (sources, {}))
 
     class FakeTemporal:
-        def __init__(self, *_):
+        def __init__(self, *_, **kwargs):
             self.cache = {}
         def close(self):
             pass
@@ -109,3 +109,44 @@ def test_batch_publishes_success_only_and_preserves_inputs(tmp_path, monkeypatch
     assert json.loads((args.output / "status.json").read_text())["stage"] == "complete"
     with pytest.raises(FileExistsError):
         batch.build(args)
+
+
+def test_prior_batches_exclude_sources_not_only_asset_ids(tmp_path):
+    write_json(tmp_path / "status.json", dict(stage="complete"))
+    write_json(tmp_path / "manifest.json", dict(samples=[dict(video_sha256="v", frame="12", output_sha256="output")]))
+    sources, hashes, manifests = batch.prior_outputs([tmp_path, tmp_path])
+    assert sources == {("v", 12)}
+    assert hashes == {"output"}
+    assert len(manifests) == 1
+    write_json(tmp_path / "status.json", dict(stage="running"))
+    with pytest.raises(ValueError, match="incomplete"):
+        batch.prior_outputs([tmp_path])
+
+
+def test_legacy_explicit_train_split_and_label_mapping(tmp_path):
+    old = tmp_path / "old"
+    legacy = tmp_path / "legacy"
+    images = tmp_path / "images" / "Video00001"
+    images.mkdir(parents=True)
+    Image.fromarray(np.full((240, 320), 100, np.uint8)).save(images / "000001.jpg")
+    annotation = legacy / "annotation.json"
+    write_json(annotation, dict(exist=[0, 1], gt_rect=[[0, 0, 0, 0], [100, 100, 12, 16]]))
+    write_json(legacy / "manifest.json", dict(training_allowed=False,
+        annotation_contract=dict(bbox_format="xywh", frame_index_base=0),
+        videos=[dict(video_name="Video00001.mp4", video_path="/old/Video00001.mp4",
+                     video_sha256="train", frame_count=2, annotation_path="annotation.json",
+                     annotation_sha256=batch.sha256(annotation))]))
+    write_json(old / "manifest.json", dict(approved_tasks=[], old_root=str(legacy)))
+    write_json(tmp_path / "manifest.json", dict(approved_data=str(old / "data.yaml"),
+        train_video_hashes=["train"], test_sha256="test", validation_sha256="val", appended_videos=[]))
+    (tmp_path / "train_hardneg.txt").write_text(str(images / "000001.jpg") + "\n")
+    _, rows, groups = batch.training_records(tmp_path, include_legacy=True)
+    assert len(rows) == 1
+    candidates, _ = batch.candidate_frames(rows[0], groups)
+    assert candidates[0]["frame"] == 1
+    assert candidates[0]["label"] == str(tmp_path / "labels/Video00001/000001.txt")
+    with pytest.raises(ValueError, match="training split"):
+        batch.legacy_annotations(dict(rows[0], sha256="test"))
+    annotation.write_text("{}")
+    with pytest.raises(ValueError, match="annotation changed"):
+        batch.legacy_annotations(rows[0])

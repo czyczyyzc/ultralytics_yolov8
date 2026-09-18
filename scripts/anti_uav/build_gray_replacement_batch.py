@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.anti_uav.gray_temporal_background import TemporalBackgrounds
+from scripts.anti_uav.gray_temporal_background import TemporalBackgrounds, legacy_annotations
 from scripts.anti_uav.synthesize_gray_drone_replacements import (
     SkipSample, dump, fresh_directory, normalize_box, parse_boxes, preview_card,
     preview_overview, replace_target, safe_path, sha256, stable_seed,
@@ -55,7 +55,7 @@ def select_frames(candidates, count, seed, min_gap=10):
     return sorted(selected, key=lambda item: item["frame"])
 
 
-def training_records(dataset):
+def training_records(dataset, include_legacy=False):
     meta = json.loads((dataset / "manifest.json").read_text())
     old = json.loads((Path(meta["approved_data"]).parent / "manifest.json").read_text())
     allowed = set(meta["train_video_hashes"])
@@ -76,10 +76,55 @@ def training_records(dataset):
         if text.strip():
             path = Path(text.strip())
             groups[str(path.parent)][path.stem] = path
+    if include_legacy:
+        legacy_path = Path(old["old_root"]) / "manifest.json"
+        legacy = json.loads(legacy_path.read_text())
+        for row in legacy["videos"]:
+            digest = row["video_sha256"]
+            if digest in blocked or digest not in allowed or digest in records:
+                continue
+            name = Path(row["video_name"]).stem
+            dirs = [p for p in groups if Path(p).name == name]
+            if len(dirs) != 1:
+                raise ValueError(f"Ambiguous/missing legacy training image directory: {name}")
+            parts = list(Path(dirs[0]).parts)
+            if parts.count("images") != 1:
+                raise ValueError("Cannot resolve legacy labels directory")
+            parts[parts.index("images")] = "labels"
+            records[digest] = dict(sha256=digest, video=row["video_path"],
+                legacy_manifest=str(legacy_path), legacy_manifest_sha256=sha256(legacy_path),
+                training_manifest=str(dataset / "manifest.json"),
+                training_manifest_sha256=sha256(dataset / "manifest.json"),
+                image_directory=dirs[0], label_directory=str(Path(*parts)),
+                annotation_source="legacy_human_adjudicated_visible_json_explicit_training_split")
     return meta, sorted(records.values(), key=lambda row: row["video"]), groups
 
 
 def candidate_frames(row, groups):
+    if "legacy_manifest" in row:
+        _, annotations = legacy_annotations(row)
+        result, counts = [], Counter()
+        images = groups.get(row["image_directory"], {})
+        if not images:
+            return [], {"eligible_positive_frames": 0}
+        with Image.open(next(iter(images.values()))) as im:
+            width, height = im.size
+        for stem, path in sorted(images.items()):
+            if not stem.isdecimal() or int(stem) not in annotations:
+                raise ValueError("Training image does not match legacy frame indices")
+            boxes = annotations[int(stem)]
+            if len(boxes) != 1:
+                counts["negative_or_multiple_targets"] += 1
+                continue
+            box = boxes[0]
+            if min(box[2:]) < 3 or max(box[2:]) > 160:
+                counts["outside_synthesis_size_range_original_retained"] += 1
+                continue
+            result.append(dict(frame=int(stem), image=str(path),
+                label=str(Path(row["label_directory"]) / (stem + ".txt")),
+                box=box, width=width, height=height, size_bin=size_bin(box, width, height)))
+        counts["eligible_positive_frames"] = len(result)
+        return result, dict(counts)
     task = Path(row["task"])
     approved = task / "manifest.json"
     if sha256(approved) != row["manifest_sha256"]:
@@ -140,38 +185,76 @@ def load_assets(catalog, excluded):
     return result
 
 
+def prior_outputs(batches):
+    sources, hashes, provenance = set(), set(), {}
+    for root in batches:
+        manifest = root / "manifest.json"
+        if json.loads((root / "status.json").read_text())["stage"] != "complete":
+            raise ValueError(f"Cannot exclude an incomplete batch: {root}")
+        data = json.loads(manifest.read_text())
+        for row in data["samples"]:
+            sources.add((row["video_sha256"], int(row["frame"])))
+            hashes.add(row["output_sha256"])
+        provenance[str(manifest)] = sha256(manifest)
+    return sources, hashes, provenance
+
+
 def build(args):
     if args.per_video < 1 or args.variants < 1 or args.previews < 0:
         raise ValueError("Invalid batch size")
     cv2.setNumThreads(2)
-    meta, records, groups = training_records(args.dataset)
+    meta, records, groups = training_records(args.dataset, getattr(args, "include_legacy", False))
+    excluded_sources, prior_hashes, prior_manifests = prior_outputs(getattr(args, "exclude_batch", []))
     assets = load_assets(args.catalog, set(args.exclude_assets.split(",")))
     if args.variants > len(assets):
         raise ValueError("Variants would repeat assets within a source frame")
+    if getattr(args, "plan_only", False):
+        plans = []
+        for row in records:
+            candidates, counts = candidate_frames(row, groups)
+            remaining = [r for r in candidates if (row["sha256"], r["frame"]) not in excluded_sources]
+            plans.append(dict(video=row["video"], sha256=row["sha256"],
+                source_type="legacy" if "legacy_manifest" in row else "approved",
+                **counts, previously_used_frames=len(candidates)-len(remaining),
+                selected=min(args.per_video, len(remaining))))
+        fresh_directory(args.output)
+        dump(args.output / "plan.json", dict(videos=plans, registered_training_videos=len(records),
+            expected_training_videos=len(meta["train_video_hashes"]),
+            missing_training_hashes=sorted(set(meta["train_video_hashes"])-{r["sha256"] for r in records}),
+            selected_frames=sum(r["selected"] for r in plans), variants=args.variants,
+            maximum_outputs=sum(r["selected"] for r in plans)*args.variants,
+            excluded_prior_manifests=prior_manifests, ground_truth_holdouts_excluded=True))
+        return
     fresh_directory(args.output)
     for name in ("images", "labels", "masks", "previews", "provenance"):
         (args.output / name).mkdir()
     protected = [args.dataset / name for name in
                  ("manifest.json", "train_hardneg.txt", "val_monitor.txt", "train_hardneg_gray_monitor.yaml")]
     before = {str(path): sha256(path) for path in protected}
-    blocked_names = ["Video00004", Path(meta["validation_video"]["video"]).stem]
+    for row in records:
+        if "legacy_manifest" in row:
+            before[row["legacy_manifest"]] = row["legacy_manifest_sha256"]
+    before.update(prior_manifests)
+    protected = [Path(p) for p in before]
     protocol = dict(schema="gray_replacement_batch.v1", synthetic=True,
         dataset=str(args.dataset), protected_input_sha256=before,
         catalog=str(args.catalog), catalog_sha256=sha256(args.catalog),
         asset_ids=[item["id"] for item, _ in assets], excluded_asset_ids=args.exclude_assets.split(","),
         blocked_video_sha256=[meta["test_sha256"], meta["validation_sha256"]],
         eligible_video_count=len(records), per_video=args.per_video, variants=args.variants,
+        include_legacy=getattr(args, "include_legacy", False), excluded_prior_manifests=prior_manifests,
+        excluded_previously_replaced_source_frames=len(excluded_sources),
         seed=args.seed, augmentation="registered_real_neighbor_plus_foreground_contour",
         training_modified=False, negatives_added=0, review_status="visual_review_candidates",
         limitations=["Not a continuous tracking sequence or a 3D pose simulation.",
             "Original target center and geometric long edge are preserved, not bbox area or aspect ratio.",
-            "Only approved sources with exact training-list membership are used.",
+            "Approved or explicitly included legacy human-adjudicated sources; exact training-list membership required.",
             "Original-frame synthesis range: short edge >=3px, long edge <=160px; no originals removed.",
             "Pixel/geometry checks cannot guarantee visual realism or training improvement.",
             "Asset licensing and task-specific suitability require review before redistribution."])
     dump(args.output / "protocol.json", protocol)
     samples, skipped, previews, video_stats, selected_sources = [], [], [], [], []
-    output_hashes, preview_videos, preview_assets = set(), Counter(), set()
+    output_hashes, preview_videos, preview_assets = set(prior_hashes), Counter(), set()
     started = time.monotonic()
     dump(args.output / "status.json", dict(stage="running", pid=os.getpid(), accepted=0))
     try:
@@ -179,14 +262,19 @@ def build(args):
             for index, row in enumerate(records):
                 name = Path(row["video"]).stem
                 candidates, counts = candidate_frames(row, groups)
+                remaining = [r for r in candidates if (row["sha256"], r["frame"]) not in excluded_sources]
+                counts["previously_replaced_source_frames_excluded"] = len(candidates)-len(remaining)
+                candidates = remaining
                 chosen = select_frames(candidates, args.per_video, stable_seed(args.seed, name))
                 selected_sources.extend(dict(video=name, video_sha256=row["sha256"], **item) for item in chosen)
                 registry = args.output / "provenance" / f"{row['sha256'][:12]}_registry.json"
-                dump(registry, dict(videos=[dict(video=row["video"],
+                entry = row if "legacy_manifest" in row else dict(video=row["video"],
                     approved_manifest=str(Path(row["task"]) / "manifest.json"),
-                    coco=str(Path(row["task"]) / "coco/annotations.json"))]))
+                    coco=str(Path(row["task"]) / "coco/annotations.json"))
+                dump(registry, dict(videos=[entry]))
                 accepted_before = len(samples)
-                temporal = TemporalBackgrounds(registry, blocked_names) if chosen else None
+                temporal = TemporalBackgrounds(registry, blocked=(),
+                    blocked_hashes=protocol["blocked_video_sha256"]) if chosen else None
                 try:
                     for source_index, source in enumerate(chosen):
                         image, lab = Path(source["image"]), Path(source["label"])
@@ -313,6 +401,9 @@ def main():
     parser.add_argument("--previews", type=int, default=16)
     parser.add_argument("--seed", type=int, default=20260916)
     parser.add_argument("--exclude-assets", default="24,25", help="Catalog images containing remote controls")
+    parser.add_argument("--include-legacy", action="store_true", help="Include old human-adjudicated videos explicitly allowed by this training split")
+    parser.add_argument("--exclude-batch", type=Path, action="append", default=[], help="Completed batch whose successful source frames and output hashes must not repeat")
+    parser.add_argument("--plan-only", action="store_true", help="Audit full source coverage and quotas without synthesis")
     build(parser.parse_args())
 
 

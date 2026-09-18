@@ -229,6 +229,12 @@ def build(args):
         raise ValueError("Invalid batch size")
     cv2.setNumThreads(2)
     meta, records, groups = training_records(args.dataset, getattr(args, "include_legacy", False))
+    registered_count = len(records)
+    if getattr(args, "only_video_sha256", None):
+        selected_hashes = set(args.only_video_sha256.split(","))
+        if not selected_hashes <= {r["sha256"] for r in records}:
+            raise ValueError("Requested video shard contains non-training sources")
+        records = [r for r in records if r["sha256"] in selected_hashes]
     excluded_sources, prior_hashes, prior_manifests = prior_outputs(getattr(args, "exclude_batch", []))
     assets = load_assets(args.catalog, set(args.exclude_assets.split(",")))
     if args.variants > len(assets):
@@ -269,6 +275,10 @@ def build(args):
         asset_ids=[item["id"] for item, _ in assets], excluded_asset_ids=args.exclude_assets.split(","),
         blocked_video_sha256=[meta["test_sha256"], meta["validation_sha256"]],
         eligible_video_count=len(records), per_video=args.per_video, variants=args.variants,
+        total_registered_training_videos=registered_count,
+        selected_video_sha256=[r["sha256"] for r in records],
+        generator_code_sha256={name: sha256(Path(__file__).parent / name) for name in
+            ("build_gray_replacement_batch.py", "gray_temporal_background.py", "synthesize_gray_drone_replacements.py")},
         include_legacy=getattr(args, "include_legacy", False), excluded_prior_manifests=prior_manifests,
         excluded_previously_replaced_source_frames=len(excluded_sources),
         seed=args.seed, augmentation="registered_real_neighbor_plus_foreground_contour",
@@ -431,6 +441,7 @@ def main():
     parser.add_argument("--include-legacy", action="store_true", help="Include old human-adjudicated videos explicitly allowed by this training split")
     parser.add_argument("--exclude-batch", type=Path, action="append", default=[], help="Completed batch whose successful source frames and output hashes must not repeat")
     parser.add_argument("--plan-only", action="store_true", help="Audit full source coverage and quotas without synthesis")
+    parser.add_argument("--only-video-sha256", help="Optional comma-separated allowlisted hashes for independent worker shards")
     build(parser.parse_args())
 
 

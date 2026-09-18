@@ -49,3 +49,6 @@ class NativeExposureSampler:
 
 def set_native_sampler_epoch(trainer):
     trainer.train_loader.sampler.set_epoch(trainer.epoch)
+    dataset = trainer.train_loader.dataset
+    if hasattr(dataset, "set_epoch"):
+        dataset.set_epoch(trainer.epoch)

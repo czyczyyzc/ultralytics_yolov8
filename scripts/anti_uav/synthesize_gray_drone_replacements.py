@@ -22,7 +22,6 @@ import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
-import openpyxl
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -152,6 +151,7 @@ def asset_grid(records: list[dict], root: Path):
 
 
 def catalog(args):
+    import openpyxl
     book = openpyxl.load_workbook(args.xlsx, read_only=True, data_only=True)
     sheet = book[args.sheet] if args.sheet else book.worksheets[0]
     rows = list(sheet.values)
@@ -213,10 +213,10 @@ class SkipSample(ValueError):
     pass
 
 
-def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: int,
+def prepare_target(gray: np.ndarray, box: list[float], seed: int,
                    max_ring_std=6.0, blur_sigma: float | None = None,
                    temporal=None, video_id=None, frame_index=None):
-    """Approximate a smooth-sky replacement; reject hard cases, do not hallucinate."""
+    """Compute the asset-independent background once, for offline or online use."""
     if gray.ndim != 2 or gray.dtype != np.uint8:
         raise ValueError("Expected uint8 grayscale frame")
     x, y, bw, bh = box
@@ -277,6 +277,20 @@ def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: i
         distance = cv2.distanceTransform(erase, cv2.DIST_L2, 5)
         blend = np.clip(distance/min(3, max(1, pad-1)), 0, 1)
         clean = patch.astype(np.float32)*(1-blend) + (design @ coef + noise)*blend
+    return dict(patch=patch.copy(), clean=clean, erase=erase,
+        meta=dict(box=box, left=left, top=top, side=side, cx=cx, cy=cy, edge=edge,
+                  sigma=sigma, ring_std=ring_std, contrast=contrast, sign=sign,
+                  flo=float(flo), fhi=float(fhi), image_hw=list(gray.shape),
+                  background_metrics=background_metrics))
+
+
+def render_prepared(prepared, rgba):
+    """Render only a small ROI. No video decoding or registration in a train worker."""
+    patch, clean, erase = (prepared[k] for k in ("patch", "clean", "erase"))
+    m = prepared["meta"]
+    box, left, top, side, cx, cy, edge, sigma, ring_std, contrast, sign, flo, fhi = (
+        m[k] for k in ("box", "left", "top", "side", "cx", "cy", "edge", "sigma",
+                       "ring_std", "contrast", "sign", "flo", "fhi"))
     alpha = rgba[:, :, 3].astype(np.float32)/255
     lum = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2GRAY).astype(np.float32)
     values = lum[alpha > 0.8]
@@ -311,11 +325,8 @@ def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: i
     composed = np.clip(np.rint(clean + delta*gain), 0, 255).astype(np.uint8)
     changed = (erase > 0) | (a > 0)
     composed[~changed] = patch[~changed]
-    result = gray.copy()
-    result[top:top+side, left:left+side] = composed
-    mask = np.zeros_like(gray)
-    mask[top:top+side, left:left+side] = changed.astype(np.uint8)*255
-    outside = int(np.count_nonzero(result[mask == 0] != gray[mask == 0]))
+    mask = changed.astype(np.uint8)*255
+    outside = int(np.count_nonzero(composed[~changed] != patch[~changed]))
     if outside:
         raise AssertionError("Pixels outside the edit mask changed")
     visible = a > 0.15
@@ -331,10 +342,23 @@ def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: i
                    blur_method="fixed_sigma_approximation_not_measured_PSF", ring_std=ring_std,
                    source_contrast=contrast, output_contrast=measured, contrast_gain=gain,
                    foreground_residual_p05_p95=[float(flo), float(fhi)],
-                   changed_pixels=int(np.count_nonzero(result != gray)),
+                   changed_pixels=int(np.count_nonzero(composed != patch)),
                    outside_mask_changed_pixels=outside,
                    label_policy="bbox of blurred alpha > 0.15; may differ from geometric size")
-    metrics.update(background_metrics)
+    metrics.update(m["background_metrics"])
+    return composed, mask, newbox, metrics
+
+
+def replace_target(gray: np.ndarray, box: list[float], rgba: np.ndarray, seed: int,
+                   max_ring_std=6.0, blur_sigma: float | None = None,
+                   temporal=None, video_id=None, frame_index=None):
+    """Approximate a smooth-sky replacement; reject hard cases, do not hallucinate."""
+    prepared = prepare_target(gray, box, seed, max_ring_std, blur_sigma, temporal, video_id, frame_index)
+    composed, local_mask, newbox, metrics = render_prepared(prepared, rgba)
+    left, top, side = (prepared["meta"][k] for k in ("left", "top", "side"))
+    result, mask = gray.copy(), np.zeros_like(gray)
+    result[top:top+side, left:left+side] = composed
+    mask[top:top+side, left:left+side] = local_mask
     return result, mask, newbox, metrics
 
 

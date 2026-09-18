@@ -108,6 +108,12 @@ class GraySelectionMixin:
     def build_dataset(self, img_path, mode="train", batch=None):
         dataset = super().build_dataset(img_path, mode, batch)
         config = self.data.get("online_scale")
+        replacement = self.data.get("online_replacement")
+        if mode == "train" and replacement:
+            if config or self.args.mosaic or self.args.mixup or self.args.copy_paste:
+                raise ValueError("Online replacement must be isolated from online_scale/Mosaic/MixUp/CopyPaste")
+            from scripts.anti_uav.online_gray_replacement import OnlineReplacementDataset
+            dataset = OnlineReplacementDataset(dataset, replacement)
         if mode == "train" and config:
             if self.args.mosaic or self.args.mixup or self.args.copy_paste:
                 raise ValueError("Online context views must not be mixed with Mosaic/MixUp/CopyPaste")

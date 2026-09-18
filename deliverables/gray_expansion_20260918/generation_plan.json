@@ -1,0 +1,412 @@
+{
+  "videos": [
+    {
+      "video": "/mnt/andrew/anti_uav_model_refinement/external_eval/real_gray_mp4/Video00001.mp4",
+      "sha256": "6ccb23625449814f314919517bae1091e1be7e1f6e8e15568c3cdac40e120a6b",
+      "source_type": "legacy",
+      "negative_or_multiple_targets": 848,
+      "outside_synthesis_size_range_original_retained": 6,
+      "eligible_positive_frames": 1265,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/anti_uav_model_refinement/external_eval/real_gray_mp4/Video00002.mp4",
+      "sha256": "516ae5c9f305df240b2ed7ff1c34a5313b559f12f61859f4f6dd780af96079c9",
+      "source_type": "legacy",
+      "negative_or_multiple_targets": 1035,
+      "outside_synthesis_size_range_original_retained": 2,
+      "eligible_positive_frames": 1846,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/anti_uav_model_refinement/external_eval/real_gray_mp4/Video00003.mp4",
+      "sha256": "acc97c6964b2b9e2e55bfbbe121518bcd90f0af465161846a7f3de3ed2519956",
+      "source_type": "legacy",
+      "negative_or_multiple_targets": 713,
+      "outside_synthesis_size_range_original_retained": 4,
+      "eligible_positive_frames": 1090,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/anti_uav_model_refinement/external_eval/real_gray_mp4/Video00027.mp4",
+      "sha256": "ea5e6f4a55c01b52db2686eb243b85537bf4d2527b3d0c4d443add94c3fdb03a",
+      "source_type": "legacy",
+      "negative_or_multiple_targets": 3066,
+      "eligible_positive_frames": 974,
+      "previously_used_frames": 2,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/anti_uav_model_refinement/external_eval/real_gray_mp4/Video00028.mp4",
+      "sha256": "10a00c7dc91dfe8c71e2bbf6f80840c0ff4732d8acfc9ee9c50f479f7406b5ab",
+      "source_type": "legacy",
+      "negative_or_multiple_targets": 3067,
+      "eligible_positive_frames": 972,
+      "previously_used_frames": 2,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/anti_uav_model_refinement/external_eval/real_gray_mp4/Video00029.mp4",
+      "sha256": "54ce3b905f7c9a8666c460c444ff30efa169c3aae1576fac19cf1b7753123add",
+      "source_type": "legacy",
+      "negative_or_multiple_targets": 3025,
+      "eligible_positive_frames": 1817,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20240626_041525_x.mp4",
+      "sha256": "13797ecf054926747a668ed52847f870a07d16a2f929f2bf5b1b317e6f1b3aed",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 52,
+      "outside_synthesis_size_range_original_retained": 406,
+      "eligible_positive_frames": 1197,
+      "excluded_uncertain_or_unreviewed_frames": 24,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_0_954f2796.mp4",
+      "sha256": "954f27965bfbec8335c99802662092457e778ce08307adc5c432c4fe75a2e6e1",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 99,
+      "outside_synthesis_size_range_original_retained": 39,
+      "eligible_positive_frames": 491,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_1_3a7c0637.mp4",
+      "sha256": "3a7c0637fe9447672e79f96ae28fd266c39c3843025e138dff3dada43285f4ea",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 112,
+      "outside_synthesis_size_range_original_retained": 7,
+      "eligible_positive_frames": 938,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_2_e61c7d13.mp4",
+      "sha256": "e61c7d13fa9c51d98f370f4d54fd3c0bc60f2bf4f123ead27d3688f747c843c6",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 75,
+      "outside_synthesis_size_range_original_retained": 5,
+      "eligible_positive_frames": 509,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_3_5c9792e4.mp4",
+      "sha256": "5c9792e4cbc6c2d2c9e72302300f4fcb91629dd018959689eafcb537e9d56da7",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 123,
+      "outside_synthesis_size_range_original_retained": 30,
+      "eligible_positive_frames": 911,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_4_55768d30.mp4",
+      "sha256": "55768d306d1ef61afdcdfbbb6d1e94e75aa81481f42f6ce5b788418a242e7862",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 70,
+      "eligible_positive_frames": 648,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 20,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260803_multirotor_unknown_unknown_unknown_video00007_ea3942cd.mp4",
+      "sha256": "ea3942cd5250398674493a58506eaa1e982c0526b094ae63ae12d584fe8bc46f",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 6004,
+      "outside_synthesis_size_range_original_retained": 17,
+      "eligible_positive_frames": 4,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 0,
+      "selected": 4
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260803_multirotor_unknown_unknown_unknown_video00_d91c8642.mp4",
+      "sha256": "d91c86428aa9772fd6da73b72ddf651516f8db6b7383120b0fa001eec4a31160",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 60,
+      "outside_synthesis_size_range_original_retained": 17,
+      "eligible_positive_frames": 789,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 22,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260804_multirotor_sunny_backlight_head_on_video00004_b9d19627.mp4",
+      "sha256": "fee2324438e8a1d556554195283cf9f3cb3fe93a97da32ecb49155d1f0b6de33",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 2023,
+      "outside_synthesis_size_range_original_retained": 858,
+      "eligible_positive_frames": 1156,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260804_multirotor_sunny_backlight_hover_nose_backward_video00007_05cb52cb.mp4",
+      "sha256": "9459def1dc938a6e00737678dfc88a46ad327249755a70b473b3f459585fd801",
+      "source_type": "approved",
+      "outside_synthesis_size_range_original_retained": 9,
+      "negative_or_multiple_targets": 716,
+      "eligible_positive_frames": 2906,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 16,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260804_multirotor_sunny_backlight_hover_nose_backward_video00008_2ee6953c.mp4",
+      "sha256": "dbd550284a63b3a63a6955af6fe0f54994f825b013882fdbce7ac4e6337bcb66",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 895,
+      "eligible_positive_frames": 2089,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260804_multirotor_sunny_backlight_left_translate_video00008_decb56e4.mp4",
+      "sha256": "bf8b2dae77a4158bc829ee18f837054ff0c587e8ec81960bc1a705df3a719db5",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 2230,
+      "outside_synthesis_size_range_original_retained": 2,
+      "eligible_positive_frames": 3731,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 16,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260804_multirotor_sunny_backlight_metadata_conflict_video00001_dc39a57b.mp4",
+      "sha256": "64152732f4cb77688cc057adb57c62acf30592062e16c24d124b30f21a258deb",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 2838,
+      "outside_synthesis_size_range_original_retained": 241,
+      "eligible_positive_frames": 3630,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 12,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260804_multirotor_sunny_backlight_tail_view_video00003_848606fe.mp4",
+      "sha256": "848606fe0c3715ae8ec52a7dbd95965d73699336b95c10677e4bc43415e815ac",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1288,
+      "eligible_positive_frames": 1629,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 20,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260804_multirotor_sunny_backlight_tail_view_video00005_275dc2e7.mp4",
+      "sha256": "275dc2e79e134ec9b231f55dc287aa83c3ec6acd6bab908733465857b7b197ee",
+      "source_type": "approved",
+      "outside_synthesis_size_range_original_retained": 216,
+      "negative_or_multiple_targets": 1620,
+      "eligible_positive_frames": 2012,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_overcast_unknown_head_on_video00002_07f57a93.mp4",
+      "sha256": "12fc9956f782d1c9095c271168866622b29f1d317158a19a2482138e5ead7183",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1722,
+      "outside_synthesis_size_range_original_retained": 95,
+      "eligible_positive_frames": 2069,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 11,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_overcast_unknown_head_on_video00003_6fc84998.mp4",
+      "sha256": "fa3021c03e8c1f47d42358edd9df455d8902cad5bc2ec680e680ca362464d762",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 47,
+      "eligible_positive_frames": 271,
+      "excluded_uncertain_or_unreviewed_frames": 1,
+      "previously_used_frames": 15,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_overcast_unknown_left_translate_video00009_9764bef6.mp4",
+      "sha256": "1b10cbd150c6ef13334652d69d687cf9d871d2ff4bbcb83532cf3671c5d52b02",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 3374,
+      "outside_synthesis_size_range_original_retained": 149,
+      "eligible_positive_frames": 3764,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 11,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_overcast_unknown_right_translate_video00001_1a04f859.mp4",
+      "sha256": "d8aac0752b9262ef9b2ca8e88395712499ef692b27811923c8c2e8a6a204b48a",
+      "source_type": "approved",
+      "outside_synthesis_size_range_original_retained": 56,
+      "negative_or_multiple_targets": 100,
+      "eligible_positive_frames": 1126,
+      "excluded_uncertain_or_unreviewed_frames": 9,
+      "previously_used_frames": 7,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_overcast_unknown_stationary_video00006_b6dd965d.mp4",
+      "sha256": "3791a002e64fd04c6d57301abe3e9a2484d83a892eb310d14c0ae7097ca2c0ce",
+      "source_type": "approved",
+      "outside_synthesis_size_range_original_retained": 572,
+      "negative_or_multiple_targets": 1058,
+      "eligible_positive_frames": 504,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 10,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_overcast_unknown_tail_view_video00002_35d46206.mp4",
+      "sha256": "140a04fac87897b56c02268e431af1912b0be35abdebada9cad92f4972ce8710",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1191,
+      "outside_synthesis_size_range_original_retained": 27,
+      "eligible_positive_frames": 1545,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_head_on_video00002_8e3f7786.mp4",
+      "sha256": "42fd66eb59c80597ef9927e73baf0dda56977eeb1ff2b14e8112a95022593bc8",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1361,
+      "outside_synthesis_size_range_original_retained": 1,
+      "eligible_positive_frames": 1452,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_head_on_video00004_e4042359.mp4",
+      "sha256": "1cf4fdea9da1e94364f7421a6c9bc709341d818ae26a049ef4c1c4139011089f",
+      "source_type": "approved",
+      "outside_synthesis_size_range_original_retained": 682,
+      "negative_or_multiple_targets": 1647,
+      "eligible_positive_frames": 557,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_left_translate_video00001_18187152.mp4",
+      "sha256": "f2dba4ebf4bf7a244abdd038fcf4e71f52405e1ec44e3444f7dc85c3f6f8c9c8",
+      "source_type": "approved",
+      "outside_synthesis_size_range_original_retained": 184,
+      "negative_or_multiple_targets": 3110,
+      "eligible_positive_frames": 3346,
+      "excluded_uncertain_or_unreviewed_frames": 19,
+      "previously_used_frames": 5,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_right_translate_video00006_8f2caf69.mp4",
+      "sha256": "5fef7f17ad9d5a702c45a3d764ee99b359eeadcf858382eee219df62fbe8367a",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1184,
+      "eligible_positive_frames": 726,
+      "excluded_uncertain_or_unreviewed_frames": 40,
+      "previously_used_frames": 13,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_tail_view_video00001_97715b0c.mp4",
+      "sha256": "92cfb70615961ae7d4c78eac74c739812a1dd6c8e5b6e282bfadf64b62d7efe3",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1654,
+      "outside_synthesis_size_range_original_retained": 1,
+      "eligible_positive_frames": 2652,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 18,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_tail_view_video00003_931a23b1.mp4",
+      "sha256": "394c9d0c81fdb965b37401cf956f4dc1a1ae3bb57855a3f6fd9309c3c64ae5ae",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 2546,
+      "outside_synthesis_size_range_original_retained": 157,
+      "eligible_positive_frames": 2033,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 17,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_unknown_backlight_stationary_video00008_6af5bbfe.mp4",
+      "sha256": "e6e1c119f3bd3fa60d510a3482acf6a56342e168b5a755b9efb79b96e1313a8a",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1408,
+      "outside_synthesis_size_range_original_retained": 53,
+      "eligible_positive_frames": 3288,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 1,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260806_multirotor_sunny_backlight_head_on_video00003_c082a596.mp4",
+      "sha256": "f6b9a4f3b65debfeae905f69a364bbc27cc5eaebe0a5e1c93f46631889c3d95c",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 619,
+      "outside_synthesis_size_range_original_retained": 84,
+      "eligible_positive_frames": 970,
+      "excluded_uncertain_or_unreviewed_frames": 18,
+      "previously_used_frames": 4,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/20260806_multirotor_sunny_backlight_tail_view_video00003_7611f659.mp4",
+      "sha256": "91dd7a1c2d3e538fdc97b63c08dc1200ccca002a2ade4096c0994fff8c0ed61a",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 1148,
+      "eligible_positive_frames": 1198,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 0,
+      "selected": 100
+    },
+    {
+      "video": "/mnt/andrew/video-labeler/videos/legacy_multirotor_unknown_unknown_unknown_video00013_0c7e5883.mp4",
+      "sha256": "0c7e5883b424f35967a92c0418e29a447e8d36eb41f5405222ce7a802c19232a",
+      "source_type": "approved",
+      "negative_or_multiple_targets": 3149,
+      "outside_synthesis_size_range_original_retained": 2,
+      "eligible_positive_frames": 546,
+      "excluded_uncertain_or_unreviewed_frames": 0,
+      "previously_used_frames": 14,
+      "selected": 100
+    }
+  ],
+  "registered_training_videos": 37,
+  "expected_training_videos": 37,
+  "missing_training_hashes": [],
+  "selected_frames": 3604,
+  "variants": 4,
+  "maximum_outputs": 14416,
+  "excluded_prior_manifests": {
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_replacement_candidates_20260916/manifest.json": "c03414f6949b788c2ac1d844795012cc8848b69ebaea35ed02a6ff13c04abcd1",
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_replacement_handoff_smoke_20260917/manifest.json": "6cc81829f7a3a4049ee7694cf22ce507e375fc67c00df635269f5214584f1135",
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_replacement_legacy_smoke_20260918/manifest.json": "358ef9ad7b01af5afaa476abd20b5ddda67b80579fd363c789cb68d4652ab75f",
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_00/manifest.json": "e2d57907b95286815e1bf69d4e1551e6d5d2d75f5e1d5720d99f050d8df86f91",
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_01/manifest.json": "37eef78d0c8be5817dd83cee7718a72ca9c11ad450ccb7ab01cd03f8d2221047",
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_02/manifest.json": "e22466579a6f5339c1f1892439340b513838f11d5596d9b9daaa4bd56fd986b8",
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_03/manifest.json": "088d9890505c2cdcc5879adc53654b166adb443a52c447fac087500e083725e9"
+  },
+  "ground_truth_holdouts_excluded": true
+}

@@ -1,0 +1,16 @@
+{
+  "unique_images": 16,
+  "source_frames": 16,
+  "source_videos": 16,
+  "registered_training_videos": 37,
+  "shards": [
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_00",
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_01",
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_02",
+    "/mnt/andrew/anti_uav_model_refinement/data/gray_replacement_37_smoke_20260918/shard_03"
+  ],
+  "selected_frames": 37,
+  "maximum_outputs": 37,
+  "manual_visual_review_pending": true,
+  "training_started": false
+}

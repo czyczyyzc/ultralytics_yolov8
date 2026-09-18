@@ -1,0 +1,11 @@
+path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_37videos_20260918
+train: /mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_37videos_20260918/train_hardneg.txt
+val: /mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_37videos_20260918/val_monitor.txt
+names:
+  0: drone
+label_sampling:
+  negative_pool: /mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_37videos_20260918/new_negative_pool.txt
+  negative_pool_count: 42837
+  negatives_per_epoch: 8428
+  anchor_slots: 136508
+  target_negative_fraction: 0.15

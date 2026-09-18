@@ -1,0 +1,419 @@
+{
+  "schema": "approved_expansion_audit.v1",
+  "checked_at": "2026-09-18T03:58:56.502139+00:00",
+  "source_dataset": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_28videos_20260916",
+  "source_manifest_sha256": "525d68442585713515b827afef85ac25ac26566c700fd5c136154a44abbe1390",
+  "rows": [
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-092b6786d757532520fc16efa2e37ee23a02738367869f48c631f653508a4f15",
+      "name": "20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_2_e61c7d13.mp4",
+      "sha256": "e61c7d13fa9c51d98f370f4d54fd3c0bc60f2bf4f123ead27d3688f747c843c6",
+      "manifest_sha256": "ad2f57d8b53d20d318bec72df27b22caffc2ae80129c8244953c89a11f52320d",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-09ef6bbd9084d22dbb7969459497a6b740461fea8fa5ef777ddd195bf2946140",
+      "name": "20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_0_954f2796.mp4",
+      "sha256": "954f27965bfbec8335c99802662092457e778ce08307adc5c432c4fe75a2e6e1",
+      "manifest_sha256": "2525549e48c75ca1a82c739eb766a9ce02b9c2a591373428933b9de97a39be99",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-0e2a32520dcb85026ce57dba5585a764d104201d8f9b334ac0e118cc97c2cf6e",
+      "name": "20260805_multirotor_overcast_unknown_tail_view_video00002_35d46206.mp4",
+      "sha256": "140a04fac87897b56c02268e431af1912b0be35abdebada9cad92f4972ce8710",
+      "manifest_sha256": "d1f5a1cad68e8cdfbf0cc75865513bdf40d93bdd4c22e78c1a66db468fb52dbd",
+      "status": "new_training_candidate",
+      "positive_frames": 1572,
+      "negative_frames": 1191,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-2383e888a83fa6983231f0cd10ff6025b2b3692a9d68471a748c409f3de1b719",
+      "name": "20260805_multirotor_overcast_unknown_head_on_video00003_6fc84998.mp4",
+      "sha256": "fa3021c03e8c1f47d42358edd9df455d8902cad5bc2ec680e680ca362464d762",
+      "manifest_sha256": "c79dba1aafe8b33eff0fd90a6d0bdfdc0ad196ceca78913522c15f0bac5c54ce",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-30298c02994f74ca6ddddb72d60b18570f34ca80f4fd6f4a46a6493d51904468",
+      "name": "20260805_multirotor_sunny_frontlight_stationary_video00009_90af30d9.mp4",
+      "sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "manifest_sha256": "b8ce6dc0f1948438004d92d6769c9e6bf6112eb9f7d46935da02837145ab2a0c",
+      "status": "heldout"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-323171f6b479fb4a1423a0c6a0f7aa54269c8241f9ebde1e88fe7a351f84c253",
+      "name": "20260805_multirotor_unknown_backlight_stationary_video00008_6af5bbfe.mp4",
+      "sha256": "e6e1c119f3bd3fa60d510a3482acf6a56342e168b5a755b9efb79b96e1313a8a",
+      "manifest_sha256": "cf257dee81498b368010d983937fb0242f880a491233517bd620b25526562383",
+      "status": "new_training_candidate",
+      "positive_frames": 3341,
+      "negative_frames": 1408,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-3411b200f034f5c0f7e91820dd2c04fbdcd83df943195486d45d73b530f54c20",
+      "name": "20260804_multirotor_sunny_backlight_tail_view_video00005_275dc2e7.mp4",
+      "sha256": "275dc2e79e134ec9b231f55dc287aa83c3ec6acd6bab908733465857b7b197ee",
+      "manifest_sha256": "4d034ad2d7bae74b2a6518cdadbed524fb04e0606395bc1e1d1ce929256c92c0",
+      "status": "new_training_candidate",
+      "positive_frames": 2228,
+      "negative_frames": 1620,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-4227a216f929ab7ea5d1094e43fad2909193c37466d40b438e6bece213e11456",
+      "name": "20260804_multirotor_sunny_backlight_left_translate_video00008_decb56e4.mp4",
+      "sha256": "bf8b2dae77a4158bc829ee18f837054ff0c587e8ec81960bc1a705df3a719db5",
+      "manifest_sha256": "44ab6193ed38ac2cf1a0925e24dfa4cc028fa37f7b7dc3c7a9ceb9c243701bf1",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-43be8140deb3ced2ef579c7f923a952e762d7402fe31a9bd1b752b1b48ff214d",
+      "name": "20260805_multirotor_sunny_frontlight_head_on_video00002_8e3f7786.mp4",
+      "sha256": "42fd66eb59c80597ef9927e73baf0dda56977eeb1ff2b14e8112a95022593bc8",
+      "manifest_sha256": "990f4fa45dc238bb627c63066fa55589f8685d1904da41358c44d6e1b641745e",
+      "status": "new_training_candidate",
+      "positive_frames": 1453,
+      "negative_frames": 1361,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-43fd0e36d5cc5a13414078c9f5192ced96040ba2d8ef4e3184fffc118bf02b20",
+      "name": "20260805_multirotor_overcast_unknown_right_translate_video00001_1a04f859.mp4",
+      "sha256": "d8aac0752b9262ef9b2ca8e88395712499ef692b27811923c8c2e8a6a204b48a",
+      "manifest_sha256": "48b400f821b0e13b1428fd4f378c9247654c8617bd725ebff206895cb70d0130",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-4756e89c533ee7f9f1fd020bd8fd85979079e2a0c2b74c0992cf88eef8d712dd",
+      "name": "20260804_multirotor_sunny_backlight_hover_nose_backward_video00008_2ee6953c.mp4",
+      "sha256": "dbd550284a63b3a63a6955af6fe0f54994f825b013882fdbce7ac4e6337bcb66",
+      "manifest_sha256": "a78608a0b7c564c85219d5ecc88ddfdabbe22b686340d754d4aa663ca9bb73d3",
+      "status": "new_training_candidate",
+      "positive_frames": 2089,
+      "negative_frames": 895,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-5147173dc9b58963bb67ff2163c88e91a70a03d9eb2c13bbd1c5f50652564227",
+      "name": "20260805_multirotor_overcast_unknown_left_translate_video00009_9764bef6.mp4",
+      "sha256": "1b10cbd150c6ef13334652d69d687cf9d871d2ff4bbcb83532cf3671c5d52b02",
+      "manifest_sha256": "d10ff26c54e8e17d383c6245bdb51b78658b70d1e7eca78296669261530b8cea",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-5b519fbefd8a711038db28a06ef055402dc9c8bce00e926aec2d604857f54bfe",
+      "name": "20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_3_5c9792e4.mp4",
+      "sha256": "5c9792e4cbc6c2d2c9e72302300f4fcb91629dd018959689eafcb537e9d56da7",
+      "manifest_sha256": "98a7e0a01166bb30fc53e1191df6fbde44e00bda9a96f88fb02a86e0c8d88d84",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-62c4e5acd7b4e9288b04964b26036a442099e650252545ebe87f0822f12c0e88",
+      "name": "20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_1_3a7c0637.mp4",
+      "sha256": "3a7c0637fe9447672e79f96ae28fd266c39c3843025e138dff3dada43285f4ea",
+      "manifest_sha256": "abf74597a9b1cf896046586ea3c6cc20ed7ed4f9ebc0ec64ee0ff1bcdc89e449",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-6f46ca0ca427a8fc081283694e4a6d6554f7194b82d769f59cd8835cdb2e2568",
+      "name": "legacy_multirotor_unknown_unknown_unknown_video00013_0c7e5883.mp4",
+      "sha256": "0c7e5883b424f35967a92c0418e29a447e8d36eb41f5405222ce7a802c19232a",
+      "manifest_sha256": "6e089ee132814a9e561ce399f947943978d3f22386739ba4233564ff033fa1b7",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-6fedfe3d5cb4335c0d50b3cba122fb3f0d7655a2c471ce05d8534b83396a92fa",
+      "name": "20260803_multirotor_unknown_unknown_unknown_20260804_105131_726_4_55768d30.mp4",
+      "sha256": "55768d306d1ef61afdcdfbbb6d1e94e75aa81481f42f6ce5b788418a242e7862",
+      "manifest_sha256": "0059078f4e46d918bdc8e5d7af240f9c920ac40f3e1d7c816c44b82336f54a59",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-728a5723a0a3f1baa466aef0f132238a92bbdc72095f933d6f63ec93e5be2bdc",
+      "name": "20260806_multirotor_sunny_backlight_head_on_video00003_c082a596.mp4",
+      "sha256": "f6b9a4f3b65debfeae905f69a364bbc27cc5eaebe0a5e1c93f46631889c3d95c",
+      "manifest_sha256": "fe2e261f39157e51584c914aabec15830e7c94743bac9ba0a3bdcbc544283c41",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-72fdbc646fcd9ed468ba7365258d9a4349102721542ef7c022e266c0b7032b30",
+      "name": "20260804_multirotor_sunny_backlight_head_on_video00004_b9d19627.mp4",
+      "sha256": "fee2324438e8a1d556554195283cf9f3cb3fe93a97da32ecb49155d1f0b6de33",
+      "manifest_sha256": "1bedc6a2bb89492f0d2a468f129ec1fdd7af9d25e154145923b26add37213967",
+      "status": "new_training_candidate",
+      "positive_frames": 2014,
+      "negative_frames": 2023,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-8a17d39b245a5c951b3ca67dc083d6659ce78bc867ac2604d280171a8c15bd37",
+      "name": "20260805_multirotor_sunny_frontlight_tail_view_video00003_931a23b1.mp4",
+      "sha256": "394c9d0c81fdb965b37401cf956f4dc1a1ae3bb57855a3f6fd9309c3c64ae5ae",
+      "manifest_sha256": "7693c109c4fd628a5fbd213412d0ae55a919670f4418c9ed058c02d4ea03f90b",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-8bff46d63b7ebd8aa5bf284fb5b1bf84acf4c24ec3714cf7b9a2a3d31d45feee",
+      "name": "20260805_multirotor_overcast_unknown_stationary_video00006_b6dd965d.mp4",
+      "sha256": "3791a002e64fd04c6d57301abe3e9a2484d83a892eb310d14c0ae7097ca2c0ce",
+      "manifest_sha256": "3daa81e1ddf6cedabaf51ca847e9052b6bfb6b5fbcc191b337817662ccd3470d",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-8d8da8be97d8802079fb6c82a866adb6e6c128a276477fd20f94974df747a3dd",
+      "name": "20240626_041525_x.mp4",
+      "sha256": "13797ecf054926747a668ed52847f870a07d16a2f929f2bf5b1b317e6f1b3aed",
+      "manifest_sha256": "bdeaa4c7fa0c2d6d66bc55a18cc333ee6066246f61e55ec660620bd3b3519c01",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-9ab9243e4be7fb9bcbefffb0a85cbcc5557ba57f6332a2ed9fcea19771f16643",
+      "name": "20260805_multirotor_sunny_frontlight_right_translate_video00006_8f2caf69.mp4",
+      "sha256": "5fef7f17ad9d5a702c45a3d764ee99b359eeadcf858382eee219df62fbe8367a",
+      "manifest_sha256": "65ceba50fb5c0c3569247f6889668532ffa5519480d99675c424e3c51fc705c5",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-a14fccb3a10cf78be4516b2e25f76598aefc0159162b6de602527b349cc42ad0",
+      "name": "20260805_multirotor_sunny_frontlight_left_translate_video00001_18187152.mp4",
+      "sha256": "f2dba4ebf4bf7a244abdd038fcf4e71f52405e1ec44e3444f7dc85c3f6f8c9c8",
+      "manifest_sha256": "41a50919d0ec0e59080cb506c5fdf4a58fafc0f3b57142b4db3cbbcd63b6a74b",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-b577d4c44ee36c17bef10cff77d3c34deae79878641071f1fae3e6f00ecdf196",
+      "name": "20260804_multirotor_sunny_backlight_hover_nose_backward_video00007_05cb52cb.mp4",
+      "sha256": "9459def1dc938a6e00737678dfc88a46ad327249755a70b473b3f459585fd801",
+      "manifest_sha256": "28b4b7535836b5d13b7be2e648e2fdfcde66acc569bf19e88ef0766728155431",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-b73596da2788a82d01e41961496b5ab3b346a8b080095d9fba1b77c0ad8998bc",
+      "name": "20260805_multirotor_sunny_frontlight_tail_view_video00001_97715b0c.mp4",
+      "sha256": "92cfb70615961ae7d4c78eac74c739812a1dd6c8e5b6e282bfadf64b62d7efe3",
+      "manifest_sha256": "d7ef4627ba0694c6e276e15e4821b4568c2ed73ebe708b28cad92c637edd36bd",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c4ce6caa6cd52b7ced556e963e679ed97b8f4ec1724d40af3ebde2a739486ab8",
+      "name": "20260806_multirotor_sunny_backlight_tail_view_video00003_7611f659.mp4",
+      "sha256": "91dd7a1c2d3e538fdc97b63c08dc1200ccca002a2ade4096c0994fff8c0ed61a",
+      "manifest_sha256": "db95fe0ca432076c983530c0929546e95eb6547dc1ac4267a3aff6bbd19f665d",
+      "status": "new_training_candidate",
+      "positive_frames": 1198,
+      "negative_frames": 1148,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c6eea1845d96abb3ec9f1139090361b50447b3aa4483b05b007009a2ce6d9027",
+      "name": "20260805_multirotor_sunny_frontlight_head_on_video00004_e4042359.mp4",
+      "sha256": "1cf4fdea9da1e94364f7421a6c9bc709341d818ae26a049ef4c1c4139011089f",
+      "manifest_sha256": "eb7d43785a49fd2ae8cdeff118686440677876bbf0e9bc8f7b97b4646954a1ed",
+      "status": "new_training_candidate",
+      "positive_frames": 1239,
+      "negative_frames": 1647,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c89c84b0e2adf34b24cfe76c87179cf498dee72aa61f92bb132fee75aed804d7",
+      "name": "20260804_multirotor_sunny_backlight_tail_view_video00003_848606fe.mp4",
+      "sha256": "848606fe0c3715ae8ec52a7dbd95965d73699336b95c10677e4bc43415e815ac",
+      "manifest_sha256": "94872f3a05032fecfcabc4ced3c18b13b13638e3ade452feb8abdf4b7d963ba3",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c9442c04e24add89584299c722a7d2aac2811aa9602efd037b0a2577a7408cc7",
+      "name": "20260805_multirotor_overcast_unknown_head_on_video00002_07f57a93.mp4",
+      "sha256": "12fc9956f782d1c9095c271168866622b29f1d317158a19a2482138e5ead7183",
+      "manifest_sha256": "d2f8c1b353045f4238bd58ddf5c630b2f63b24b913c2a9036e79ac4aa171214f",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c96414aba1ad9683b8f2cbc6567d5df1879d9ca95f2ea79383ae6f018c1a545c",
+      "name": "20260803_multirotor_unknown_unknown_unknown_video00007_ea3942cd.mp4",
+      "sha256": "ea3942cd5250398674493a58506eaa1e982c0526b094ae63ae12d584fe8bc46f",
+      "manifest_sha256": "9141ce829748f16d9f3aa969f3ada76b80c7641b1b4c230db1927e8eee687069",
+      "status": "new_training_candidate",
+      "positive_frames": 21,
+      "negative_frames": 6004,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-d4f35149624d83b4c863d7075e04ffa841ec4191a46faa67b8d032299ff80f6e",
+      "name": "20260803_multirotor_unknown_unknown_unknown_video00_d91c8642.mp4",
+      "sha256": "d91c86428aa9772fd6da73b72ddf651516f8db6b7383120b0fa001eec4a31160",
+      "manifest_sha256": "5079ab8a39b1b5e7e0b16b0d26399d0da0d75237d38fa01b3277ba796a881502",
+      "status": "existing_training"
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-f965643d88b382887f307f9ecd697408c3069c4165def658d8051da6c4e30819",
+      "name": "20260804_multirotor_sunny_backlight_metadata_conflict_video00001_dc39a57b.mp4",
+      "sha256": "64152732f4cb77688cc057adb57c62acf30592062e16c24d124b30f21a258deb",
+      "manifest_sha256": "28a82cf901701ca7fb4dec5f46829c5dd0490ff33cccdc4648f711bbebb689fa",
+      "status": "existing_training"
+    }
+  ],
+  "new_rows": [
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-0e2a32520dcb85026ce57dba5585a764d104201d8f9b334ac0e118cc97c2cf6e",
+      "name": "20260805_multirotor_overcast_unknown_tail_view_video00002_35d46206.mp4",
+      "sha256": "140a04fac87897b56c02268e431af1912b0be35abdebada9cad92f4972ce8710",
+      "manifest_sha256": "d1f5a1cad68e8cdfbf0cc75865513bdf40d93bdd4c22e78c1a66db468fb52dbd",
+      "status": "new_training_candidate",
+      "positive_frames": 1572,
+      "negative_frames": 1191,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-323171f6b479fb4a1423a0c6a0f7aa54269c8241f9ebde1e88fe7a351f84c253",
+      "name": "20260805_multirotor_unknown_backlight_stationary_video00008_6af5bbfe.mp4",
+      "sha256": "e6e1c119f3bd3fa60d510a3482acf6a56342e168b5a755b9efb79b96e1313a8a",
+      "manifest_sha256": "cf257dee81498b368010d983937fb0242f880a491233517bd620b25526562383",
+      "status": "new_training_candidate",
+      "positive_frames": 3341,
+      "negative_frames": 1408,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-3411b200f034f5c0f7e91820dd2c04fbdcd83df943195486d45d73b530f54c20",
+      "name": "20260804_multirotor_sunny_backlight_tail_view_video00005_275dc2e7.mp4",
+      "sha256": "275dc2e79e134ec9b231f55dc287aa83c3ec6acd6bab908733465857b7b197ee",
+      "manifest_sha256": "4d034ad2d7bae74b2a6518cdadbed524fb04e0606395bc1e1d1ce929256c92c0",
+      "status": "new_training_candidate",
+      "positive_frames": 2228,
+      "negative_frames": 1620,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-43be8140deb3ced2ef579c7f923a952e762d7402fe31a9bd1b752b1b48ff214d",
+      "name": "20260805_multirotor_sunny_frontlight_head_on_video00002_8e3f7786.mp4",
+      "sha256": "42fd66eb59c80597ef9927e73baf0dda56977eeb1ff2b14e8112a95022593bc8",
+      "manifest_sha256": "990f4fa45dc238bb627c63066fa55589f8685d1904da41358c44d6e1b641745e",
+      "status": "new_training_candidate",
+      "positive_frames": 1453,
+      "negative_frames": 1361,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-4756e89c533ee7f9f1fd020bd8fd85979079e2a0c2b74c0992cf88eef8d712dd",
+      "name": "20260804_multirotor_sunny_backlight_hover_nose_backward_video00008_2ee6953c.mp4",
+      "sha256": "dbd550284a63b3a63a6955af6fe0f54994f825b013882fdbce7ac4e6337bcb66",
+      "manifest_sha256": "a78608a0b7c564c85219d5ecc88ddfdabbe22b686340d754d4aa663ca9bb73d3",
+      "status": "new_training_candidate",
+      "positive_frames": 2089,
+      "negative_frames": 895,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-72fdbc646fcd9ed468ba7365258d9a4349102721542ef7c022e266c0b7032b30",
+      "name": "20260804_multirotor_sunny_backlight_head_on_video00004_b9d19627.mp4",
+      "sha256": "fee2324438e8a1d556554195283cf9f3cb3fe93a97da32ecb49155d1f0b6de33",
+      "manifest_sha256": "1bedc6a2bb89492f0d2a468f129ec1fdd7af9d25e154145923b26add37213967",
+      "status": "new_training_candidate",
+      "positive_frames": 2014,
+      "negative_frames": 2023,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c4ce6caa6cd52b7ced556e963e679ed97b8f4ec1724d40af3ebde2a739486ab8",
+      "name": "20260806_multirotor_sunny_backlight_tail_view_video00003_7611f659.mp4",
+      "sha256": "91dd7a1c2d3e538fdc97b63c08dc1200ccca002a2ade4096c0994fff8c0ed61a",
+      "manifest_sha256": "db95fe0ca432076c983530c0929546e95eb6547dc1ac4267a3aff6bbd19f665d",
+      "status": "new_training_candidate",
+      "positive_frames": 1198,
+      "negative_frames": 1148,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c6eea1845d96abb3ec9f1139090361b50447b3aa4483b05b007009a2ce6d9027",
+      "name": "20260805_multirotor_sunny_frontlight_head_on_video00004_e4042359.mp4",
+      "sha256": "1cf4fdea9da1e94364f7421a6c9bc709341d818ae26a049ef4c1c4139011089f",
+      "manifest_sha256": "eb7d43785a49fd2ae8cdeff118686440677876bbf0e9bc8f7b97b4646954a1ed",
+      "status": "new_training_candidate",
+      "positive_frames": 1239,
+      "negative_frames": 1647,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    },
+    {
+      "task": "/mnt/andrew/anti_uav_model_refinement/data/approved_tasks/task-c96414aba1ad9683b8f2cbc6567d5df1879d9ca95f2ea79383ae6f018c1a545c",
+      "name": "20260803_multirotor_unknown_unknown_unknown_video00007_ea3942cd.mp4",
+      "sha256": "ea3942cd5250398674493a58506eaa1e982c0526b094ae63ae12d584fe8bc46f",
+      "manifest_sha256": "9141ce829748f16d9f3aa969f3ada76b80c7641b1b4c230db1927e8eee687069",
+      "status": "new_training_candidate",
+      "positive_frames": 21,
+      "negative_frames": 6004,
+      "uncertain_frames": 0,
+      "unreviewed_frames": 0,
+      "video_and_annotation_hashes_valid": true,
+      "coco_yolo_geometry_valid": true
+    }
+  ],
+  "new_videos": 9,
+  "counts": {
+    "existing_training": 22,
+    "new_training_candidate": 9,
+    "heldout": 1
+  },
+  "new_positive_frames": 15155,
+  "new_negative_frames": 17297,
+  "expanded_training_videos": 37,
+  "heldout_sha256": [
+    "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+    "d70d6b1f638e1d2c4bbcd081f541b9f2cd273063b40032581ce56004ef69becc"
+  ],
+  "limitation": "Exact-video hash isolation; reencoded/overlapping clips and same-session correlation need separate review."
+}

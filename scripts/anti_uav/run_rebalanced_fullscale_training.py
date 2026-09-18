@@ -29,6 +29,7 @@ from ultralytics.utils.torch_utils import init_seeds
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dataset", type=Path, required=True)
+    p.add_argument("--data-yaml", type=Path, help="Explicit controlled-arm YAML; defaults to the existing dataset schedule")
     p.add_argument("--run-dir", type=Path, required=True)
     p.add_argument("--initial-p3", type=Path, required=True)
     p.add_argument("--old-run", type=Path, required=True)
@@ -46,7 +47,7 @@ def main():
                          mlflow=False, neptune=False, raytune=False))
     torch.set_num_threads(4)
     init_seeds(20260915, deterministic=True)
-    data = a.dataset/"train_hardneg_gray_monitor.yaml"
+    data = a.data_yaml or a.dataset/"train_hardneg_gray_monitor.yaml"
     manifest = json.loads((a.dataset/"manifest.json").read_text())
     split = yaml.safe_load(data.read_text())
     if split.get("label_sampling") and not a.fixed_validation:
@@ -66,6 +67,7 @@ def main():
                     nms_iou=.45, conf_floor=.001, test_selection=False,
                     zoom_validation="Reported separately; never affects checkpoint selection",
                     online_scale=split.get("online_scale"), label_sampling=split.get("label_sampling"), fixed_validation=a.fixed_validation,
+                    online_replacement=split.get("online_replacement"), data_yaml=str(data),
                     initial_train_data=str(initial_data), git_commit=subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip())
     if a.resume_p3:
         previous = json.loads((a.run_dir/"protocol.json").read_text())
@@ -73,6 +75,8 @@ def main():
             raise ValueError("Cannot change validation shape when resuming checkpoint selection")
         if previous.get("label_sampling") != split.get("label_sampling"):
             raise ValueError("Cannot change native exposure sampling when resuming")
+        if previous.get("online_replacement") != split.get("online_replacement"):
+            raise ValueError("Cannot change online replacement policy when resuming")
         for key in ("dataset", "initial_p3", "epochs", "batch", "input_hw", "seed", "online_scale"):
             if previous[key] != protocol[key]:
                 raise ValueError(f"Resume must preserve protocol field: {key}")
@@ -132,6 +136,12 @@ def main():
         addon.add_callback("on_fit_epoch_end", lambda trainer: status("training_addon", epoch=trainer.epoch+1,
                                                                        fitness=float(trainer.fitness)))
         status("training_addon")
+        if split.get("online_replacement"):
+            addon_split = dict(split, online_replacement=dict(split["online_replacement"],
+                epoch_offset=int(split["online_replacement"].get("epoch_offset", 0))+a.epochs))
+            addon_data = a.run_dir/"addon_online_data.yaml"
+            addon_data.write_text(yaml.safe_dump(addon_split, sort_keys=False))
+            common["data"] = str(addon_data)
         addon.train(trainer=FixedShapeGrayAddOnTrainer if a.fixed_validation else GrayAddOnTrainer, project=str(a.run_dir/"training_addon"), name="p2",
                     lr0=.001, warmup_epochs=1, **common)
         freezes = {}

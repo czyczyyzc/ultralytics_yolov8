@@ -110,7 +110,11 @@ class OnlineReplacementDataset:
         self.probability = float(config.get("replacement_probability", .5))
         if not 0 <= self.probability <= 1:
             raise ValueError("Replacement probability must be in [0,1]")
-        self.seed, self.epoch = int(config.get("seed", 20260918)), 0
+        self.seed = int(config.get("seed", 20260918))
+        self.epoch_offset = int(config.get("epoch_offset", 0))
+        if self.epoch_offset < 0:
+            raise ValueError("epoch_offset must be nonnegative")
+        self.epoch = self.epoch_offset
         self.labels, self.im_files = base.labels, base.im_files
         self.collate_fn, self.rect, self.mosaic = base.collate_fn, False, False
         counts = Counter()
@@ -137,7 +141,7 @@ class OnlineReplacementDataset:
         return len(self.base)
 
     def set_epoch(self, epoch):
-        self.epoch = int(epoch)
+        self.epoch = self.epoch_offset + int(epoch)
 
     def close_mosaic(self, hyp):
         self.base.close_mosaic(hyp)

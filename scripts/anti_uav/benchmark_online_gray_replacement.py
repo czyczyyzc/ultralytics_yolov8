@@ -74,7 +74,7 @@ def main():
     hyp.hsv_h=hyp.hsv_s=hyp.hsv_v=0.
     hyp.fliplr=hyp.flipud=0.
     listing=a.output/"smoke_train.txt"
-    listing.write_text("\n".join(source for source,_ in rows)*1+"\n")
+    listing.write_text("\n".join(source for source,_ in rows)+"\n")
     base=YOLODataset(img_path=str(listing),imgsz=(544,960),batch_size=2,augment=True,hyp=hyp,
                      rect=False,cache=False,data={"names":{0:"drone"}},task="detect",stride=32)
     wrapped=OnlineReplacementDataset(base,dict(cache=str(a.cache),replacement_probability=1.,allow_smoke_cache=True))

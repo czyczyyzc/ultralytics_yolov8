@@ -110,6 +110,8 @@ class GraySelectionMixin:
         config = self.data.get("online_scale")
         replacement = self.data.get("online_replacement")
         if mode == "train" and replacement:
+            if not isinstance(self, FixedShapeSelectionMixin):
+                raise ValueError("Online replacement requires the finite-epoch FixedShapeGray trainers")
             if config or self.args.mosaic or self.args.mixup or self.args.copy_paste:
                 raise ValueError("Online replacement must be isolated from online_scale/Mosaic/MixUp/CopyPaste")
             from scripts.anti_uav.online_gray_replacement import OnlineReplacementDataset

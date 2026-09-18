@@ -1,0 +1,28 @@
+{
+  "source_frames": 6,
+  "asset_count": 53,
+  "attempted": 318,
+  "successful": 318,
+  "failed": 0,
+  "failures": [],
+  "cached_roi_render_ms": {
+    "mean": 6.467752076638569,
+    "p50": 5.946214310824871,
+    "p95": 13.300396781414745
+  },
+  "single_process_cold_yolo_load_transform_ms": {
+    "original": {
+      "mean_ms": 9.107455999280015,
+      "p95_ms": 9.159855358302593
+    },
+    "replacement": {
+      "mean_ms": 18.822385386253398,
+      "p95_ms": 30.81721728667617
+    }
+  },
+  "real_yolo_multiworker_batches_checked": 3,
+  "outside_edit_mask_unchanged": true,
+  "original_files_unmodified": true,
+  "training_started": false,
+  "limitations": "Small CPU smoke sample, not end-to-end GPU training throughput or an accuracy evaluation"
+}

@@ -157,3 +157,30 @@ def test_epoch_callback_updates_dataset_and_sampler():
     sampler,dataset=Epoch(),Epoch()
     set_native_sampler_epoch(SimpleNamespace(epoch=7,train_loader=SimpleNamespace(sampler=sampler,dataset=dataset)))
     assert sampler.epoch==dataset.epoch==7
+
+
+def test_addon_epoch_offset_continues_asset_cycle(tmp_path,monkeypatch):
+    base,config,_=cache_fixture(tmp_path,monkeypatch)
+    config["epoch_offset"]=15
+    dataset=OnlineReplacementDataset(base,config)
+    dataset.set_epoch(3)
+    assert dataset.epoch==18
+
+
+def test_full_positive_inventory_includes_unsampled_and_large_frames(tmp_path):
+    from scripts.anti_uav.prepare_online_gray_replacement import reviewed_frames
+    (tmp_path/"coco").mkdir()
+    coco=dict(images=[dict(id=f,frame_index=f,width=640,height=480) for f in range(5)],
+              annotations=[dict(image_id=f,bbox=b) for f,b in (
+                  (1,[10,20,6,8]),(2,[30,40,20,20]),(3,[10,10,500,400]),(4,[40,40,10,10]))])
+    (tmp_path/"coco/annotations.json").write_text(json.dumps(coco))
+    meta=dict(video=dict(sha256="train"),frames=dict(indexBase=0,includedFrameIndices=list(range(5)),
+              excludedUncertainFrameIndices=[2],excludedUnreviewedFrameIndices=[4]),
+              files=[dict(path="coco/annotations.json",sha256=sha256(tmp_path/"coco/annotations.json"))])
+    (tmp_path/"manifest.json").write_text(json.dumps(meta))
+    positive,counts,_=reviewed_frames(dict(task=str(tmp_path),sha256="train",manifest_sha256=sha256(tmp_path/"manifest.json")))
+    assert [p["frame"] for p in positive]==[1,3]
+    assert counts["positive"]==2
+    assert counts["negative_not_augmented"]==1
+    assert counts["uncertain_unreviewed_excluded"]==2
+    assert counts["outside_repair_size_range_original_retained"]==1

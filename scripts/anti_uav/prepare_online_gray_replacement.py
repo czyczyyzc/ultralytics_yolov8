@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import hashlib
 import json
@@ -16,10 +16,8 @@ import time
 
 import cv2
 import numpy as np
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.anti_uav.append_approved_gray_native import expansion_sampling
 from scripts.anti_uav.build_gray_replacement_batch import load_assets, training_records
 from scripts.anti_uav.gray_temporal_background import TemporalBackgrounds, legacy_annotations
 from scripts.anti_uav.online_gray_replacement import decode_prepared, encode_prepared
@@ -270,6 +268,8 @@ def finalize(plan, selected, root, is_smoke):
         asset_count=len(plan["asset_ids"]), index_sha256=sha256(root/"index.json"), training_started=False,
         synthetic_full_images_written=0, replacement_probability=.5, manual_visual_review_pending=True)
     if not is_smoke:
+        import yaml
+        from scripts.anti_uav.append_approved_gray_native import expansion_sampling
         source = json.loads((base/"manifest.json").read_text())
         config = yaml.safe_load((base/"train_hardneg_gray_monitor.yaml").read_text())
         if config.get("online_scale") or config.get("online_replacement"):
@@ -290,6 +290,13 @@ def finalize(plan, selected, root, is_smoke):
         (root/"train_control_gray_monitor.yaml").write_text(yaml.safe_dump(control, sort_keys=False))
         summary.update(epoch_positive=positives, epoch_negative=negatives, epoch_total=positives+negatives,
                        negative_fraction=negatives/(positives+negatives), baseline_prefix_exactly_preserved=True)
+        atomic_json(root/"manifest.json", dict(source, schema="online_gray_positive_expansion.v1",
+            source_dataset=str(base), background_cache=str(root), added_positive_samples=len(additions),
+            append_only_positive=positives, epoch_positive=positives, epoch_negative=negatives,
+            candidate_entries=len(baseline)+len(additions), final_entries=positives+negatives,
+            final_negative_fraction=negatives/(positives+negatives), training_started=False,
+            native_schedule_sha256=sha256(train), original_gray_training_videos=len(selected),
+            online_replacement=config["online_replacement"], positive_stride=1))
     atomic_json(root/"summary.json", summary)
     return summary
 

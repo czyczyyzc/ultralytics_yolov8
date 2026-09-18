@@ -49,6 +49,25 @@ SQLite commits one source frame at a time; resume skips only committed frames.
 The job pauses with an error below 25 GiB free disk space. A changed plan/code is rejected
 on resume rather than silently mixing algorithms. No model training is auto-started.
 
+### Higher CPU Parallelism
+
+The server has two Xeon Platinum 8369B sockets, 64 physical cores and 128 SMT threads.
+At the user's request, the execution-only resumer can use all 64 physical cores:
+
+```bash
+# First stop the verified old coordinator AND its workers; never run two writers.
+OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 nice -n 15 "$PY" \
+  "$REPO/scripts/anti_uav/resume_online_gray_backgrounds.py" \
+  --output "$CACHE" --workers 32 --cpus 0-63
+```
+
+This dispatcher checks the original frozen plan without editing its code hashes, checks
+that no other writer is alive, and allocates two disjoint physical cores to each worker.
+It changes scheduling only, not foreground repair or quality thresholds. Completed SQLite
+frame transactions are reused. `worker_<pid>.json` records each worker's CPU affinity;
+`execution_resume_<timestamp>.json` records the switch. Cores are shared at low priority,
+not reserved exclusively. No other process is stopped and no GPU is used by this job.
+
 After preparation completes, the output contains:
 
 - `index.json`, `summary.json`, `plan.json`, and one background SQLite file per video.

@@ -207,7 +207,7 @@ class TemporalBackgrounds:
             video, approved, coco = path("video"), path("approved_manifest"), path("coco")
             meta = json.loads(approved.read_text())
             name = Path(meta["video"]["name"]).stem
-            if meta["video"]["sha256"] in blocked_hashes or any(b.lower() in name.lower() for b in blocked):
+            if any(b.lower() in name.lower() for b in blocked) or meta["video"]["sha256"] in blocked_hashes:
                 raise ValueError(f"Held-out temporal donor rejected: {name}")
             if name in self.records:
                 raise ValueError(f"Duplicate temporal video: {name}")

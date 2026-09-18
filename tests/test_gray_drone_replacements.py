@@ -225,3 +225,13 @@ def test_temporal_registry_rejects_holdout_before_accessing_video(tmp_path):
                                               "coco":"missing.json"}]}))
     with pytest.raises(ValueError, match="Held-out temporal donor"):
         TemporalBackgrounds(registry)
+
+
+def test_temporal_registry_rejects_renamed_holdout_by_hash(tmp_path):
+    approved = tmp_path / "approved.json"
+    approved.write_text(json.dumps({"video": {"name": "renamed.mp4", "sha256": "heldout"}}))
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"videos": [{"video": "missing.mp4", "approved_manifest": approved.name,
+                                               "coco": "missing.json"}]}))
+    with pytest.raises(ValueError, match="Held-out temporal donor"):
+        TemporalBackgrounds(registry, blocked=(), blocked_hashes=("heldout",))

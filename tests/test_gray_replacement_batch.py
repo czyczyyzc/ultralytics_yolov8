@@ -26,7 +26,7 @@ def test_selection_balances_size_and_is_reproducible():
 
 def test_training_allowlist_excludes_heldout_hashes(tmp_path):
     old = tmp_path / "old"
-    rows = [dict(sha256=d, video=d) for d in ("train", "val", "test", "unrelated")]
+    rows = [dict(sha256=d, video=d, image_directory="/images/train") for d in ("train", "val", "test", "unrelated")]
     write_json(old / "manifest.json", dict(approved_tasks=rows))
     write_json(tmp_path / "manifest.json", dict(approved_data=str(old / "data.yaml"),
         train_video_hashes=["train"], test_sha256="test", validation_sha256="val", appended_videos=[]))
@@ -150,3 +150,21 @@ def test_legacy_explicit_train_split_and_label_mapping(tmp_path):
     annotation.write_text("{}")
     with pytest.raises(ValueError, match="annotation changed"):
         batch.legacy_annotations(rows[0])
+
+
+def test_historical_manual_directory_requires_video_hash(tmp_path):
+    historical = tmp_path / "historical"
+    image_dir = historical / "images/manual_gray/clip"
+    write_json(historical / "manifest.json", dict(videos={"clip.mp4": dict(sha256="train")}))
+    old = tmp_path / "old"
+    write_json(old / "manifest.json", dict(approved_tasks=[dict(sha256="train", video="/videos/clip.mp4",
+        image_directory="/obsolete/images", label_directory="/obsolete/labels")]))
+    write_json(tmp_path / "manifest.json", dict(approved_data=str(old / "data.yaml"),
+        train_video_hashes=["train"], test_sha256="test", validation_sha256="val", appended_videos=[]))
+    (tmp_path / "train_hardneg.txt").write_text(str(image_dir / "000001.jpg") + "\n")
+    _, rows, _ = batch.training_records(tmp_path)
+    assert rows[0]["image_directory"] == str(image_dir)
+    assert rows[0]["label_directory"] == str(historical / "labels/manual_gray/clip")
+    write_json(historical / "manifest.json", dict(videos={"clip.mp4": dict(sha256="different")}))
+    with pytest.raises(ValueError, match="different video identity"):
+        batch.training_records(tmp_path)

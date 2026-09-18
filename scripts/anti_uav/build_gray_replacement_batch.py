@@ -76,6 +76,23 @@ def training_records(dataset, include_legacy=False):
         if text.strip():
             path = Path(text.strip())
             groups[str(path.parent)][path.stem] = path
+    for digest, row in list(records.items()):
+        if row["image_directory"] in groups:
+            continue
+        aliases = [p for p in groups if Path(p).name == Path(row["video"]).stem
+                   and Path(p).parent.name == "manual_gray"]
+        if len(aliases) != 1:
+            continue
+        directory = Path(aliases[0])
+        mapping_path = directory.parents[2] / "manifest.json"
+        mapping = json.loads(mapping_path.read_text())
+        identity = mapping["videos"][Path(row["video"]).name]
+        if identity["sha256"] != digest:
+            raise ValueError("Historical manual image directory has a different video identity")
+        records[digest] = dict(row, image_directory=str(directory),
+            label_directory=str(directory.parents[1].parent / "labels/manual_gray" / directory.name),
+            image_mapping_manifest=str(mapping_path), image_mapping_manifest_sha256=sha256(mapping_path),
+            original_registered_image_directory=row["image_directory"])
     if include_legacy:
         legacy_path = Path(old["old_root"]) / "manifest.json"
         legacy = json.loads(legacy_path.read_text())
@@ -126,6 +143,8 @@ def candidate_frames(row, groups):
         counts["eligible_positive_frames"] = len(result)
         return result, dict(counts)
     task = Path(row["task"])
+    if row.get("image_mapping_manifest") and sha256(Path(row["image_mapping_manifest"])) != row["image_mapping_manifest_sha256"]:
+        raise ValueError("Historical image mapping changed")
     approved = task / "manifest.json"
     if sha256(approved) != row["manifest_sha256"]:
         raise ValueError(f"Approved manifest changed: {approved}")
@@ -160,6 +179,12 @@ def candidate_frames(row, groups):
             counts["outside_synthesis_size_range_original_retained"] += 1
             continue
         path = by_frame[frame]
+        if row.get("image_mapping_manifest"):
+            label = Path(row["label_directory"]) / (path.stem + ".txt")
+            historical = parse_boxes(label.read_text(), image["width"], image["height"])
+            if len(historical) != 1 or not np.allclose(historical[0], box, atol=.25, rtol=0):
+                counts["historical_label_disagrees_with_approved_excluded"] += 1
+                continue
         result.append(dict(frame=frame, image=str(path),
             label=str(Path(row["label_directory"]) / (path.stem + ".txt")),
             box=box, width=image["width"], height=image["height"],
@@ -234,6 +259,8 @@ def build(args):
     for row in records:
         if "legacy_manifest" in row:
             before[row["legacy_manifest"]] = row["legacy_manifest_sha256"]
+        if "image_mapping_manifest" in row:
+            before[row["image_mapping_manifest"]] = row["image_mapping_manifest_sha256"]
     before.update(prior_manifests)
     protected = [Path(p) for p in before]
     protocol = dict(schema="gray_replacement_batch.v1", synthetic=True,

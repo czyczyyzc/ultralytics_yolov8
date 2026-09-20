@@ -3,6 +3,9 @@
 #include "native_yolov8_video.cpp"
 #undef main
 #include <type_traits>
+#ifdef AU_ENABLE_RGA
+#include <rga/im2d.h>
+#endif
 
 namespace {
 thread_local std::string api_error;
@@ -17,6 +20,13 @@ template <typename T> T* make_detector(const char* model, const char* core, bool
 }
 
 extern "C" {
+int au_detector_rga_supported() {
+#ifdef AU_ENABLE_RGA
+    return 1;
+#else
+    return 0;
+#endif
+}
 const char* au_detector_error() { return api_error.c_str(); }
 void* au_detector_create(const char* model, const char* core, int threads) {
     try {
@@ -78,7 +88,18 @@ int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height
             const float dh = (detector.input_height() - rh) * .5f;
             rgb.create(detector.input_height(), detector.input_width(), CV_8UC3);
             rgb.setTo(cv::Scalar::all(114));
-            cv::resize(frame, resized, cv::Size(rw, rh), 0, 0, cv::INTER_LINEAR);
+            if(cached_preprocess==2) {
+#ifdef AU_ENABLE_RGA
+                if(frame.step%3) throw std::runtime_error("RGA requires a whole-pixel stride");
+                resized.create(rh,rw,CV_8UC3);
+                auto src=wrapbuffer_virtualaddr(frame.data,width,height,RK_FORMAT_BGR_888,int(frame.step/3),height);
+                auto dst=wrapbuffer_virtualaddr(resized.data,rw,rh,RK_FORMAT_BGR_888,int(resized.step/3),rh);
+                auto status=imresize(src,dst,0,0,1,1);
+                if(status!=IM_STATUS_SUCCESS) throw std::runtime_error(std::string("RGA resize: ")+imStrError(status));
+#else
+                throw std::runtime_error("RGA preprocessing not compiled");
+#endif
+            } else cv::resize(frame, resized, cv::Size(rw, rh), 0, 0, cv::INTER_LINEAR);
             cv::Mat roi = rgb(cv::Rect(static_cast<int>(std::round(dw-.1f)),
                                       static_cast<int>(std::round(dh-.1f)), rw, rh));
             cv::cvtColor(resized, roi, cv::COLOR_BGR2RGB);

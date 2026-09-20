@@ -11,7 +11,11 @@ if [[ -f "$HERE/gmc.cpp" ]]; then
     $(pkg-config --libs opencv4)
 fi
 if [[ -f "$HERE/video.cpp" ]]; then
+  video_flags=()
+  if pkg-config --exists libavformat libavcodec libavutil libswscale libdrm; then
+    read -r -a video_flags <<< "-DWITH_MPP_SOURCE $(pkg-config --cflags --libs libavformat libavcodec libavutil libswscale libdrm)"
+  fi
   g++ -std=c++17 -O3 -DNDEBUG -ffp-contract=off \
     $(pkg-config --cflags opencv4) "$HERE/video.cpp" -o "$OUT/anti_uav_dist_native" \
-    $(pkg-config --libs opencv4) -lcrypto -ldl -pthread
+    $(pkg-config --libs opencv4) "${video_flags[@]}" -lcrypto -ldl -pthread
 fi

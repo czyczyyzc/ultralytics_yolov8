@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include "video_source.hpp"
 namespace fs=std::filesystem;
 using Clock=std::chrono::steady_clock;
 static const auto ENTRY=Clock::now();
@@ -91,7 +92,7 @@ std::string stats(std::vector<double> values) {
     return out.str();
 }
 struct Args {
-    std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7";
+    std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv";
     int workers=3,inflight=9,frames=0,warmup=100;
     double conf=.03,iou=.45;
     bool save=false,detector_only=false,pyramid_cache=true;
@@ -112,6 +113,8 @@ Args parse(int argc,char** argv) {
         else if(key=="--video") a.video=value;
         else if(key=="--output") a.output=value;
         else if(key=="--cpus") a.cpus=value;
+        else if(key=="--decoder") a.decoder=value;
+        else if(key=="--preprocess") a.preprocess=value;
         else if(key=="--workers") a.workers=std::stoi(value);
         else if(key=="--inflight") a.inflight=std::stoi(value);
         else if(key=="--frames") a.frames=std::stoi(value);
@@ -125,6 +128,8 @@ Args parse(int argc,char** argv) {
        a.inflight<a.workers || a.warmup<0 || a.frames<0 ||
        !std::isfinite(a.conf) || a.conf<0 || a.conf>1 ||
        !std::isfinite(a.iou) || a.iou<0 || a.iou>1) throw std::runtime_error("Invalid arguments");
+    if((a.decoder!="opencv" && a.decoder!="rkmpp") ||
+       (a.preprocess!="opencv" && a.preprocess!="rga")) throw std::runtime_error("Invalid image backend");
     return a;
 }
 struct Job {
@@ -165,12 +170,14 @@ int run(const Args& args) {
     if(fs::exists(args.output)) throw std::runtime_error("Output already exists");
     fs::create_directories(args.output);
     const auto before=hardware();
-    cv::VideoCapture cap(args.video);if(!cap.isOpened()) throw std::runtime_error("Video open failed");
-    double fps=cap.get(cv::CAP_PROP_FPS);
-    int total=args.frames?args.frames:int(cap.get(cv::CAP_PROP_FRAME_COUNT));
+    VideoSource cap(args.video,args.decoder);
+    double fps=cap.fps();
+    int total=args.frames?args.frames:cap.frames();
     if(fps<=0 || total<=args.warmup) throw std::runtime_error("Invalid video FPS/count/warmup");
-    int source_w=cap.get(cv::CAP_PROP_FRAME_WIDTH),source_h=cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+    int source_w=cap.width(),source_h=cap.height();
     Library det(args.detector);
+    if(args.preprocess=="rga" && !det.get<int(*)()>("au_detector_rga_supported")())
+        throw std::runtime_error("RGA detector library required");
     auto create=det.get<int(*)(const char*,const char**,int,int,void**)>("au_detector_create_pool");
     auto infer=det.get<int(*)(void*,unsigned char*,int,int,size_t,float,float,int,float*,double*,int)>("au_detector_infer_ex");
     auto destroy=det.get<void(*)(void*)>("au_detector_destroy");
@@ -216,7 +223,7 @@ int run(const Args& args) {
                     JobPtr job;
                     {std::unique_lock<std::mutex> lock(work.mutex);work.cv.wait(lock,[&]{return work.stop || work.pending[worker] || work.done;});
                      if(work.stop || !work.pending[worker]) return;job=std::move(work.pending[worker]);}
-                    int count=infer(handles[worker],job->frame.data,job->frame.cols,job->frame.rows,job->frame.step,args.conf,args.iou,100,job->boxes.data(),job->native.data(),1);
+                    int count=infer(handles[worker],job->frame.data,job->frame.cols,job->frame.rows,job->frame.step,args.conf,args.iou,100,job->boxes.data(),job->native.data(),args.preprocess=="rga"?2:1);
                     if(count<0) throw std::runtime_error(det_error());
                     for(int i=0;i<count;++i) {
                         float* b=job->boxes.data()+5*i;
@@ -315,6 +322,7 @@ int run(const Args& args) {
     std::ofstream out(fs::path(args.output)/"summary.json");out.exceptions(std::ios::badbit|std::ios::failbit);out<<std::setprecision(17);
     out<<"{\"runtime\":\"native_cpp_no_python\",\"opencv_version\":"<<quote(CV_VERSION)<<",\"frames\":"<<total<<",\"measured_frames\":"<<total-args.warmup<<",\"measured_seconds\":"<<seconds<<",\"steady_fps\":"<<(total-args.warmup)/seconds<<",\"all_frames_fps\":"<<total/all_seconds;
     out<<",\"model_load_ms\":"<<load_ms<<",\"first_result\":"<<first_result<<",\"model_sha256\":"<<quote(model_sha)<<",\"detector_library_sha256\":"<<quote(sha256(args.detector));
+    out<<",\"decoder_backend\":"<<quote(args.decoder)<<",\"preprocess_backend\":"<<quote(args.preprocess);
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));
     out<<",\"args\":{\"conf\":"<<args.conf<<",\"iou\":"<<args.iou<<",\"actual_conf_float32\":"<<float(args.conf)<<",\"actual_iou_float32\":"<<float(args.iou)<<",\"workers\":"<<args.workers<<",\"inflight\":"<<args.inflight<<",\"warmup\":"<<args.warmup<<",\"detector_only\":"<<(args.detector_only?"true":"false")<<",\"pyramid_cache\":"<<(args.pyramid_cache?"true":"false")<<",\"cpus\":"<<quote(args.cpus)<<",\"video\":"<<quote(args.video)<<",\"model\":"<<quote(args.model)<<",\"save_observations\":"<<(args.save?"true":"false")<<'}';
     out<<",\"input_wh\":[960,544],\"source_wh\":["<<source_w<<','<<source_h<<"],\"source_fps\":"<<fps<<",\"npu_core_masks\":[";
@@ -331,7 +339,7 @@ int run(const Args& args) {
     }
     out<<",\"hardware_before\":"<<before<<",\"hardware_after\":"<<hardware()<<",\"hardware_samples\":[";
     for(size_t i=0;i<samples.size();++i) {if(i) out<<',';out<<samples[i];}
-    out<<"],\"scope\":\"Native C++ CPU video decode, C++ RKNN INT8, per-frame native GMC and native Dist association; no Python, cached detections, frame skipping, rendering or encoding.\"}\n";out.close();
+    out<<"],\"scope\":\"Native C++ video pipeline; decoder/preprocess backends recorded explicitly. RKNN INT8, per-frame GMC and Dist; no Python, cached detections, frame skipping, rendering or encoding.\"}\n";out.close();
     std::cout<<"{\"event\":\"complete\",\"frames\":"<<total<<",\"fps\":"<<(total-args.warmup)/seconds<<'}'<<std::endl;
     return 0;
 }

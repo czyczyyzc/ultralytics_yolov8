@@ -3,6 +3,7 @@
 #include "native_yolov8_video.cpp"
 #undef main
 #include <type_traits>
+#include "../dist_native/fused_half_rgb.hpp"
 #ifdef AU_ENABLE_RGA
 #include <rga/im2d.h>
 #endif
@@ -20,6 +21,7 @@ template <typename T> T* make_detector(const char* model, const char* core, bool
 }
 
 extern "C" {
+int au_detector_fused_supported() {return 1;}
 int au_detector_rga_supported() {
 #ifdef AU_ENABLE_RGA
     return 1;
@@ -80,15 +82,25 @@ int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height
         if (cached_preprocess) {
             // OpenCV operates in cached RAM; only the final bulk copy touches DMA memory.
             thread_local cv::Mat resized, rgb;
+            thread_local cv::Rect previous_content;
             const float ratio = std::min(static_cast<float>(detector.input_height()) / height,
                                          static_cast<float>(detector.input_width()) / width);
             const int rw = std::max(1, static_cast<int>(std::round(width * ratio)));
             const int rh = std::max(1, static_cast<int>(std::round(height * ratio)));
             const float dw = (detector.input_width() - rw) * .5f;
             const float dh = (detector.input_height() - rh) * .5f;
+            cv::Rect content(static_cast<int>(std::round(dw-.1f)),static_cast<int>(std::round(dh-.1f)),rw,rh);
+            bool same_storage=rgb.rows==detector.input_height() && rgb.cols==detector.input_width();
             rgb.create(detector.input_height(), detector.input_width(), CV_8UC3);
-            rgb.setTo(cv::Scalar::all(114));
-            if(cached_preprocess==2) {
+            if(cached_preprocess!=3 || !same_storage || content!=previous_content)
+                rgb.setTo(cv::Scalar::all(114));
+            previous_content=content;
+            cv::Mat roi=rgb(content);
+            bool fused=cached_preprocess==3 && width==2*rw && height==2*rh;
+            if(fused) {
+                if(!fused_half_rgb(frame.data,width,height,frame.step,roi.data,roi.step))
+                    throw std::runtime_error("Invalid fused preprocessing layout");
+            } else if(cached_preprocess==2) {
 #ifdef AU_ENABLE_RGA
                 if(frame.step%3) throw std::runtime_error("RGA requires a whole-pixel stride");
                 resized.create(rh,rw,CV_8UC3);
@@ -100,9 +112,7 @@ int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height
                 throw std::runtime_error("RGA preprocessing not compiled");
 #endif
             } else cv::resize(frame, resized, cv::Size(rw, rh), 0, 0, cv::INTER_LINEAR);
-            cv::Mat roi = rgb(cv::Rect(static_cast<int>(std::round(dw-.1f)),
-                                      static_cast<int>(std::round(dh-.1f)), rw, rh));
-            cv::cvtColor(resized, roi, cv::COLOR_BGR2RGB);
+            if(!fused) cv::cvtColor(resized, roi, cv::COLOR_BGR2RGB);
             detector.copy_rgb_input(rgb);
             letterbox = LetterboxInfo{ratio, dw, dh};
         } else {

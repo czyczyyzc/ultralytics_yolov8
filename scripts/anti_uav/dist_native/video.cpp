@@ -128,8 +128,8 @@ Args parse(int argc,char** argv) {
        a.inflight<a.workers || a.warmup<0 || a.frames<0 ||
        !std::isfinite(a.conf) || a.conf<0 || a.conf>1 ||
        !std::isfinite(a.iou) || a.iou<0 || a.iou>1) throw std::runtime_error("Invalid arguments");
-    if((a.decoder!="opencv" && a.decoder!="rkmpp") ||
-       (a.preprocess!="opencv" && a.preprocess!="rga")) throw std::runtime_error("Invalid image backend");
+    if((a.decoder!="opencv" && a.decoder!="rkmpp" && a.decoder!="ffmpeg") ||
+       (a.preprocess!="opencv" && a.preprocess!="rga" && a.preprocess!="fused")) throw std::runtime_error("Invalid image backend");
     return a;
 }
 struct Job {
@@ -178,6 +178,8 @@ int run(const Args& args) {
     Library det(args.detector);
     if(args.preprocess=="rga" && !det.get<int(*)()>("au_detector_rga_supported")())
         throw std::runtime_error("RGA detector library required");
+    if(args.preprocess=="fused" && !det.get<int(*)()>("au_detector_fused_supported")())
+        throw std::runtime_error("Fused preprocessing detector library required");
     auto create=det.get<int(*)(const char*,const char**,int,int,void**)>("au_detector_create_pool");
     auto infer=det.get<int(*)(void*,unsigned char*,int,int,size_t,float,float,int,float*,double*,int)>("au_detector_infer_ex");
     auto destroy=det.get<void(*)(void*)>("au_detector_destroy");
@@ -223,7 +225,8 @@ int run(const Args& args) {
                     JobPtr job;
                     {std::unique_lock<std::mutex> lock(work.mutex);work.cv.wait(lock,[&]{return work.stop || work.pending[worker] || work.done;});
                      if(work.stop || !work.pending[worker]) return;job=std::move(work.pending[worker]);}
-                    int count=infer(handles[worker],job->frame.data,job->frame.cols,job->frame.rows,job->frame.step,args.conf,args.iou,100,job->boxes.data(),job->native.data(),args.preprocess=="rga"?2:1);
+                    int mode=args.preprocess=="fused"?3:args.preprocess=="rga"?2:1;
+                    int count=infer(handles[worker],job->frame.data,job->frame.cols,job->frame.rows,job->frame.step,args.conf,args.iou,100,job->boxes.data(),job->native.data(),mode);
                     if(count<0) throw std::runtime_error(det_error());
                     for(int i=0;i<count;++i) {
                         float* b=job->boxes.data()+5*i;

@@ -101,27 +101,30 @@ public:
             rate=cpu.get(cv::CAP_PROP_FPS);count=cpu.get(cv::CAP_PROP_FRAME_COUNT);
             w=cpu.get(cv::CAP_PROP_FRAME_WIDTH);h=cpu.get(cv::CAP_PROP_FRAME_HEIGHT);return;
         }
-        if(backend!="rkmpp") throw std::runtime_error("Unknown decoder");
+        if(backend!="rkmpp" && backend!="ffmpeg") throw std::runtime_error("Unknown decoder");
 #ifdef WITH_MPP_SOURCE
         try {
             check(avformat_open_input(&format,path.c_str(),nullptr,nullptr),"Open input");
             check(avformat_find_stream_info(format,nullptr),"Stream info");
             stream=av_find_best_stream(format,AVMEDIA_TYPE_VIDEO,-1,-1,nullptr,0);check(stream,"Video stream");
             auto* st=format->streams[stream];auto id=st->codecpar->codec_id;
-            const char* name=id==AV_CODEC_ID_HEVC?"hevc_rkmpp":id==AV_CODEC_ID_H264?"h264_rkmpp":nullptr;
-            if(!name) throw std::runtime_error("Only H264/HEVC MPP input supported");
+            const char* name=id==AV_CODEC_ID_HEVC?(backend=="rkmpp"?"hevc_rkmpp":"hevc"):
+                             id==AV_CODEC_ID_H264?(backend=="rkmpp"?"h264_rkmpp":"h264"):nullptr;
+            if(!name) throw std::runtime_error("Only H264/HEVC input supported");
             const auto* dec=avcodec_find_decoder_by_name(name);
-            if(!dec) throw std::runtime_error("FFmpeg RKMPP decoder is unavailable");
+            if(!dec) throw std::runtime_error("Requested FFmpeg decoder is unavailable");
             codec=avcodec_alloc_context3(dec);if(!codec) throw std::bad_alloc();
             check(avcodec_parameters_to_context(codec,st->codecpar),"Codec parameters");
-            codec->thread_count=1;check(avcodec_open2(codec,dec,nullptr),"Open RKMPP decoder");
+            codec->thread_count=1;
+            if(backend=="ffmpeg") codec->thread_type=FF_THREAD_SLICE;
+            check(avcodec_open2(codec,dec,nullptr),"Open decoder");
             rate=av_q2d(av_guess_frame_rate(format,st,nullptr));
             count=st->nb_frames;w=codec->width;h=codec->height;
             if(count<=0 && st->duration>0) count=std::llround(st->duration*av_q2d(st->time_base)*rate);
             packet=av_packet_alloc();frame=av_frame_alloc();if(!packet || !frame) throw std::bad_alloc();
         } catch(...) {cleanup();throw;}
 #else
-        throw std::runtime_error("Build with FFmpeg development libraries for RKMPP");
+        throw std::runtime_error("Build with FFmpeg development libraries for this decoder");
 #endif
     }
     ~VideoSource() {
@@ -141,7 +144,7 @@ public:
             int status=avcodec_receive_frame(codec,frame);
             if(status==0) {convert(image);av_frame_unref(frame);return true;}
             if(status==AVERROR_EOF) return false;
-            if(status!=AVERROR(EAGAIN)) check(status,"Receive RKMPP frame");
+            if(status!=AVERROR(EAGAIN)) check(status,"Receive decoded frame");
             if(!pending && !eof) {
                 do {
                     av_packet_unref(packet);status=av_read_frame(format,packet);
@@ -153,11 +156,11 @@ public:
             if(pending || !flushed) {
                 status=avcodec_send_packet(codec,pending?packet:nullptr);
                 if(status==0) {if(pending) {pending=false;av_packet_unref(packet);} else flushed=true;}
-                else if(status!=AVERROR(EAGAIN)) check(status,"Send RKMPP packet");
+                else if(status!=AVERROR(EAGAIN)) check(status,"Send packet to decoder");
             }
             if(flushed) std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
-        throw std::runtime_error("RKMPP decode timeout");
+        throw std::runtime_error("Decode timeout");
 #else
         return false;
 #endif

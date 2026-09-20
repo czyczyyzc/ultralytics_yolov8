@@ -1,0 +1,20 @@
+{
+  "coordinate_format": "normalized source x0,y0,x1,y1",
+  "purpose": "Focus segmentation on drone, not kit accessories. Review outputs before acceptance.",
+  "roi": {
+    "110": [0.35, 0.59, 0.73, 0.86],
+    "150": [0.34, 0.53, 0.73, 0.86],
+    "151": [0.35, 0.59, 0.73, 0.86],
+    "207": [0.39, 0.60, 0.91, 0.96],
+    "295": [0.36, 0.30, 0.98, 0.90],
+    "296": [0.31, 0.45, 0.69, 0.80],
+    "315": [0.45, 0.66, 0.64, 0.77],
+    "319": [0.42, 0.64, 0.72, 0.89]
+  },
+  "exclude": {
+    "252": "Manual cover / line drawing and title, not a drone photograph",
+    "253": "Manual cover / line drawing, truncated drone and very low resolution",
+    "258": "Source is a truncated close-up; complete aircraft silhouette is absent"
+  },
+  "visual_review_scope": "All 19 contact sheets screened for gross silhouette/accessory errors; not a pixel-level mask annotation."
+}

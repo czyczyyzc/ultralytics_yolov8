@@ -1,0 +1,9 @@
+# Install into a separate --target directory, not the training environment.
+# Tested with the existing torch 2.5.1+cu121 / torchvision 0.20.1+cu121.
+transformers==4.46.3
+tokenizers==0.20.3
+huggingface-hub==0.36.0
+einops==0.8.1
+kornia==0.7.4
+kornia_rs==0.1.9
+regex==2024.11.6

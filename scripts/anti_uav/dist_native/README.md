@@ -94,3 +94,26 @@ The solver sources are unmodified from https://github.com/gatagat/lap v0.5.12,
 commit `600c210d9bef793ee0fe502cbc350e676a6e083a`. Finite cost-limit padding
 matches its Python wrapper; do not substitute a different assignment solver
 without rerunning equivalence checks.
+
+## Opt-in Input Experiments
+
+Stable defaults remain `--decoder opencv --preprocess opencv`. The following
+are experiments, not validated performance improvements on the RK3588S:
+
+- `--decoder ffmpeg`: native FFmpeg software H264/HEVC decoding, one decoding
+  thread, no frame-thread pipeline. No frame discard, low-delay flag or changed
+  presentation order is requested. This tests first-read buffering overhead
+  separately from MPP. It still performs CPU BGR conversion.
+- `--preprocess fused`: one-pass half-size BGR-to-RGB downsampling with ARM NEON,
+  cached letterbox padding and the existing contiguous RGB copy to RKNN memory.
+  Other resize ratios fall back to the existing OpenCV resize/color conversion.
+  This needs a rebuilt detector library exposing `au_detector_fused_supported`;
+  the existing released detector library will deliberately fail this check.
+- `--decoder rkmpp` / `--preprocess rga`: experimental hardware paths. The first
+  combined MPP trial crashed; do not select it as the deployment default.
+
+For a separate build, point `ANTI_UAV_NATIVE_DEPLOY` at a new directory and
+pass `--detector-library` for its rebuilt library. Do not rebuild over the
+validated release. First compare CPU-decoded pixels, prepared tensors and full
+detector/tracker observations; only then quote FPS or latency gains. Report both
+process-launch and first-read timings to avoid hiding initialization costs.

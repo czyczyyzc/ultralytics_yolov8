@@ -5,7 +5,7 @@
 // Isolate decoder/FFmpeg issues without loading RKNN or allocating NPU buffers.
 int main(int argc,char** argv) {
     try {
-        if(argc!=4) throw std::runtime_error("Usage: decode_probe VIDEO opencv|rkmpp FRAMES");
+        if(argc!=4) throw std::runtime_error("Usage: decode_probe VIDEO opencv|ffmpeg|rkmpp FRAMES");
         cv::setNumThreads(1);
         std::cerr<<"opening "<<argv[2]<<std::endl;
         VideoSource source(argv[1],argv[2]);

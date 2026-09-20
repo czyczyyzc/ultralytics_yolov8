@@ -70,6 +70,8 @@ including XYWH Kalman state, three matching stages, duplicate removal and lost
 track lifecycle. It is not the older lightweight RK-BoT-SORT renamed as Dist.
 The public implementation does not implement every component described in the
 Dist paper; do not claim unimplemented paper features.
+The executed upstream is https://github.com/earth-insights/Dist-Tracker at
+`396c359e1aa8be4fd5e81a02626cb1ee3867cf7c`.
 
 - `verify_native_dist.py`: synthetic threshold/duplicate/expiry cases and complete
   14,201-frame cached replay; checks IDs, current detector indices and boxes.
@@ -88,3 +90,7 @@ heatsink-only board, temperature can materially change sustained throughput.
 The tracker port retains the public Ultralytics/Dist tracker AGPL-3.0 licensing
 notice. The vendored `lap` v0.5.12 solver retains its BSD-2-Clause license under
 `third_party/lap/LICENSE`. Review applicable licenses before redistribution.
+The solver sources are unmodified from https://github.com/gatagat/lap v0.5.12,
+commit `600c210d9bef793ee0fe502cbc350e676a6e083a`. Finite cost-limit padding
+matches its Python wrapper; do not substitute a different assignment solver
+without rerunning equivalence checks.

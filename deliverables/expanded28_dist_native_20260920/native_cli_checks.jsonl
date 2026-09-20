@@ -1,0 +1,4 @@
+{"expected": "Invalid arguments", "exit_code": 1, "passed": true}
+{"expected": "Unknown option", "exit_code": 1, "passed": true}
+{"expected": "Missing value", "exit_code": 1, "passed": true}
+{"expected": "Output already exists", "exit_code": 1, "passed": true}

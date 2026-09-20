@@ -1,0 +1,314 @@
+{
+  "pipeline_runs": [
+    {
+      "name": "previous_python_compact",
+      "frames": 14201,
+      "fps": 57.59362552693353,
+      "stages_ms": {
+        "decode": {
+          "mean": 11.148802038508206,
+          "p50": 9.623403000659891,
+          "p95": 19.345095999597106,
+          "max": 54.98041499959072
+        },
+        "preprocess": {
+          "mean": 5.249857677682434,
+          "p50": 5.356089,
+          "p95": 6.14737,
+          "max": 20.826158
+        },
+        "npu": {
+          "mean": 40.93271162711865,
+          "p50": 39.159477,
+          "p95": 56.218231,
+          "max": 119.556234
+        },
+        "postprocess": {
+          "mean": 0.4304108365364158,
+          "p50": 0.415911,
+          "p95": 0.593533,
+          "max": 1.651976
+        },
+        "gmc": {
+          "mean": 8.150188527692263,
+          "p50": 7.316352999623632,
+          "p95": 14.539664999574597,
+          "max": 42.15426700011449
+        },
+        "association": {
+          "mean": 2.273150905181308,
+          "p50": 1.7208079998454195,
+          "p95": 8.532001999810745,
+          "max": 32.8554850002547
+        },
+        "ordered_latency": {
+          "mean": 70.07038811921204,
+          "p50": 69.07471200065629,
+          "p95": 94.26122400054737,
+          "max": 147.71216099961748
+        }
+      },
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "summary": "deliverables/expanded28_dist_opt_20260920/final_ready9/summary.json"
+    },
+    {
+      "name": "cpp_short2000",
+      "frames": 2000,
+      "fps": 85.39530206127932,
+      "stages_ms": {
+        "decode": {
+          "mean": 6.473405467368428,
+          "p50": 6.171286,
+          "p95": 8.6786503,
+          "max": 14.035672
+        },
+        "preprocess": {
+          "mean": 3.5776755578947315,
+          "p50": 3.5835105,
+          "p95": 3.76278075,
+          "max": 9.123493
+        },
+        "npu": {
+          "mean": 30.463532344736834,
+          "p50": 29.873236,
+          "p95": 35.06113805,
+          "max": 52.958028
+        },
+        "postprocess": {
+          "mean": 0.3258841257894743,
+          "p50": 0.322287,
+          "p95": 0.3823836,
+          "max": 0.515951
+        },
+        "gmc": {
+          "mean": 4.352499458947366,
+          "p50": 4.065775,
+          "p95": 5.66131385,
+          "max": 12.147741
+        },
+        "association": {
+          "mean": 0.015679764736842117,
+          "p50": 0.0175,
+          "p95": 0.029458,
+          "max": 0.044916
+        },
+        "ordered_latency": {
+          "mean": 45.89106068947379,
+          "p50": 44.746271500000006,
+          "p95": 56.3838953,
+          "max": 81.834944
+        }
+      },
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "summary": "deliverables/expanded28_dist_native_20260920/cpp_short2000/summary.json"
+    },
+    {
+      "name": "cpp_full14201",
+      "frames": 14201,
+      "fps": 79.5677555101378,
+      "stages_ms": {
+        "decode": {
+          "mean": 7.019076873838746,
+          "p50": 6.130454,
+          "p95": 11.399043,
+          "max": 41.024659
+        },
+        "preprocess": {
+          "mean": 3.526511690660245,
+          "p50": 3.513074,
+          "p95": 3.749321,
+          "max": 10.367434
+        },
+        "npu": {
+          "mean": 31.901621049358344,
+          "p50": 30.038609,
+          "p95": 40.492374,
+          "max": 65.595179
+        },
+        "postprocess": {
+          "mean": 0.3195297139919161,
+          "p50": 0.313245,
+          "p95": 0.359911,
+          "max": 5.523212
+        },
+        "gmc": {
+          "mean": 4.826182154173458,
+          "p50": 4.432395,
+          "p95": 6.611988,
+          "max": 21.879351
+        },
+        "association": {
+          "mean": 0.04804996900929024,
+          "p50": 0.041124,
+          "p95": 0.102957,
+          "max": 0.177039
+        },
+        "ordered_latency": {
+          "mean": 49.530112998298236,
+          "p50": 48.320887,
+          "p95": 64.097492,
+          "max": 98.945906
+        }
+      },
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "summary": "deliverables/expanded28_dist_native_20260920/cpp_full14201/summary.json",
+      "last2201_fps": 76.8737518271347
+    },
+    {
+      "name": "cpp_hot14201",
+      "frames": 14201,
+      "fps": 79.64642142020239,
+      "stages_ms": {
+        "decode": {
+          "mean": 7.126399504219526,
+          "p50": 6.151453,
+          "p95": 11.948828,
+          "max": 52.366828
+        },
+        "preprocess": {
+          "mean": 3.5355587064038025,
+          "p50": 3.517449,
+          "p95": 3.758654,
+          "max": 20.941364
+        },
+        "npu": {
+          "mean": 31.779096937096654,
+          "p50": 30.021109,
+          "p95": 40.470208,
+          "max": 65.101977
+        },
+        "postprocess": {
+          "mean": 0.31858868626338654,
+          "p50": 0.31237,
+          "p95": 0.358745,
+          "max": 4.561601
+        },
+        "gmc": {
+          "mean": 4.8444731405573895,
+          "p50": 4.447561,
+          "p95": 6.677612,
+          "max": 21.365734
+        },
+        "association": {
+          "mean": 0.046384966739947374,
+          "p50": 0.039666,
+          "p95": 0.098581,
+          "max": 0.167123
+        },
+        "ordered_latency": {
+          "mean": 49.37754410055991,
+          "p50": 48.117306,
+          "p95": 64.089617,
+          "max": 93.191989
+        }
+      },
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "summary": "deliverables/expanded28_dist_native_20260920/cpp_hot14201/summary.json",
+      "last2201_fps": 77.28946087691956
+    }
+  ],
+  "launch_to_first_result_median_ms": {
+    "previous": 713.3756260000155,
+    "native": 242.4347950000083
+  },
+  "equivalence": {
+    "short": {
+      "passed": true,
+      "frames": 2000,
+      "observations": 1174,
+      "differing_frames": {
+        "boxes_xyxy_score": 0,
+        "displayed_tracks": 0,
+        "warp": 0
+      },
+      "first_differing_frames": {
+        "boxes_xyxy_score": [],
+        "displayed_tracks": [],
+        "warp": []
+      },
+      "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+    },
+    "full": {
+      "passed": true,
+      "frames": 14201,
+      "observations": 8169,
+      "differing_frames": {
+        "boxes_xyxy_score": 0,
+        "displayed_tracks": 0,
+        "warp": 0
+      },
+      "first_differing_frames": {
+        "boxes_xyxy_score": [],
+        "displayed_tracks": [],
+        "warp": []
+      },
+      "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+    },
+    "hot": {
+      "passed": true,
+      "frames": 14201,
+      "observations": 8169,
+      "differing_frames": {
+        "boxes_xyxy_score": 0,
+        "displayed_tracks": 0,
+        "warp": 0
+      },
+      "first_differing_frames": {
+        "boxes_xyxy_score": [],
+        "displayed_tracks": [],
+        "warp": []
+      },
+      "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+    }
+  },
+  "quality": {
+    "frames": 14201,
+    "metrics": {
+      "tp": 5283,
+      "fp": 2885,
+      "fn": 2699,
+      "frames_with_output": 8028,
+      "outputs": 8168,
+      "precision": 0.64679236043095,
+      "recall": 0.6618641944374843,
+      "f1": 0.6542414860681114
+    },
+    "detector_metrics": {
+      "tp": 5317,
+      "fp": 3539,
+      "fn": 2665,
+      "frames_with_output": 8311,
+      "outputs": 8856,
+      "precision": 0.6003839205058717,
+      "recall": 0.6661237785016286,
+      "f1": 0.6315476897493764
+    },
+    "identity_diagnostics": {
+      "all_matched_observation_id_changes": 13,
+      "continuous_gt_id_changes": 9,
+      "adjacent_tp_frame_id_changes": 1
+    },
+    "visible_ids": 46,
+    "maximum_visible_id": 314,
+    "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+    "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+    "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+    "args": {
+      "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+      "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+      "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+      "output": "runs/anti_uav/expanded28_dist_native_20260920/quality_cpp_full14201",
+      "tracked": "runs/anti_uav/expanded28_dist_native_20260920/cpp_full14201/observations.jsonl",
+      "upstream": null,
+      "video": null,
+      "gmc": "compact",
+      "width": 320,
+      "corners": 128,
+      "refresh": 5,
+      "resize_first": true
+    },
+    "replay_tracker_gmc_seconds": 0,
+    "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+  },
+  "caveat": "Measured temperatures differ from previous baseline. Observed speedup is not a controlled code-only comparison. Native runtime has no Python, skips no frames and computes live GMC. No rendering/encoding; Video00009 is a tuning/evaluation video, not new independent validation."
+}

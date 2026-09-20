@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "synthetic": [
+    {
+      "name": "thresholds_duplicates_crossings_expiry",
+      "frames": 450,
+      "maximum_state_absolute_difference": 1.280568540096283e-09
+    },
+    {
+      "name": "expiry_reappearance",
+      "frames": 240,
+      "maximum_state_absolute_difference": 1.1102230246251565e-16
+    }
+  ],
+  "frames": 14201,
+  "observations": 8169,
+  "mean_native_bridge_ms": 0.0442963645546694,
+  "p95_native_bridge_ms": 0.060956999732297845,
+  "scope": "Cached exact ID/current-detection association check. Includes ctypes/output conversion; excludes live GMC and detector. NOT pipeline FPS."
+}

@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "frames": 14201,
+  "observations": 8169,
+  "differing_frames": {
+    "boxes_xyxy_score": 0,
+    "displayed_tracks": 0,
+    "warp": 0
+  },
+  "first_differing_frames": {
+    "boxes_xyxy_score": [],
+    "displayed_tracks": [],
+    "warp": []
+  },
+  "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+}

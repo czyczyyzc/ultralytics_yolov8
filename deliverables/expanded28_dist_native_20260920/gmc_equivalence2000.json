@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "frames": 2000,
+  "exact_warp_frames": [
+    2000,
+    2000
+  ],
+  "maximum_warp_difference": [
+    0.0,
+    0.0
+  ],
+  "counts": {
+    "frames": 2000,
+    "estimated": 1999,
+    "identity_fallback": 0,
+    "refreshes": 404
+  },
+  "mean_ms": [
+    4.211322424999707,
+    3.8523086730056093,
+    3.8633511660054864
+  ],
+  "native_cached_seconds": {
+    "preprocess": 1.7902241690000005,
+    "pyramid": 0.4359749869999972,
+    "optical_flow": 4.724112846000004,
+    "ransac": 0.15152069599999973,
+    "features": 0.48412408899999976
+  },
+  "scope": "Sequential same-frame GMC correctness/microbenchmark; Python, C++ raw, C++ cached. NOT end-to-end FPS."
+}

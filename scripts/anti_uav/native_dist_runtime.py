@@ -57,3 +57,47 @@ class NativeDist:
             self.lib.dist_destroy(self.handle)
             self.handle = None
 
+
+class NativeGMC:
+    def __init__(self, library, width=320, corners=128, refresh=5, cached=True, resize_first=True):
+        self.lib=ct.CDLL(str(Path(library).resolve()))
+        self.lib.gmc_create.argtypes=[ct.c_int]*5
+        self.lib.gmc_create.restype=ct.c_void_p
+        self.lib.gmc_destroy.argtypes=[ct.c_void_p]
+        self.lib.gmc_error.restype=ct.c_char_p
+        self.lib.gmc_apply.argtypes=[ct.c_void_p,ct.c_void_p,ct.c_int,ct.c_int,ct.c_size_t,ct.c_int,ct.c_void_p]
+        self.lib.gmc_apply.restype=ct.c_int
+        self.lib.gmc_stats.argtypes=[ct.c_void_p,ct.c_void_p,ct.c_void_p]
+        self.handle=self.lib.gmc_create(width,corners,refresh,cached,resize_first)
+        if not self.handle:
+            raise RuntimeError(self.lib.gmc_error().decode())
+
+    def apply(self, frame, detections=None):
+        frame=np.asarray(frame)
+        if frame.dtype!=np.uint8 or frame.ndim not in (2,3) or (frame.ndim==3 and frame.shape[2]!=3):
+            raise ValueError("Expected gray8 or BGR8")
+        frame=np.ascontiguousarray(frame)
+        result=np.empty((2,3),np.float64)
+        if self.lib.gmc_apply(self.handle,frame.ctypes.data,frame.shape[1],frame.shape[0],frame.strides[0],
+                              1 if frame.ndim==2 else 3,result.ctypes.data):
+            raise RuntimeError(self.lib.gmc_error().decode())
+        return result
+
+    def _stats(self):
+        counts=np.empty(4,np.uint64);seconds=np.empty(5,np.float64)
+        self.lib.gmc_stats(self.handle,counts.ctypes.data,seconds.ctypes.data)
+        return (dict(zip(("frames","estimated","identity_fallback","refreshes"),map(int,counts))),
+                dict(zip(("preprocess","pyramid","optical_flow","ransac","features"),map(float,seconds))))
+
+    @property
+    def counts(self):
+        return self._stats()[0]
+
+    @property
+    def seconds(self):
+        return self._stats()[1]
+
+    def close(self):
+        if self.handle:
+            self.lib.gmc_destroy(self.handle)
+            self.handle=None

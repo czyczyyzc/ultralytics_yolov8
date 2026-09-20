@@ -25,6 +25,10 @@ def bind(cpu):
     os.sched_setaffinity(0, {cpu})
 
 
+def bind_shared(cpus):
+    os.sched_setaffinity(0, set(cpus))
+
+
 def flow_init(cpus):
     os.sched_setaffinity(0, set(cpus))
     cv2.setRNGSeed(20260917)
@@ -56,6 +60,7 @@ def main():
     p.add_argument("--contexts", choices=("shared","independent"), default="shared")
     p.add_argument("--preprocess", choices=("native","cached"), default="cached")
     p.add_argument("--cpus", default="4,5,6,7")
+    p.add_argument("--worker-affinity", choices=("pinned", "shared"), default="pinned")
     p.add_argument("--inflight", type=int, default=4)
     p.add_argument("--frames", type=int, default=0)
     p.add_argument("--warmup", type=int, default=100)
@@ -94,7 +99,9 @@ def main():
     loading = time.perf_counter()
     detectors = make_detectors(args, masks)
     load_ms = (time.perf_counter()-loading)*1000
-    npu_pools = [ThreadPoolExecutor(max_workers=1, initializer=bind, initargs=(cpus[i % len(cpus)],))
+    npu_pools = [ThreadPoolExecutor(max_workers=1,
+                    initializer=bind if args.worker_affinity == "pinned" else bind_shared,
+                    initargs=(cpus[i % len(cpus)],) if args.worker_affinity == "pinned" else (cpus,))
                  for i in range(args.workers)]
     flow_pool = ThreadPoolExecutor(max_workers=1, initializer=flow_init, initargs=(cpus,)) if flow else None
     ready_ms = (time.perf_counter()-ENTRY)*1000

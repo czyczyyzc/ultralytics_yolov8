@@ -12,5 +12,6 @@ exec "$BASE/venv/bin/python" "$REPO/scripts/anti_uav/run_rknn_dist_optimized.py"
   --upstream "$BASE/Dist-Tracker" \
   --video "$BASE/Video00009_original.mp4" \
   --workers 3 --core-mode split --contexts shared --preprocess cached \
-  --cpus 4,5,6,7 --inflight 4 --conf 0.03 --iou 0.45 \
-  --gmc compact --gmc-width 320 --gmc-corners 128 --gmc-refresh 5 "$@"
+  --cpus 4,5,6,7 --worker-affinity pinned --dispatch ready --inflight 9 \
+  --conf 0.03 --iou 0.45 --gmc compact --gmc-width 320 \
+  --gmc-corners 128 --gmc-refresh 5 --gmc-resize-first "$@"

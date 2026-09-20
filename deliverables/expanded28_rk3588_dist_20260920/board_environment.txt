@@ -1,0 +1,81 @@
+Linux orangepicm5 6.1.99-rockchip-rk3588 #20260422.1 SMP Wed Apr 22 20:02:59 CST 2026 aarch64 aarch64 aarch64 GNU/Linux
+PRETTY_NAME="Orange Pi 1.0.0 Jammy"
+NAME="Ubuntu"
+VERSION_ID="22.04"
+VERSION="22.04.4 LTS (Jammy Jellyfish)"
+VERSION_CODENAME=jammy
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+UBUNTU_CODENAME=jammy
+6e3b0fd22d7c1b21f1471e00974ef3ae85e6d14b
+396c359e1aa8be4fd5e81a02626cb1ee3867cf7c
+librknnrt version: 2.3.2 (429f97ae6b@2025-04-09T09:09:27)
+d31fc19c85b85f6091b2bd0f6af9d962d5264a4e410bfb536402ec92bac738e8  /usr/lib/librknnrt.so
+2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53  /home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn
+155a69ab4d288488338d0ce9bb24901aaf2df2da1c4432978a42ab7a8cbaf21c  /home/orangepi/deployments/expanded28_dist_20260920/libanti_uav_detector.so
+2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86  /home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4
+Package               Version
+--------------------- ----------------
+blinker               1.4
+Brlapi                0.8.3
+chardet               4.0.0
+click                 8.0.3
+colorama              0.4.4
+configobj             5.0.6
+cryptography          3.4.8
+cupshelpers           1.0
+dbus-python           1.2.18
+defer                 1.0.6
+distro                1.7.0
+distro-info           1.1+ubuntu0.2
+httplib2              0.20.2
+importlib-metadata    4.6.4
+iotop                 0.6
+jeepney               0.7.1
+keyring               23.5.0
+language-selector     0.1
+lap                   0.5.12
+launchpadlib          1.10.16
+lazr.restfulclient    0.14.4
+lazr.uri              1.0.6
+louis                 3.20.0
+more-itertools        8.10.0
+netifaces             0.11.0
+numpy                 1.24.4
+oauthlib              3.2.0
+pexpect               4.8.0
+Pillow                9.0.1
+pip                   22.0.2
+psutil                5.9.0
+ptyprocess            0.7.0
+pycairo               1.20.1
+pycups                2.0.1
+PyGObject             3.42.1
+PyJWT                 2.3.0
+pyparsing             2.4.7
+python-apt            2.4.0+ubuntu3
+python-dateutil       2.8.1
+python-debian         0.1.43+ubuntu1.1
+python-xapp           2.2.1
+pyxdg                 0.27
+PyYAML                5.4.1
+reportlab             3.6.8
+scipy                 1.10.1
+SecretStorage         3.3.1
+setproctitle          1.2.2
+setuptools            59.6.0
+six                   1.16.0
+terminator            2.1.1
+ubuntu-drivers-common 0.0.0
+ubuntu-pro-client     8001
+unattended-upgrades   0.1
+urllib3               1.26.5
+wadllib               1.3.6
+wheel                 0.37.1
+xdg                   5
+xkit                  0.0.0
+zipp                  1.0.0

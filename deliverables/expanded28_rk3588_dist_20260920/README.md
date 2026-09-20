@@ -35,6 +35,50 @@ ssh -6 'orangepi@fe80::d536:9cee:9054:6299%en7'
 The `%en7` interface suffix is specific to this Mac's Ethernet interface.
 No boot service, kernel, network setting or thermal protection was changed.
 
+## Measured Results
+
+All rows include CPU video decoding, letterbox/color conversion, native RKNN
+inference and DFL/NMS. Tracking rows additionally include real, per-frame GMC and
+ordered association. Drawing, display, camera transport and encoding are excluded.
+
+| Configuration | Frames / excluded warmup | Measured FPS |
+| --- | --- | ---: |
+| Detector, NPU core 0 | 2,000 / 100 | 24.66 |
+| Detector, three independent NPU cores | 2,000 / 100 | 49.29 |
+| Detector + public Dist + GMC, three NPU cores | 14,201 / 100 | 18.36 |
+
+The last 2,201 frames of the full run averaged **16.28 FPS** after sustained heat.
+These are measurements on the board as connected, not its theoretical maximum.
+The detector-only runs use the first 2,000 frames; the full-run average covers
+different scene complexity and a much longer thermal history.
+
+Three fresh-process startup measurements (including interpreter/imports, loading
+all three NPU contexts, decoding and processing frame 0) were **716.6, 753.7 and
+734.5 ms**; median **734.5 ms**. After model initialization, first-frame processing
+was **122.9, 155.3 and 126.1 ms**; median **126.1 ms**. These are not power-on boot
+times, and first-frame completion does not require a visible target.
+
+During the full run, average decode was **7.54 ms/frame**, native preprocessing
+**12.81 ms**, per-worker NPU run **41.14 ms**, postprocessing **1.14 ms**, and
+tracker + GMC **46.73 ms**. Stages overlap; their sum is not the pipeline period.
+Average read-to-ordered-result latency was **326.7 ms**, including the bounded
+six-frame queue. This is distinct from first-frame latency and reciprocal FPS.
+
+The SoC reached approximately **85 C** (some CPU sensors approximately 87 C).
+NPU frequency was **800 MHz in 76 of 79 samples**, versus the configured maximum
+1 GHz. Big-core policy4 was mostly 1.608 GHz and sometimes fell to 408 MHz.
+The kernel reported fan PWM 255, but actual fan operation and heatsink contact
+were not physically verified. CPU/GMC cost and thermal throttling both limit this
+result; it is not comparable to the older detector/RK-BoT-SORT-only 85 FPS figure.
+
+The full INT8 run completed without dropped frames: 8,857 detections and 8,161
+displayed current-frame track observations. Detector outputs for the first 2,000
+frames were **bit-identical** across single-core, three-core and tracked runs.
+This validates execution consistency, not detector precision/recall against GT.
+See `benchmark_comparison.json` and the per-run `summary.json` files in
+`final_detector_1/`, `final_detector_3/`, `final_pipeline_three_full/`, and
+`startup_process_launch/`.
+
 ## Runtime and Reproduction
 
 - Detector: native C++ RKNN INT8, fixed **960 x 544 (W x H)**, four output scales.
@@ -43,6 +87,8 @@ No boot service, kernel, network setting or thermal protection was changed.
 - Three independent RKNN contexts use NPU cores 0, 1 and 2, one worker per core.
 - Results are consumed in original frame order; the queue is bounded to six frames.
 - Tracker: unchanged public Dist repository BOTSORT implementation, no ReID.
+- Tracker thresholds: high 0.03, low 0.01, new-track 0.10, match 0.8, score fusion
+  disabled; buffer 30 scales to 100 frames at the source's 100 FPS.
 - GMC: actual causal `sparseOptFlow`, downscale 2, every original video frame.
 - Only confirmed, current-frame associated detections are displayed/output.
   No GT, extrapolated boxes, area filter or cached detection/GMC is used in timing.
@@ -114,6 +160,11 @@ warm filesystem caches, not power-on boot-to-result measurements. Timing exclude
 camera exposure/transport, display, drawing and video encoding. No preloaded frames
 are used in the final video benchmarks. Per-frame JSON writing is included where
 `save_observations=true`.
+
+`startup_process_launch/summary.json` uses an external parent process to time
+launch-to-first-result, including shell and interpreter startup; this is the
+source of the 734.5 ms median above. The lower-level per-run Python-entry timing
+is retained separately rather than conflated with process-launch timing.
 
 Temperature and clocks were recorded without disabling throttling. The board
 reached thermal limits under sustained work; do not interpret a short NPU-only

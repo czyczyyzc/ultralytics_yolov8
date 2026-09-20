@@ -18,4 +18,7 @@ if [[ -f "$HERE/video.cpp" ]]; then
   g++ -std=c++17 -O3 -DNDEBUG -ffp-contract=off \
     $(pkg-config --cflags opencv4) "$HERE/video.cpp" -o "$OUT/anti_uav_dist_native" \
     $(pkg-config --libs opencv4) "${video_flags[@]}" -lcrypto -ldl -pthread
+  g++ -std=c++17 -O2 -g $(pkg-config --cflags opencv4) \
+    "$HERE/decode_probe.cpp" -o "$OUT/decode_probe" \
+    $(pkg-config --libs opencv4) "${video_flags[@]}" -pthread
 fi

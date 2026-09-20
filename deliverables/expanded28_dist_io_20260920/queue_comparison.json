@@ -1,0 +1,215 @@
+{
+  "runs": [
+    {
+      "run": "q3_run1",
+      "inflight": 3,
+      "fps": 73.7852525564218,
+      "mean_latency_ms": 40.16454857157896,
+      "p95_latency_ms": 46.443586249999996,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    },
+    {
+      "run": "q3_run6",
+      "inflight": 3,
+      "fps": 73.94912379354078,
+      "mean_latency_ms": 40.12586169999996,
+      "p95_latency_ms": 46.407405,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    },
+    {
+      "run": "q4_run2",
+      "inflight": 4,
+      "fps": 84.25256497934575,
+      "mean_latency_ms": 46.10491327421055,
+      "p95_latency_ms": 56.4086429,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    },
+    {
+      "run": "q4_run5",
+      "inflight": 4,
+      "fps": 84.32341244216198,
+      "mean_latency_ms": 45.999491709999916,
+      "p95_latency_ms": 56.16243574999999,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    },
+    {
+      "run": "q6_run3",
+      "inflight": 6,
+      "fps": 84.82603626491533,
+      "mean_latency_ms": 46.242558423684194,
+      "p95_latency_ms": 56.801730049999996,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    },
+    {
+      "run": "q6_run4",
+      "inflight": 6,
+      "fps": 85.01162915014957,
+      "mean_latency_ms": 46.1366390689474,
+      "p95_latency_ms": 56.054841950000004,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    },
+    {
+      "run": "q9_run0",
+      "inflight": 9,
+      "fps": 85.197004148886,
+      "mean_latency_ms": 45.97282086684207,
+      "p95_latency_ms": 56.44364155,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    },
+    {
+      "run": "q9_run7",
+      "inflight": 9,
+      "fps": 84.88776252180568,
+      "mean_latency_ms": 46.318472653157784,
+      "p95_latency_ms": 56.778703900000004,
+      "equivalence": {
+        "passed": true,
+        "frames": 2000,
+        "observations": 1174,
+        "differing_frames": {
+          "boxes_xyxy_score": 0,
+          "displayed_tracks": 0,
+          "warp": 0
+        },
+        "first_differing_frames": {
+          "boxes_xyxy_score": [],
+          "displayed_tracks": [],
+          "warp": []
+        },
+        "scope": "Exact recorded detection/ID/current-box/warp comparison; no timing or FPS measurement."
+      }
+    }
+  ],
+  "groups": [
+    {
+      "inflight": 3,
+      "mean_fps": 73.8671881749813,
+      "mean_latency_ms": 40.14520513578946,
+      "mean_p95_latency_ms": 46.425495624999996
+    },
+    {
+      "inflight": 4,
+      "mean_fps": 84.28798871075387,
+      "mean_latency_ms": 46.05220249210524,
+      "mean_p95_latency_ms": 56.285539324999995
+    },
+    {
+      "inflight": 6,
+      "mean_fps": 84.91883270753246,
+      "mean_latency_ms": 46.189598746315795,
+      "mean_p95_latency_ms": 56.428286
+    },
+    {
+      "inflight": 9,
+      "mean_fps": 85.04238333534585,
+      "mean_latency_ms": 46.14564675999993,
+      "mean_p95_latency_ms": 56.611172725
+    }
+  ],
+  "scope": "2000 frames per run, warmup 100. Reverse-order repeats; observed thermal conditions, not temperature-controlled. All outputs exactly match reference. Video-file read-to-result latency, not camera-to-screen."
+}

@@ -1,0 +1,153 @@
+{
+  "protocol": "RKNN native INT8 + actual public Dist BOTSORT/sparseOptFlow; no cached detections/warps",
+  "args": {
+    "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+    "library": "/home/orangepi/deployments/expanded28_dist_20260920/libanti_uav_detector.so",
+    "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+    "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+    "output": "../expanded28_dist_opt_20260920/bind_public_gmc",
+    "workers": 3,
+    "core": "0",
+    "frames": 2000,
+    "warmup": 100,
+    "cv_threads": 1,
+    "conf": 0.03,
+    "iou": 0.45,
+    "detector_only": false,
+    "save_observations": true,
+    "preload": 0
+  },
+  "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+  "tracker_config": {
+    "tracker_type": "botsort",
+    "track_high_thresh": 0.03,
+    "track_low_thresh": 0.01,
+    "new_track_thresh": 0.1,
+    "track_buffer": 30,
+    "match_thresh": 0.8,
+    "fuse_score": false,
+    "gmc_method": "sparseOptFlow",
+    "proximity_thresh": 0.5,
+    "appearance_thresh": 0.25,
+    "with_reid": false
+  },
+  "upstream_files": {
+    "ultralytics/trackers/__init__.py": "665bbf220e68b27ee1a9c87f83905efdee29c1952479e4d089eb090a2d291462",
+    "ultralytics/trackers/basetrack.py": "8747dcc7309d65fff9e87d4d1bf9822004dacff7168f47bd689284d71826b454",
+    "ultralytics/trackers/bot_sort.py": "c549a58f46a04b43c68f2f7b3770b48cb315d3bcafb2eac4e50727ba857f11cc",
+    "ultralytics/trackers/byte_tracker.py": "093fd88f0d9a847a29ac47cd7133348413281acb39a9caade8f6b193de7a9585",
+    "ultralytics/trackers/track.py": "3ed181e024cc77296f71caf3868dfb9f2b0cbd54bc81220d1858196349fe02e5",
+    "ultralytics/trackers/utils/__init__.py": "966e8c72415808f4dba88a17ef0d2cfdd6b176335e05e296e835e9a6fd7e4143",
+    "ultralytics/trackers/utils/gmc.py": "914e78468cee189700565c9be7f1e35e23485085f956e1fad7700c73a19d9f08",
+    "ultralytics/trackers/utils/kalman_filter.py": "ce3a5d2ace0067c510c66a2e4046a26c593dcb92d7fdfef5f7d0054976ebf7a9",
+    "ultralytics/trackers/utils/matching.py": "eb83ca1c6a044f05e1b99f6e744db5ee16e3247ca02ce3da600eba276a8c4a7a",
+    "ultralytics/utils/metrics.py": "e957d3b4fccfa69b97d917d7afce06a08fc004f7c73e15db6cc2a41f61ef5157",
+    "ultralytics/utils/ops.py": "fa579f5439d102917e29a4187b4d03f53032b0d3ad25addfbdb653286f6d7442"
+  },
+  "source_fps": 100.0,
+  "source_resolution": [
+    1920,
+    1080
+  ],
+  "input_resolution": [
+    960,
+    544
+  ],
+  "padding_value": 114,
+  "frames": 2000,
+  "measured_frames": 1900,
+  "measured_seconds": 100.4751784240002,
+  "steady_fps": 18.91014308013563,
+  "all_frames_fps": 18.570315372958255,
+  "total_detections": 1184,
+  "total_displayed_tracks": 1174,
+  "rejected_degenerate_boxes": 0,
+  "first_result_from_python_entry_ms": 1073.4120590000202,
+  "initialization_to_models_ready_ms": 913.8479019998158,
+  "model_load_ms": 102.3665230000006,
+  "first_frame_read_to_result_ms": 159.33753500030434,
+  "first_visible_track_from_entry_ms": 56706.29200999974,
+  "first_visible_track_frame": 893,
+  "first_frame_stages": {
+    "decode_ms": 70.49015000029613,
+    "native_ms": [
+      4.691974,
+      42.365431,
+      0.356995
+    ],
+    "tracker_gmc_ms": 40.00529800032382
+  },
+  "stages_ms": {
+    "decode": {
+      "mean": 7.4831806578865665,
+      "p50": 7.334289999789689,
+      "p95": 7.9328540998858434,
+      "max": 14.197836999755964
+    },
+    "preprocess": {
+      "mean": 7.912352609473684,
+      "p50": 5.086301499999999,
+      "p95": 15.05768715,
+      "max": 15.522276
+    },
+    "npu_run": {
+      "mean": 43.563963728947364,
+      "p50": 43.229626499999995,
+      "p95": 48.3235557,
+      "max": 58.038205
+    },
+    "postprocess": {
+      "mean": 0.8487273031578947,
+      "p50": 0.5715125,
+      "p95": 1.7348226,
+      "max": 1.983596
+    },
+    "tracker_gmc": {
+      "mean": 45.20571788421708,
+      "p50": 43.26914650005165,
+      "p95": 55.76023315004477,
+      "max": 61.19982500013066
+    },
+    "frame_read_to_ordered_result": {
+      "mean": 317.3494885289457,
+      "p50": 304.3976095000289,
+      "p95": 373.66336025027067,
+      "max": 385.77435199977117
+    }
+  },
+  "hardware_before": {
+    "host": "orangepicm5",
+    "kernel": "6.1.99-rockchip-rk3588",
+    "/sys/class/devfreq/fdab0000.npu/cur_freq": "800000000",
+    "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+    "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+    "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+    "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+    "/sys/class/devfreq/dmc/governor": "performance",
+    "/sys/class/thermal/thermal_zone2/temp": "85000",
+    "/sys/class/thermal/thermal_zone0/temp": "84076",
+    "/sys/class/thermal/thermal_zone5/temp": "82230",
+    "/sys/class/thermal/thermal_zone3/temp": "84076",
+    "/sys/class/thermal/thermal_zone1/temp": "85000",
+    "/sys/class/thermal/thermal_zone6/temp": "82230",
+    "/sys/class/thermal/thermal_zone4/temp": "83153"
+  },
+  "hardware_after": {
+    "host": "orangepicm5",
+    "kernel": "6.1.99-rockchip-rk3588",
+    "/sys/class/devfreq/fdab0000.npu/cur_freq": "800000000",
+    "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+    "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+    "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+    "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+    "/sys/class/devfreq/dmc/governor": "performance",
+    "/sys/class/thermal/thermal_zone2/temp": "85888",
+    "/sys/class/thermal/thermal_zone0/temp": "84076",
+    "/sys/class/thermal/thermal_zone5/temp": "83153",
+    "/sys/class/thermal/thermal_zone3/temp": "84076",
+    "/sys/class/thermal/thermal_zone1/temp": "85888",
+    "/sys/class/thermal/thermal_zone6/temp": "83153",
+    "/sys/class/thermal/thermal_zone4/temp": "84076"
+  },
+  "timing_scope": "Includes CPU video decode, letterbox/BGR-to-RGB, native NPU inference/DFL/NMS, ordered association and real causal GMC unless detector-only. No rendering/encoding/network/camera exposure. Startup starts at Python script entry, includes imports/load, but not OS exec. Preload mode excludes decode and is NOT full-video tracking evidence."
+}

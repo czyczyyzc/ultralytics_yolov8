@@ -1,0 +1,49 @@
+{
+  "frames": 14201,
+  "metrics": {
+    "tp": 5283,
+    "fp": 2885,
+    "fn": 2699,
+    "frames_with_output": 8028,
+    "outputs": 8168,
+    "precision": 0.64679236043095,
+    "recall": 0.6618641944374843,
+    "f1": 0.6542414860681114
+  },
+  "detector_metrics": {
+    "tp": 5317,
+    "fp": 3539,
+    "fn": 2665,
+    "frames_with_output": 8311,
+    "outputs": 8856,
+    "precision": 0.6003839205058717,
+    "recall": 0.6661237785016286,
+    "f1": 0.6315476897493764
+  },
+  "identity_diagnostics": {
+    "all_matched_observation_id_changes": 13,
+    "continuous_gt_id_changes": 9,
+    "adjacent_tp_frame_id_changes": 1
+  },
+  "visible_ids": 46,
+  "maximum_visible_id": 314,
+  "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+  "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+  "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+  "args": {
+    "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+    "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+    "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+    "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_full_compact320",
+    "tracked": "runs/anti_uav/expanded28_dist_opt_20260920/full_compact320/observations.jsonl",
+    "upstream": null,
+    "video": null,
+    "gmc": "compact",
+    "width": 480,
+    "corners": 256,
+    "refresh": 1,
+    "resize_first": false
+  },
+  "replay_tracker_gmc_seconds": 0,
+  "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+}

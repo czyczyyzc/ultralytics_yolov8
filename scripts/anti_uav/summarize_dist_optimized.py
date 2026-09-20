@@ -43,11 +43,12 @@ def main():
             bit_exact_detector_frames=checked, identical_tracker_frames=identical_tracks if checked else None,
             npu_hz_samples=sorted({int(sample[npu_key]) for sample in samples}),
             maximum_soc_c=max(int(sample["/sys/class/thermal/thermal_zone0/temp"])/1000 for sample in samples),
+            npu_worker_frame_counts=report.get("npu_worker_frame_counts"),
             args=report["args"])
     result = dict(model_sha256=baseline["model_sha256"], baseline_fps=baseline["steady_fps"], runs=runs,
         quality={p.parent.name:read(p) for p in sorted(args.root.glob("quality_*/summary.json"))},
         scope="Measured live RKNN video processing; no rendering/encoding. Runs have different thermal histories, not a controlled isolated cooling experiment. GMC replay times are not board FPS. Video00009 is diagnostic/tuning data, not independent generalization evidence.")
-    startup = args.root / "startup_efficient/summary.json"
+    startup = args.root / "startup_final/summary.json"
     if startup.is_file():
         result["startup"] = read(startup)
     (args.root / "comparison.json").write_text(json.dumps(result,indent=2)+"\n")

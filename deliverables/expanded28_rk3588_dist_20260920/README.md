@@ -37,6 +37,11 @@ No boot service, kernel, network setting or thermal protection was changed.
 
 ## Measured Results
 
+These are the original unoptimized baseline measurements, not the current speed
+limit. The optimized deployment and new measurements are documented in
+`../expanded28_dist_opt_20260920/README.md`. The identical detector subsequently
+reached 86.82 FPS over 2,000 frames with big-core scheduling and one OpenCV thread.
+
 All rows include CPU video decoding, letterbox/color conversion, native RKNN
 inference and DFL/NMS. Tracking rows additionally include real, per-frame GMC and
 ordered association. Drawing, display, camera transport and encoding are excluded.
@@ -67,8 +72,8 @@ six-frame queue. This is distinct from first-frame latency and reciprocal FPS.
 The SoC reached approximately **85 C** (some CPU sensors approximately 87 C).
 NPU frequency was **800 MHz in 76 of 79 samples**, versus the configured maximum
 1 GHz. Big-core policy4 was mostly 1.608 GHz and sometimes fell to 408 MHz.
-The kernel reported fan PWM 255, but actual fan operation and heatsink contact
-were not physically verified. CPU/GMC cost and thermal throttling both limit this
+The kernel reported fan PWM 255; the user subsequently confirmed a heatsink is
+fitted but there is **no physical fan**. CPU/GMC cost and thermal throttling both limit this
 result; it is not comparable to the older detector/RK-BoT-SORT-only 85 FPS figure.
 
 The full INT8 run completed without dropped frames: 8,857 detections and 8,161

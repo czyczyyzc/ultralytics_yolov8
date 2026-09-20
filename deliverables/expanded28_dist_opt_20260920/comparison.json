@@ -1,0 +1,2202 @@
+{
+  "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+  "baseline_fps": 18.35740935489737,
+  "runs": {
+    "async_compact": {
+      "frames": 2000,
+      "fps": 50.82309999361549,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 8.473220731048059,
+          "p50": 8.46068999999261,
+          "p95": 9.474990749959034,
+          "max": 17.37491600033536
+        },
+        "preprocess": {
+          "mean": 5.05212263631579,
+          "p50": 5.054219,
+          "p95": 5.5302266,
+          "max": 8.438379
+        },
+        "npu": {
+          "mean": 41.76835545684211,
+          "p50": 40.2413985,
+          "p95": 50.400278899999996,
+          "max": 66.606664
+        },
+        "postprocess": {
+          "mean": 0.4731611036842105,
+          "p50": 0.467827,
+          "p95": 0.60171455,
+          "max": 0.736157
+        },
+        "gmc": {
+          "mean": 19.5652236079006,
+          "p50": 19.30834649965618,
+          "p95": 22.574485050290605,
+          "max": 32.03241299979709
+        },
+        "association": {
+          "mean": 1.2942584636910301,
+          "p50": 1.677496999491268,
+          "p95": 2.2368036995430884,
+          "max": 3.265160999944783
+        },
+        "ordered_latency": {
+          "mean": 78.41738156843205,
+          "p50": 77.93089650022011,
+          "p95": 85.97157844978938,
+          "max": 99.48664900002768
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 701.4494650002234,
+        "frame_read_ms": 121.46816499989654,
+        "decode_ms": 59.96142699950724,
+        "npu_ms": [
+          4.371437,
+          53.393271,
+          0.407453
+        ],
+        "gmc_ms": 35.8728159999373,
+        "association_ms": 0.5302420004227315
+      },
+      "bit_exact_detector_frames": 2000,
+      "identical_tracker_frames": 2000,
+      "npu_hz_samples": [
+        800000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "../expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "libanti_uav_detector.so",
+        "upstream": "../expanded28_dist_20260920/Dist-Tracker",
+        "video": "../expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "async_compact",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "inflight": 4,
+        "frames": 2000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 480,
+        "gmc_corners": 256,
+        "gmc_refresh": 1,
+        "save_observations": true
+      }
+    },
+    "async_public": {
+      "frames": 2000,
+      "fps": 24.843750169370516,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 7.529500790535741,
+          "p50": 8.238589499796944,
+          "p95": 9.26174105006794,
+          "max": 11.495875999571581
+        },
+        "preprocess": {
+          "mean": 4.2826481568421055,
+          "p50": 4.628683499999999,
+          "p95": 5.1033055,
+          "max": 6.069496
+        },
+        "npu": {
+          "mean": 35.1293123431579,
+          "p50": 37.1023815,
+          "p95": 44.702784199999996,
+          "max": 51.687255
+        },
+        "postprocess": {
+          "mean": 0.3909744431578947,
+          "p50": 0.38368199999999997,
+          "p95": 0.57925655,
+          "max": 0.839405
+        },
+        "gmc": {
+          "mean": 40.18957997843341,
+          "p50": 40.241107500150974,
+          "p95": 51.091318900171245,
+          "max": 59.35535200023878
+        },
+        "association": {
+          "mean": 1.0338643647369998,
+          "p50": 1.5062904999467719,
+          "p95": 1.7666000003373483,
+          "max": 2.179884999350179
+        },
+        "ordered_latency": {
+          "mean": 160.8354581252771,
+          "p50": 161.26863199997388,
+          "p95": 198.28399819994047,
+          "max": 220.84302300027048
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 666.7342580003606,
+        "frame_read_ms": 107.53828199995041,
+        "decode_ms": 57.87691499972425,
+        "npu_ms": [
+          4.563059,
+          29.087206,
+          0.312662
+        ],
+        "gmc_ms": 37.66704000008758,
+        "association_ms": 0.3581609998946078
+      },
+      "bit_exact_detector_frames": 2000,
+      "identical_tracker_frames": 2000,
+      "npu_hz_samples": [
+        800000000,
+        1000000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "../expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "libanti_uav_detector.so",
+        "upstream": "../expanded28_dist_20260920/Dist-Tracker",
+        "video": "../expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "async_public",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "inflight": 4,
+        "frames": 2000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "public",
+        "gmc_width": 480,
+        "gmc_corners": 256,
+        "gmc_refresh": 1,
+        "save_observations": true
+      }
+    },
+    "fast_pinned_cached": {
+      "frames": 1000,
+      "fps": 56.26070402089415,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 11.174879267790756,
+          "p50": 10.467328499998985,
+          "p95": 16.02682280004046,
+          "max": 38.05582599943591
+        },
+        "preprocess": {
+          "mean": 6.2510158,
+          "p50": 6.093704,
+          "p95": 7.247228649999999,
+          "max": 22.314511
+        },
+        "npu": {
+          "mean": 42.21304182111111,
+          "p50": 39.9059865,
+          "p95": 56.4835711,
+          "max": 75.674159
+        },
+        "postprocess": {
+          "mean": 0.5479265111111111,
+          "p50": 0.5274715,
+          "p95": 0.74349175,
+          "max": 1.875973
+        },
+        "gmc": {
+          "mean": 8.714530451100776,
+          "p50": 8.045654999932594,
+          "p95": 13.18798530028289,
+          "max": 21.685394999622076
+        },
+        "association": {
+          "mean": 0.775643291115355,
+          "p50": 0.4964099998687743,
+          "p95": 2.689770299684824,
+          "max": 10.242309999739518
+        },
+        "ordered_latency": {
+          "mean": 68.01247731112299,
+          "p50": 65.03591599994252,
+          "p95": 89.81641890031824,
+          "max": 129.3791339994641
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 727.2825099998954,
+        "frame_read_ms": 109.90278999997827,
+        "decode_ms": 65.26064199988468,
+        "npu_ms": [
+          7.881302,
+          34.554418,
+          0.488826
+        ],
+        "gmc_ms": 5.89916499939136,
+        "association_ms": 0.47424300009879516
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 1000,
+      "npu_hz_samples": [
+        800000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "fast_pinned_cached",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "inflight": 4,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "fast_pinned_native": {
+      "frames": 1000,
+      "fps": 50.72375011232412,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 11.642459872231889,
+          "p50": 10.650346499915031,
+          "p95": 18.17188385011832,
+          "max": 41.10019900053885
+        },
+        "preprocess": {
+          "mean": 7.4878130533333325,
+          "p50": 5.9821425,
+          "p95": 15.08542335,
+          "max": 38.189699
+        },
+        "npu": {
+          "mean": 43.786114544444445,
+          "p50": 40.16615,
+          "p95": 61.41890784999998,
+          "max": 95.664704
+        },
+        "postprocess": {
+          "mean": 0.7484791244444444,
+          "p50": 0.5656795,
+          "p95": 1.61031175,
+          "max": 1.948014
+        },
+        "gmc": {
+          "mean": 9.618318207759431,
+          "p50": 8.606229999713833,
+          "p95": 17.059030400378102,
+          "max": 30.81997200024489
+        },
+        "association": {
+          "mean": 0.8564583822185846,
+          "p50": 0.509971999690606,
+          "p95": 2.7410732995121974,
+          "max": 12.084449999747449
+        },
+        "ordered_latency": {
+          "mean": 74.28354098555549,
+          "p50": 69.34143750004296,
+          "p95": 109.73991025075519,
+          "max": 149.3253470007403
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 996.1433810003655,
+        "frame_read_ms": 116.44157000046107,
+        "decode_ms": 69.0922120002142,
+        "npu_ms": [
+          5.353172,
+          39.544763,
+          0.574284
+        ],
+        "gmc_ms": 8.373337000193715,
+        "association_ms": 0.6638240001848317
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 1000,
+      "npu_hz_samples": [
+        800000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "fast_pinned_native",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "native",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "inflight": 4,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "fast_shared_cached": {
+      "frames": 1000,
+      "fps": 48.534211154394875,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 11.054214287793608,
+          "p50": 10.071979999793257,
+          "p95": 17.845338149572854,
+          "max": 30.325312999593734
+        },
+        "preprocess": {
+          "mean": 9.57785749111111,
+          "p50": 7.1194805,
+          "p95": 15.7318932,
+          "max": 23.215457
+        },
+        "npu": {
+          "mean": 47.78261552222223,
+          "p50": 46.913615,
+          "p95": 59.09025969999999,
+          "max": 71.319638
+        },
+        "postprocess": {
+          "mean": 0.9378678566666667,
+          "p50": 0.620366,
+          "p95": 1.7602851,
+          "max": 17.827868
+        },
+        "gmc": {
+          "mean": 8.695176049988934,
+          "p50": 7.6829725003335625,
+          "p95": 15.223190699680343,
+          "max": 41.83052200005477
+        },
+        "association": {
+          "mean": 1.027523288876182,
+          "p50": 0.5206174996601476,
+          "p95": 4.884865349322349,
+          "max": 16.322889000548457
+        },
+        "ordered_latency": {
+          "mean": 79.88101155223173,
+          "p50": 78.41097350001291,
+          "p95": 104.8054053002943,
+          "max": 130.07591499990667
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 1002.9277419998834,
+        "frame_read_ms": 121.20704399967508,
+        "decode_ms": 66.34504300018307,
+        "npu_ms": [
+          6.909192,
+          42.365139,
+          0.446535
+        ],
+        "gmc_ms": 11.406918000830046,
+        "association_ms": 0.817238000308862
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 1000,
+      "npu_hz_samples": [
+        800000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "fast_shared_cached",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "shared",
+        "inflight": 4,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "fast_shared_native": {
+      "frames": 1000,
+      "fps": 47.081649362935465,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 10.819553065593936,
+          "p50": 9.312928000326792,
+          "p95": 19.48981929990623,
+          "max": 42.25197399955505
+        },
+        "preprocess": {
+          "mean": 10.317825238888888,
+          "p50": 10.424891500000001,
+          "p95": 15.341327999999999,
+          "max": 27.924931
+        },
+        "npu": {
+          "mean": 48.25182327222222,
+          "p50": 47.093862,
+          "p95": 60.25775655,
+          "max": 74.09889
+        },
+        "postprocess": {
+          "mean": 1.07198104,
+          "p50": 1.05436,
+          "p95": 1.7620201499999997,
+          "max": 17.332333
+        },
+        "gmc": {
+          "mean": 8.773041532232229,
+          "p50": 7.485662499675527,
+          "p95": 18.463838349953214,
+          "max": 31.884248000096704
+        },
+        "association": {
+          "mean": 1.0357229199982814,
+          "p50": 0.6117620000622992,
+          "p95": 3.444796150415639,
+          "max": 12.141324999902281
+        },
+        "ordered_latency": {
+          "mean": 82.30007784889898,
+          "p50": 80.48746449958344,
+          "p95": 108.3502265502375,
+          "max": 130.95819499994832
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 998.7575519999154,
+        "frame_read_ms": 116.26599000010174,
+        "decode_ms": 66.57370599987189,
+        "npu_ms": [
+          8.130966,
+          38.642942,
+          0.494076
+        ],
+        "gmc_ms": 15.278445999683754,
+        "association_ms": 0.4672439999922062
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 1000,
+      "npu_hz_samples": [
+        800000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "fast_shared_native",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "native",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "shared",
+        "inflight": 4,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "final_ready9": {
+      "frames": 14201,
+      "fps": 57.59362552693353,
+      "last_2201_fps": 53.731255185266754,
+      "stages_ms": {
+        "decode": {
+          "mean": 11.148802038508206,
+          "p50": 9.623403000659891,
+          "p95": 19.345095999597106,
+          "max": 54.98041499959072
+        },
+        "preprocess": {
+          "mean": 5.249857677682434,
+          "p50": 5.356089,
+          "p95": 6.14737,
+          "max": 20.826158
+        },
+        "npu": {
+          "mean": 40.93271162711865,
+          "p50": 39.159477,
+          "p95": 56.218231,
+          "max": 119.556234
+        },
+        "postprocess": {
+          "mean": 0.4304108365364158,
+          "p50": 0.415911,
+          "p95": 0.593533,
+          "max": 1.651976
+        },
+        "gmc": {
+          "mean": 8.150188527692263,
+          "p50": 7.316352999623632,
+          "p95": 14.539664999574597,
+          "max": 42.15426700011449
+        },
+        "association": {
+          "mean": 2.273150905181308,
+          "p50": 1.7208079998454195,
+          "p95": 8.532001999810745,
+          "max": 32.8554850002547
+        },
+        "ordered_latency": {
+          "mean": 70.07038811921204,
+          "p50": 69.07471200065629,
+          "p95": 94.26122400054737,
+          "max": 147.71216099961748
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 653.8389850002204,
+        "frame_read_ms": 96.72373000012158,
+        "decode_ms": 57.262674999947194,
+        "npu_ms": [
+          8.884913,
+          27.283565,
+          0.322287
+        ],
+        "gmc_ms": 3.188454000337515,
+        "association_ms": 0.30916200012143236
+      },
+      "bit_exact_detector_frames": 14201,
+      "identical_tracker_frames": 9942,
+      "npu_hz_samples": [
+        800000000,
+        1000000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": [
+        4731,
+        4728,
+        4742
+      ],
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "final_ready9",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "dispatch": "ready",
+        "inflight": 9,
+        "frames": 0,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "full_compact320": {
+      "frames": 14201,
+      "fps": 40.92404671339394,
+      "last_2201_fps": 37.18328550377913,
+      "stages_ms": {
+        "decode": {
+          "mean": 20.07100892958154,
+          "p50": 16.583926999373944,
+          "p95": 43.271917999845755,
+          "max": 142.7226919995519
+        },
+        "preprocess": {
+          "mean": 7.761865354868449,
+          "p50": 5.962455,
+          "p95": 15.591983,
+          "max": 51.971625
+        },
+        "npu": {
+          "mean": 43.88863602737395,
+          "p50": 39.505097,
+          "p95": 64.23924,
+          "max": 106.163385
+        },
+        "postprocess": {
+          "mean": 0.7251764185518758,
+          "p50": 0.537534,
+          "p95": 1.625143,
+          "max": 3.042914
+        },
+        "gmc": {
+          "mean": 16.0182813795456,
+          "p50": 13.685678000001644,
+          "p95": 31.60046099947067,
+          "max": 73.06436299950292
+        },
+        "association": {
+          "mean": 2.07899208502306,
+          "p50": 1.7610579998290632,
+          "p95": 4.892637999546423,
+          "max": 35.615777999737475
+        },
+        "ordered_latency": {
+          "mean": 81.39659248797746,
+          "p50": 78.71532299941464,
+          "p95": 112.93666300025507,
+          "max": 201.03418399958173
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 704.3137159998878,
+        "frame_read_ms": 116.30148899985215,
+        "decode_ms": 63.314586999695166,
+        "npu_ms": [
+          10.261852,
+          33.869887,
+          0.458201
+        ],
+        "gmc_ms": 11.732706000657345,
+        "association_ms": 0.4908680002699839
+      },
+      "bit_exact_detector_frames": 14201,
+      "identical_tracker_frames": 9942,
+      "npu_hz_samples": [
+        800000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "full_compact320",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "inflight": 4,
+        "frames": 0,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "save_observations": true
+      }
+    },
+    "full_compact480": {
+      "frames": 14201,
+      "fps": 46.946537592116066,
+      "last_2201_fps": 38.517202616671156,
+      "stages_ms": {
+        "decode": {
+          "mean": 8.067544553858081,
+          "p50": 8.255797999481729,
+          "p95": 9.980106000512023,
+          "max": 45.75513100007811
+        },
+        "preprocess": {
+          "mean": 4.7078188535564855,
+          "p50": 4.904596,
+          "p95": 5.563753,
+          "max": 20.047127
+        },
+        "npu": {
+          "mean": 40.066596214807454,
+          "p50": 39.165602,
+          "p95": 55.386409,
+          "max": 76.361023
+        },
+        "postprocess": {
+          "mean": 0.4390566632153748,
+          "p50": 0.442161,
+          "p95": 0.584491,
+          "max": 1.266982
+        },
+        "gmc": {
+          "mean": 21.171973936817164,
+          "p50": 21.284651000314625,
+          "p95": 29.9344850000125,
+          "max": 54.820000999825425
+        },
+        "association": {
+          "mean": 1.3404875466371735,
+          "p50": 1.278648000152316,
+          "p95": 2.2481340001831995,
+          "max": 9.984772000279918
+        },
+        "ordered_latency": {
+          "mean": 84.81327740160401,
+          "p50": 87.51740400020935,
+          "p95": 112.8436220005824,
+          "max": 171.40127800030314
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 659.5984440000393,
+        "frame_read_ms": 110.66840400053479,
+        "decode_ms": 55.97644299996318,
+        "npu_ms": [
+          4.092316,
+          49.152708,
+          0.312954
+        ],
+        "gmc_ms": 28.421923000678362,
+        "association_ms": 0.34707900067587616
+      },
+      "bit_exact_detector_frames": 14201,
+      "identical_tracker_frames": 9871,
+      "npu_hz_samples": [
+        800000000,
+        1000000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "../expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "libanti_uav_detector.so",
+        "upstream": "../expanded28_dist_20260920/Dist-Tracker",
+        "video": "../expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "full_compact480",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "inflight": 4,
+        "frames": 0,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 480,
+        "gmc_corners": 256,
+        "gmc_refresh": 1,
+        "save_observations": true
+      }
+    },
+    "full_detector_optimized": {
+      "frames": 14201,
+      "fps": 64.61664037356562,
+      "last_2201_fps": 60.27347442879868,
+      "stages_ms": {
+        "decode": {
+          "mean": 9.335516957026124,
+          "p50": 8.338921000358823,
+          "p95": 16.970380000202567,
+          "max": 76.67864399991231
+        },
+        "preprocess": {
+          "mean": 5.069337034891142,
+          "p50": 5.233591,
+          "p95": 5.813124,
+          "max": 22.665382
+        },
+        "npu": {
+          "mean": 38.073769861357356,
+          "p50": 38.559819,
+          "p95": 47.907018,
+          "max": 70.963227
+        },
+        "postprocess": {
+          "mean": 0.42136848762499113,
+          "p50": 0.404244,
+          "p95": 0.592366,
+          "max": 0.79653
+        },
+        "gmc": {
+          "mean": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "max": 0.0
+        },
+        "association": {
+          "mean": 0.0023919192959292444,
+          "p50": 0.0023330003386945464,
+          "p95": 0.00437400012742728,
+          "max": 0.025082999854930677
+        },
+        "ordered_latency": {
+          "mean": 59.23220211552051,
+          "p50": 57.687335000082385,
+          "p95": 77.61692200074322,
+          "max": 129.40159199933987
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 568.6589639999511,
+        "frame_read_ms": 107.11216299932858,
+        "decode_ms": 58.956649999345245,
+        "npu_ms": [
+          7.778346,
+          38.823773,
+          0.332203
+        ],
+        "gmc_ms": 0.0,
+        "association_ms": 0.0008749993867240846
+      },
+      "bit_exact_detector_frames": 14201,
+      "identical_tracker_frames": 6169,
+      "npu_hz_samples": [
+        800000000,
+        1000000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": [
+        4734,
+        4734,
+        4733
+      ],
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "full_detector_optimized",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "dispatch": "round-robin",
+        "inflight": 4,
+        "frames": 0,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": true,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "full_efficient": {
+      "frames": 14201,
+      "fps": 45.937096787262206,
+      "last_2201_fps": 38.87753716450029,
+      "stages_ms": {
+        "decode": {
+          "mean": 16.559050491311943,
+          "p50": 12.210157000481558,
+          "p95": 39.49663900039013,
+          "max": 115.47004299973196
+        },
+        "preprocess": {
+          "mean": 7.2982649148996535,
+          "p50": 5.66496,
+          "p95": 15.550276,
+          "max": 54.569754
+        },
+        "npu": {
+          "mean": 42.075268536983195,
+          "p50": 39.270309,
+          "p95": 61.32349,
+          "max": 103.868877
+        },
+        "postprocess": {
+          "mean": 0.6747115114530885,
+          "p50": 0.506326,
+          "p95": 1.621352,
+          "max": 6.852026
+        },
+        "gmc": {
+          "mean": 9.347263545995531,
+          "p50": 7.89442799941753,
+          "p95": 20.99240500047017,
+          "max": 63.31525400037208
+        },
+        "association": {
+          "mean": 1.803089652221353,
+          "p50": 1.5854769999350538,
+          "p95": 4.517268000199692,
+          "max": 33.18477199991321
+        },
+        "ordered_latency": {
+          "mean": 74.88421824048076,
+          "p50": 73.07923799999116,
+          "p95": 108.20210600013525,
+          "max": 171.78393900030642
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 649.1843450003216,
+        "frame_read_ms": 99.92822599997453,
+        "decode_ms": 57.159133999448386,
+        "npu_ms": [
+          6.835985,
+          33.846845,
+          0.30012
+        ],
+        "gmc_ms": 4.513476999818522,
+        "association_ms": 0.26862100003199885
+      },
+      "bit_exact_detector_frames": 14201,
+      "identical_tracker_frames": 9942,
+      "npu_hz_samples": [
+        800000000,
+        1000000000
+      ],
+      "maximum_soc_c": 85.0,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "full_efficient",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "inflight": 4,
+        "frames": 0,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "model_parallel_1": {
+      "frames": 1000,
+      "fps": 33.042041242511736,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 5.534234914425219,
+          "p50": 5.533128999559267,
+          "p95": 5.575157150587984,
+          "max": 7.3125609997077845
+        },
+        "preprocess": {
+          "mean": 3.2557441122222226,
+          "p50": 3.2564115,
+          "p95": 3.2850231500000002,
+          "max": 3.439284
+        },
+        "npu": {
+          "mean": 26.514770762222224,
+          "p50": 26.597283,
+          "p95": 26.63404755,
+          "max": 29.722738
+        },
+        "postprocess": {
+          "mean": 0.2922438377777778,
+          "p50": 0.286413,
+          "p95": 0.33809434999999993,
+          "max": 0.366912
+        },
+        "gmc": {
+          "mean": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "max": 0.0
+        },
+        "association": {
+          "mean": 0.0007375722149542222,
+          "p50": 0.0008749993867240846,
+          "p95": 0.0011669999366858974,
+          "max": 0.0014590004866477102
+        },
+        "ordered_latency": {
+          "mean": 120.97425196109523,
+          "p50": 121.21112649992938,
+          "p95": 121.53406954985257,
+          "max": 122.18644600034168
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 545.4362159998709,
+        "frame_read_ms": 110.08507899987308,
+        "decode_ms": 56.413645000247925,
+        "npu_ms": [
+          4.318646,
+          39.907882,
+          0.287288
+        ],
+        "gmc_ms": 0.0,
+        "association_ms": 0.0008749993867240846
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 893,
+      "npu_hz_samples": [
+        1000000000
+      ],
+      "maximum_soc_c": 73.923,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "../expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "libanti_uav_detector.so",
+        "upstream": "../expanded28_dist_20260920/Dist-Tracker",
+        "video": "../expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "model_parallel_1",
+        "workers": 1,
+        "core_mode": "all",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "inflight": 4,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": true,
+        "gmc": "public",
+        "gmc_width": 480,
+        "gmc_corners": 256,
+        "gmc_refresh": 1,
+        "save_observations": true
+      }
+    },
+    "model_parallel_3": {
+      "frames": 1000,
+      "fps": 38.474049724318846,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 5.777388374430706,
+          "p50": 5.7540630000403326,
+          "p95": 5.854861150282886,
+          "max": 8.731206999982533
+        },
+        "preprocess": {
+          "mean": 3.4803887011111114,
+          "p50": 3.478075,
+          "p95": 3.57521355,
+          "max": 3.68603
+        },
+        "npu": {
+          "mean": 73.88402498444445,
+          "p50": 74.14686800000001,
+          "p95": 77.00482535,
+          "max": 84.21491
+        },
+        "postprocess": {
+          "mean": 0.30560327444444446,
+          "p50": 0.29734950000000004,
+          "p95": 0.35903605,
+          "max": 0.402786
+        },
+        "gmc": {
+          "mean": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "max": 0.0
+        },
+        "association": {
+          "mean": 0.0012463877768216964,
+          "p50": 0.0011669999366858974,
+          "p95": 0.0020409997887327336,
+          "max": 0.0035000002753804438
+        },
+        "ordered_latency": {
+          "mean": 103.84326880444253,
+          "p50": 104.20618450007169,
+          "p95": 118.86633564986369,
+          "max": 124.57661999997072
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 567.946433000543,
+        "frame_read_ms": 105.91109699998924,
+        "decode_ms": 56.64230799993675,
+        "npu_ms": [
+          4.513476,
+          41.950104,
+          0.314703
+        ],
+        "gmc_ms": 0.0,
+        "association_ms": 0.0011669999366858974
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 893,
+      "npu_hz_samples": [
+        1000000000
+      ],
+      "maximum_soc_c": 78.538,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "../expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "libanti_uav_detector.so",
+        "upstream": "../expanded28_dist_20260920/Dist-Tracker",
+        "video": "../expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "model_parallel_3",
+        "workers": 3,
+        "core_mode": "all",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "inflight": 4,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": true,
+        "gmc": "public",
+        "gmc_width": 480,
+        "gmc_corners": 256,
+        "gmc_refresh": 1,
+        "save_observations": true
+      }
+    },
+    "opt_detector_shared": {
+      "frames": 2000,
+      "fps": 86.8153283603991,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 6.357346845260939,
+          "p50": 6.2700135003979085,
+          "p95": 6.953699699897697,
+          "max": 12.449611999727495
+        },
+        "preprocess": {
+          "mean": 3.666494452105263,
+          "p50": 3.675676,
+          "p95": 3.80507175,
+          "max": 6.979191
+        },
+        "npu": {
+          "mean": 29.788128349473684,
+          "p50": 29.608552,
+          "p95": 32.8151332,
+          "max": 42.080768
+        },
+        "postprocess": {
+          "mean": 0.33544607421052625,
+          "p50": 0.328995,
+          "p95": 0.42759159999999996,
+          "max": 0.514784
+        },
+        "gmc": {
+          "mean": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "max": 0.0
+        },
+        "association": {
+          "mean": 0.001636080523894634,
+          "p50": 0.00145800004247576,
+          "p95": 0.0035000002753804438,
+          "max": 0.008750000233703759
+        },
+        "ordered_latency": {
+          "mean": 45.50951443736267,
+          "p50": 42.76777899985973,
+          "p95": 56.06525349990079,
+          "max": 71.90500399974553
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 555.3743219998069,
+        "frame_read_ms": 98.96807199947943,
+        "decode_ms": 56.40051999944262,
+        "npu_ms": [
+          4.468561,
+          27.686059,
+          0.309162
+        ],
+        "gmc_ms": 0.0,
+        "association_ms": 0.0011659994925139472
+      },
+      "bit_exact_detector_frames": 2000,
+      "identical_tracker_frames": 893,
+      "npu_hz_samples": [
+        1000000000
+      ],
+      "maximum_soc_c": 83.153,
+      "npu_worker_frame_counts": null,
+      "args": {
+        "model": "../expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "libanti_uav_detector.so",
+        "upstream": "../expanded28_dist_20260920/Dist-Tracker",
+        "video": "../expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "opt_detector_shared",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "inflight": 4,
+        "frames": 2000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": true,
+        "gmc": "public",
+        "gmc_width": 480,
+        "gmc_corners": 256,
+        "gmc_refresh": 1,
+        "save_observations": true
+      }
+    },
+    "queue6": {
+      "frames": 1000,
+      "fps": 60.27364724467565,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 10.19157558667252,
+          "p50": 9.108034999826486,
+          "p95": 15.007550300242654,
+          "max": 35.49007200035703
+        },
+        "preprocess": {
+          "mean": 5.735481987777779,
+          "p50": 5.508337,
+          "p95": 7.212973699999999,
+          "max": 19.521843
+        },
+        "npu": {
+          "mean": 42.30708286555555,
+          "p50": 40.054880999999995,
+          "p95": 55.872042449999995,
+          "max": 80.294676
+        },
+        "postprocess": {
+          "mean": 0.4715896866666667,
+          "p50": 0.442743,
+          "p95": 0.6640271999999998,
+          "max": 1.632727
+        },
+        "gmc": {
+          "mean": 7.635266574442438,
+          "p50": 6.864276000214886,
+          "p95": 12.247854500537864,
+          "max": 24.55885400013358
+        },
+        "association": {
+          "mean": 0.6059611644539271,
+          "p50": 0.4379315000733186,
+          "p95": 2.1341529507026267,
+          "max": 6.893441999636707
+        },
+        "ordered_latency": {
+          "mean": 92.08126328335412,
+          "p50": 91.0822489995553,
+          "p95": 113.12068655033725,
+          "max": 136.19120299972565
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 765.5835400000797,
+        "frame_read_ms": 118.86061899986089,
+        "decode_ms": 63.89216200022929,
+        "npu_ms": [
+          7.204062,
+          42.650968,
+          0.509243
+        ],
+        "gmc_ms": 5.344422999769449,
+        "association_ms": 0.5115759995533153
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 1000,
+      "npu_hz_samples": [
+        800000000
+      ],
+      "maximum_soc_c": 84.076,
+      "npu_worker_frame_counts": [
+        334,
+        333,
+        333
+      ],
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "queue6",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "dispatch": "round-robin",
+        "inflight": 6,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "queue9": {
+      "frames": 1000,
+      "fps": 71.18501529415471,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 8.190527185565266,
+          "p50": 7.928115000140679,
+          "p95": 11.920113399673935,
+          "max": 19.761299000492727
+        },
+        "preprocess": {
+          "mean": 4.818775116666667,
+          "p50": 4.8726585,
+          "p95": 6.097539749999999,
+          "max": 18.745146
+        },
+        "npu": {
+          "mean": 36.16795723777778,
+          "p50": 35.1645755,
+          "p95": 47.6076547,
+          "max": 78.227955
+        },
+        "postprocess": {
+          "mean": 0.3859203277777778,
+          "p50": 0.362828,
+          "p95": 0.5477124999999997,
+          "max": 0.709615
+        },
+        "gmc": {
+          "mean": 6.079977014450277,
+          "p50": 5.673856499925023,
+          "p95": 8.942050499899779,
+          "max": 16.25289099956717
+        },
+        "association": {
+          "mean": 0.5128920055489693,
+          "p50": 0.28320400042503024,
+          "p95": 2.171863849798683,
+          "max": 6.618112000069232
+        },
+        "ordered_latency": {
+          "mean": 119.58061893334263,
+          "p50": 119.11888650047331,
+          "p95": 139.4458715496512,
+          "max": 158.782335000069
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 672.0308479998494,
+        "frame_read_ms": 111.3570190000246,
+        "decode_ms": 57.70133499936492,
+        "npu_ms": [
+          17.687578,
+          29.213495,
+          0.305371
+        ],
+        "gmc_ms": 10.4943070000445,
+        "association_ms": 0.33045400050468743
+      },
+      "bit_exact_detector_frames": 1000,
+      "identical_tracker_frames": 1000,
+      "npu_hz_samples": [
+        1000000000
+      ],
+      "maximum_soc_c": 81.307,
+      "npu_worker_frame_counts": [
+        334,
+        333,
+        333
+      ],
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "queue9",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "dispatch": "round-robin",
+        "inflight": 9,
+        "frames": 1000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "ready_four_cpus": {
+      "frames": 2000,
+      "fps": 63.161477334920775,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 10.402311202108793,
+          "p50": 9.675901999798953,
+          "p95": 14.529238900104247,
+          "max": 29.152538000744244
+        },
+        "preprocess": {
+          "mean": 5.640856326842106,
+          "p50": 5.6000654999999995,
+          "p95": 6.372533299999999,
+          "max": 17.59133
+        },
+        "npu": {
+          "mean": 37.669200591052636,
+          "p50": 36.400787,
+          "p95": 47.515562649999985,
+          "max": 62.420724
+        },
+        "postprocess": {
+          "mean": 0.4678178368421053,
+          "p50": 0.450327,
+          "p95": 0.628824,
+          "max": 0.953445
+        },
+        "gmc": {
+          "mean": 8.179093077891306,
+          "p50": 7.269102999998722,
+          "p95": 13.976479600250968,
+          "max": 29.930693000096653
+        },
+        "association": {
+          "mean": 2.306077560533595,
+          "p50": 1.9319725001878396,
+          "p95": 8.795256650137162,
+          "max": 21.38819199990394
+        },
+        "ordered_latency": {
+          "mean": 64.41343987475001,
+          "p50": 63.04181999985303,
+          "p95": 80.70457764983985,
+          "max": 110.15070299981744
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 691.144071999588,
+        "frame_read_ms": 109.60937699928763,
+        "decode_ms": 60.8559559996138,
+        "npu_ms": [
+          7.566307,
+          35.503488,
+          0.511285
+        ],
+        "gmc_ms": 11.571416999686335,
+        "association_ms": 0.5410339999798452
+      },
+      "bit_exact_detector_frames": 2000,
+      "identical_tracker_frames": 2000,
+      "npu_hz_samples": [
+        1000000000
+      ],
+      "maximum_soc_c": 84.076,
+      "npu_worker_frame_counts": [
+        663,
+        659,
+        678
+      ],
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "ready_four_cpus",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5,6,7",
+        "worker_affinity": "pinned",
+        "dispatch": "ready",
+        "inflight": 6,
+        "frames": 2000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    },
+    "ready_two_cpus": {
+      "frames": 2000,
+      "fps": 47.630436715413616,
+      "last_2201_fps": null,
+      "stages_ms": {
+        "decode": {
+          "mean": 16.67616110631762,
+          "p50": 13.701865000257385,
+          "p95": 37.32299455000429,
+          "max": 97.12855699945067
+        },
+        "preprocess": {
+          "mean": 4.368573591052631,
+          "p50": 4.259876500000001,
+          "p95": 4.8795276,
+          "max": 13.449431
+        },
+        "npu": {
+          "mean": 45.93571862368422,
+          "p50": 46.132835,
+          "p95": 57.093408149999995,
+          "max": 89.172005
+        },
+        "postprocess": {
+          "mean": 0.3784690205263158,
+          "p50": 0.370411,
+          "p95": 0.45238355,
+          "max": 1.554269
+        },
+        "gmc": {
+          "mean": 5.744592411033648,
+          "p50": 5.118821999985812,
+          "p95": 8.986411650357695,
+          "max": 24.74172699930932
+        },
+        "association": {
+          "mean": 1.2551526668396131,
+          "p50": 1.4072714998292213,
+          "p95": 2.096323849809777,
+          "max": 25.547298000674346
+        },
+        "ordered_latency": {
+          "mean": 76.26878899421172,
+          "p50": 74.97139799988872,
+          "p95": 98.52766194981086,
+          "max": 143.44426399929944
+        }
+      },
+      "first_result": {
+        "process_entry_ms": 682.4604060002457,
+        "frame_read_ms": 118.48845799977425,
+        "decode_ms": 56.917345999863755,
+        "npu_ms": [
+          15.264738,
+          34.715708,
+          0.294288
+        ],
+        "gmc_ms": 4.132273000323039,
+        "association_ms": 0.28816299982281635
+      },
+      "bit_exact_detector_frames": 2000,
+      "identical_tracker_frames": 2000,
+      "npu_hz_samples": [
+        1000000000
+      ],
+      "maximum_soc_c": 84.076,
+      "npu_worker_frame_counts": [
+        659,
+        682,
+        659
+      ],
+      "args": {
+        "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+        "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+        "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+        "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+        "output": "ready_two_cpus",
+        "workers": 3,
+        "core_mode": "split",
+        "contexts": "shared",
+        "preprocess": "cached",
+        "cpus": "4,5",
+        "worker_affinity": "pinned",
+        "dispatch": "ready",
+        "inflight": 6,
+        "frames": 2000,
+        "warmup": 100,
+        "conf": 0.03,
+        "iou": 0.45,
+        "detector_only": false,
+        "gmc": "compact",
+        "gmc_width": 320,
+        "gmc_corners": 128,
+        "gmc_refresh": 5,
+        "gmc_resize_first": true,
+        "save_observations": true
+      }
+    }
+  },
+  "quality": {
+    "quality_compact320_replay": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5284,
+        "fp": 2856,
+        "fn": 2698,
+        "frames_with_output": 8014,
+        "outputs": 8140,
+        "precision": 0.6491400491400492,
+        "recall": 0.6619894763217239,
+        "f1": 0.6555017987842701
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 11,
+        "continuous_gt_id_changes": 7,
+        "adjacent_tp_frame_id_changes": 1
+      },
+      "visible_ids": 49,
+      "maximum_visible_id": 332,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_compact320_replay",
+        "tracked": null,
+        "upstream": "/mnt/chenziye/codes/Dist-Tracker",
+        "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_stationary_video00009_90af30d9.mp4",
+        "gmc": "compact",
+        "width": 320,
+        "corners": 128,
+        "refresh": 5
+      },
+      "replay_tracker_gmc_seconds": 28.155739959329367,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_compact320_resize_replay": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5284,
+        "fp": 2856,
+        "fn": 2698,
+        "frames_with_output": 8014,
+        "outputs": 8140,
+        "precision": 0.6491400491400492,
+        "recall": 0.6619894763217239,
+        "f1": 0.6555017987842701
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 11,
+        "continuous_gt_id_changes": 7,
+        "adjacent_tp_frame_id_changes": 1
+      },
+      "visible_ids": 49,
+      "maximum_visible_id": 332,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_compact320_resize_replay",
+        "tracked": null,
+        "upstream": "/mnt/chenziye/codes/Dist-Tracker",
+        "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_stationary_video00009_90af30d9.mp4",
+        "gmc": "compact",
+        "width": 320,
+        "corners": 128,
+        "refresh": 5,
+        "resize_first": true
+      },
+      "replay_tracker_gmc_seconds": 23.506410736590624,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_compact480_refresh5_replay": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5287,
+        "fp": 2860,
+        "fn": 2695,
+        "frames_with_output": 8021,
+        "outputs": 8147,
+        "precision": 0.6489505339388733,
+        "recall": 0.6623653219744425,
+        "f1": 0.6555893111786224
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 13,
+        "continuous_gt_id_changes": 9,
+        "adjacent_tp_frame_id_changes": 3
+      },
+      "visible_ids": 45,
+      "maximum_visible_id": 331,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_compact480_refresh5_replay",
+        "tracked": null,
+        "upstream": "/mnt/chenziye/codes/Dist-Tracker",
+        "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_stationary_video00009_90af30d9.mp4",
+        "gmc": "compact",
+        "width": 480,
+        "corners": 256,
+        "refresh": 5
+      },
+      "replay_tracker_gmc_seconds": 40.89901532791555,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_compact480_replay": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5289,
+        "fp": 2866,
+        "fn": 2693,
+        "frames_with_output": 8029,
+        "outputs": 8155,
+        "precision": 0.6485591661557327,
+        "recall": 0.6626158857429216,
+        "f1": 0.6555121769845698
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 13,
+        "continuous_gt_id_changes": 9,
+        "adjacent_tp_frame_id_changes": 3
+      },
+      "visible_ids": 46,
+      "maximum_visible_id": 328,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_compact480_replay",
+        "tracked": null,
+        "upstream": "/mnt/chenziye/codes/Dist-Tracker",
+        "video": "/mnt/andrew/video-labeler/videos/20260805_multirotor_sunny_frontlight_stationary_video00009_90af30d9.mp4",
+        "gmc": "compact",
+        "width": 480,
+        "corners": 256,
+        "refresh": 1
+      },
+      "replay_tracker_gmc_seconds": 57.870305586606264,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_final_ready9": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5283,
+        "fp": 2885,
+        "fn": 2699,
+        "frames_with_output": 8028,
+        "outputs": 8168,
+        "precision": 0.64679236043095,
+        "recall": 0.6618641944374843,
+        "f1": 0.6542414860681114
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 13,
+        "continuous_gt_id_changes": 9,
+        "adjacent_tp_frame_id_changes": 1
+      },
+      "visible_ids": 46,
+      "maximum_visible_id": 314,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_final_ready9",
+        "tracked": "runs/anti_uav/expanded28_dist_opt_20260920/final_ready9/observations.jsonl",
+        "upstream": null,
+        "video": null,
+        "gmc": "compact",
+        "width": 320,
+        "corners": 128,
+        "refresh": 5,
+        "resize_first": true
+      },
+      "replay_tracker_gmc_seconds": 0,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_full_compact320": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5283,
+        "fp": 2885,
+        "fn": 2699,
+        "frames_with_output": 8028,
+        "outputs": 8168,
+        "precision": 0.64679236043095,
+        "recall": 0.6618641944374843,
+        "f1": 0.6542414860681114
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 13,
+        "continuous_gt_id_changes": 9,
+        "adjacent_tp_frame_id_changes": 1
+      },
+      "visible_ids": 46,
+      "maximum_visible_id": 314,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_full_compact320",
+        "tracked": "runs/anti_uav/expanded28_dist_opt_20260920/full_compact320/observations.jsonl",
+        "upstream": null,
+        "video": null,
+        "gmc": "compact",
+        "width": 480,
+        "corners": 256,
+        "refresh": 1,
+        "resize_first": false
+      },
+      "replay_tracker_gmc_seconds": 0,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_full_compact480": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5291,
+        "fp": 2856,
+        "fn": 2691,
+        "frames_with_output": 8020,
+        "outputs": 8147,
+        "precision": 0.6494415122130845,
+        "recall": 0.6628664495114006,
+        "f1": 0.6560853121706244
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 13,
+        "continuous_gt_id_changes": 9,
+        "adjacent_tp_frame_id_changes": 3
+      },
+      "visible_ids": 48,
+      "maximum_visible_id": 330,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_full_compact480",
+        "tracked": "runs/anti_uav/expanded28_dist_opt_20260920/full_compact480/observations.jsonl",
+        "upstream": null,
+        "video": null,
+        "gmc": "compact",
+        "width": 480,
+        "corners": 256,
+        "refresh": 1
+      },
+      "replay_tracker_gmc_seconds": 0,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_full_efficient": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5283,
+        "fp": 2885,
+        "fn": 2699,
+        "frames_with_output": 8028,
+        "outputs": 8168,
+        "precision": 0.64679236043095,
+        "recall": 0.6618641944374843,
+        "f1": 0.6542414860681114
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 13,
+        "continuous_gt_id_changes": 9,
+        "adjacent_tp_frame_id_changes": 1
+      },
+      "visible_ids": 46,
+      "maximum_visible_id": 314,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_full_efficient",
+        "tracked": "runs/anti_uav/expanded28_dist_opt_20260920/full_efficient/observations.jsonl",
+        "upstream": null,
+        "video": null,
+        "gmc": "compact",
+        "width": 320,
+        "corners": 128,
+        "refresh": 5,
+        "resize_first": true
+      },
+      "replay_tracker_gmc_seconds": 0,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    },
+    "quality_public_board": {
+      "frames": 14201,
+      "metrics": {
+        "tp": 5293,
+        "fp": 2868,
+        "fn": 2689,
+        "frames_with_output": 8032,
+        "outputs": 8161,
+        "precision": 0.6485724788628845,
+        "recall": 0.6631170132798797,
+        "f1": 0.6557641082822275
+      },
+      "detector_metrics": {
+        "tp": 5317,
+        "fp": 3539,
+        "fn": 2665,
+        "frames_with_output": 8311,
+        "outputs": 8856,
+        "precision": 0.6003839205058717,
+        "recall": 0.6661237785016286,
+        "f1": 0.6315476897493764
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 11,
+        "continuous_gt_id_changes": 8,
+        "adjacent_tp_frame_id_changes": 3
+      },
+      "visible_ids": 46,
+      "maximum_visible_id": 321,
+      "detector_cache_sha256": "3ac55f74c86d7380b1b8289279a8b1e6c50dd185acc0240991c527a6724f0738",
+      "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+      "coco_sha256": "1fa9be71c8d0e9c1903e1655451376aff5ec8c327bd6d90b00ba6d7307f5af91",
+      "args": {
+        "detections": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "manifest": "runs/anti_uav/expanded28_dist_opt_20260920/approved_manifest.json",
+        "coco": "runs/anti_uav/expanded28_dist_opt_20260920/annotations.json",
+        "output": "runs/anti_uav/expanded28_dist_opt_20260920/quality_public_board",
+        "tracked": "deliverables/expanded28_rk3588_dist_20260920/final_pipeline_three_full/observations.jsonl",
+        "upstream": null,
+        "video": null,
+        "gmc": "compact",
+        "width": 480,
+        "corners": 256,
+        "refresh": 1
+      },
+      "replay_tracker_gmc_seconds": 0,
+      "scope": "IoU .5 on reviewed Video00009 frames; uncertain/unreviewed excluded. Same RKNN detections; no GT in tracker. ID changes are single-GT diagnostics, not standard MOT IDSW. This is tuning/evaluation on Video00009, not independent generalization evidence. Replay time is NOT pipeline FPS."
+    }
+  },
+  "scope": "Measured live RKNN video processing; no rendering/encoding. Runs have different thermal histories, not a controlled isolated cooling experiment. GMC replay times are not board FPS. Video00009 is diagnostic/tuning data, not independent generalization evidence.",
+  "startup": {
+    "trials": [
+      {
+        "trial": 1,
+        "process_launch_to_first_result_ms": 713.3756260000155,
+        "model_load_ms": 49.2752059999475,
+        "first_result": {
+          "event": "first_result",
+          "process_entry_ms": 695.6539239999984,
+          "frame_read_ms": 103.58233900024061,
+          "decode_ms": 59.43555900012143,
+          "npu_ms": [
+            4.38602,
+            36.377475,
+            0.299829
+          ],
+          "gmc_ms": 3.286744999968505,
+          "association_ms": 0.5086589999336866
+        }
+      },
+      {
+        "trial": 2,
+        "process_launch_to_first_result_ms": 716.7858700004217,
+        "model_load_ms": 48.273345000779955,
+        "first_result": {
+          "event": "first_result",
+          "process_entry_ms": 697.1523190004518,
+          "frame_read_ms": 105.91197200028546,
+          "decode_ms": 60.55933500010724,
+          "npu_ms": [
+            4.6771,
+            34.902955,
+            0.339787
+          ],
+          "gmc_ms": 3.508406999571889,
+          "association_ms": 0.704656000380055
+        }
+      },
+      {
+        "trial": 3,
+        "process_launch_to_first_result_ms": 710.103006999816,
+        "model_load_ms": 49.076291999881505,
+        "first_result": {
+          "event": "first_result",
+          "process_entry_ms": 690.9177429997726,
+          "frame_read_ms": 105.35402200002864,
+          "decode_ms": 59.32356100038305,
+          "npu_ms": [
+            11.194588,
+            33.329728,
+            0.301579
+          ],
+          "gmc_ms": 9.161118000520219,
+          "association_ms": 0.4981599995517172
+        }
+      }
+    ],
+    "median_ms": 713.3756260000155,
+    "min_ms": 710.103006999816,
+    "max_ms": 716.7858700004217,
+    "scope": "Fresh process launch (including shell/interpreter/imports/model load/decode) to first result on stdout. OS and filesystem caches are not reset. Not board power-on or camera/display latency."
+  }
+}

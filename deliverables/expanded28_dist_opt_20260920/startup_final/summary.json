@@ -1,0 +1,62 @@
+{
+  "trials": [
+    {
+      "trial": 1,
+      "process_launch_to_first_result_ms": 713.3756260000155,
+      "model_load_ms": 49.2752059999475,
+      "first_result": {
+        "event": "first_result",
+        "process_entry_ms": 695.6539239999984,
+        "frame_read_ms": 103.58233900024061,
+        "decode_ms": 59.43555900012143,
+        "npu_ms": [
+          4.38602,
+          36.377475,
+          0.299829
+        ],
+        "gmc_ms": 3.286744999968505,
+        "association_ms": 0.5086589999336866
+      }
+    },
+    {
+      "trial": 2,
+      "process_launch_to_first_result_ms": 716.7858700004217,
+      "model_load_ms": 48.273345000779955,
+      "first_result": {
+        "event": "first_result",
+        "process_entry_ms": 697.1523190004518,
+        "frame_read_ms": 105.91197200028546,
+        "decode_ms": 60.55933500010724,
+        "npu_ms": [
+          4.6771,
+          34.902955,
+          0.339787
+        ],
+        "gmc_ms": 3.508406999571889,
+        "association_ms": 0.704656000380055
+      }
+    },
+    {
+      "trial": 3,
+      "process_launch_to_first_result_ms": 710.103006999816,
+      "model_load_ms": 49.076291999881505,
+      "first_result": {
+        "event": "first_result",
+        "process_entry_ms": 690.9177429997726,
+        "frame_read_ms": 105.35402200002864,
+        "decode_ms": 59.32356100038305,
+        "npu_ms": [
+          11.194588,
+          33.329728,
+          0.301579
+        ],
+        "gmc_ms": 9.161118000520219,
+        "association_ms": 0.4981599995517172
+      }
+    }
+  ],
+  "median_ms": 713.3756260000155,
+  "min_ms": 710.103006999816,
+  "max_ms": 716.7858700004217,
+  "scope": "Fresh process launch (including shell/interpreter/imports/model load/decode) to first result on stdout. OS and filesystem caches are not reset. Not board power-on or camera/display latency."
+}

@@ -1,0 +1,291 @@
+{
+  "args": {
+    "model": "/home/orangepi/deployments/expanded28_dist_20260920/detector_960x544_int8.rknn",
+    "library": "/home/orangepi/deployments/expanded28_dist_opt_20260920/libanti_uav_detector.so",
+    "upstream": "/home/orangepi/deployments/expanded28_dist_20260920/Dist-Tracker",
+    "video": "/home/orangepi/deployments/expanded28_dist_20260920/Video00009_original.mp4",
+    "output": "ready_two_cpus",
+    "workers": 3,
+    "core_mode": "split",
+    "contexts": "shared",
+    "preprocess": "cached",
+    "cpus": "4,5",
+    "worker_affinity": "pinned",
+    "dispatch": "ready",
+    "inflight": 6,
+    "frames": 2000,
+    "warmup": 100,
+    "conf": 0.03,
+    "iou": 0.45,
+    "detector_only": false,
+    "gmc": "compact",
+    "gmc_width": 320,
+    "gmc_corners": 128,
+    "gmc_refresh": 5,
+    "gmc_resize_first": true,
+    "save_observations": true
+  },
+  "frames": 2000,
+  "measured_frames": 1900,
+  "measured_seconds": 39.890459358000044,
+  "steady_fps": 47.630436715413616,
+  "all_frames_fps": 47.17604667341792,
+  "first_result": {
+    "process_entry_ms": 682.4604060002457,
+    "frame_read_ms": 118.48845799977425,
+    "decode_ms": 56.917345999863755,
+    "npu_ms": [
+      15.264738,
+      34.715708,
+      0.294288
+    ],
+    "gmc_ms": 4.132273000323039,
+    "association_ms": 0.28816299982281635
+  },
+  "model_load_ms": 49.1416240001854,
+  "initialization_to_models_ready_ms": 563.6266199999227,
+  "stages_ms": {
+    "decode": {
+      "mean": 16.67616110631762,
+      "p50": 13.701865000257385,
+      "p95": 37.32299455000429,
+      "max": 97.12855699945067
+    },
+    "preprocess": {
+      "mean": 4.368573591052631,
+      "p50": 4.259876500000001,
+      "p95": 4.8795276,
+      "max": 13.449431
+    },
+    "npu": {
+      "mean": 45.93571862368422,
+      "p50": 46.132835,
+      "p95": 57.093408149999995,
+      "max": 89.172005
+    },
+    "postprocess": {
+      "mean": 0.3784690205263158,
+      "p50": 0.370411,
+      "p95": 0.45238355,
+      "max": 1.554269
+    },
+    "gmc": {
+      "mean": 5.744592411033648,
+      "p50": 5.118821999985812,
+      "p95": 8.986411650357695,
+      "max": 24.74172699930932
+    },
+    "association": {
+      "mean": 1.2551526668396131,
+      "p50": 1.4072714998292213,
+      "p95": 2.096323849809777,
+      "max": 25.547298000674346
+    },
+    "ordered_latency": {
+      "mean": 76.26878899421172,
+      "p50": 74.97139799988872,
+      "p95": 98.52766194981086,
+      "max": 143.44426399929944
+    }
+  },
+  "input_wh": [
+    960,
+    544
+  ],
+  "source_wh": [
+    1920,
+    1080
+  ],
+  "source_fps": 100.0,
+  "npu_core_masks": [
+    "0",
+    "1",
+    "2"
+  ],
+  "detector_count": 1184,
+  "displayed_tracks": 1174,
+  "npu_worker_frame_counts": [
+    659,
+    682,
+    659
+  ],
+  "rejected_degenerate_boxes": 0,
+  "tracker_config": {
+    "tracker_type": "botsort",
+    "track_high_thresh": 0.03,
+    "track_low_thresh": 0.01,
+    "new_track_thresh": 0.1,
+    "track_buffer": 30,
+    "match_thresh": 0.8,
+    "fuse_score": false,
+    "gmc_method": "sparseOptFlow",
+    "proximity_thresh": 0.5,
+    "appearance_thresh": 0.25,
+    "with_reid": false
+  },
+  "compact_gmc_counts": {
+    "frames": 2000,
+    "estimated": 1999,
+    "identity_fallback": 0,
+    "refreshes": 404
+  },
+  "compact_gmc_seconds": {
+    "preprocess": 2.85897810899678,
+    "optical_flow": 6.110044967027534,
+    "ransac": 0.3696494920113764,
+    "features": 0.8432731610000701
+  },
+  "hardware_before": {
+    "host": "orangepicm5",
+    "kernel": "6.1.99-rockchip-rk3588",
+    "/sys/class/devfreq/fdab0000.npu/cur_freq": "1000000000",
+    "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+    "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+    "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+    "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+    "/sys/class/devfreq/dmc/governor": "performance",
+    "/sys/class/thermal/thermal_zone2/temp": "83153",
+    "/sys/class/thermal/thermal_zone0/temp": "80384",
+    "/sys/class/thermal/thermal_zone5/temp": "78538",
+    "/sys/class/thermal/thermal_zone3/temp": "81307",
+    "/sys/class/thermal/thermal_zone1/temp": "82230",
+    "/sys/class/thermal/thermal_zone6/temp": "79461",
+    "/sys/class/thermal/thermal_zone4/temp": "79461",
+    "/sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq": "2304000",
+    "/sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq": "2304000",
+    "/sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq": "1800000"
+  },
+  "hardware_after": {
+    "host": "orangepicm5",
+    "kernel": "6.1.99-rockchip-rk3588",
+    "/sys/class/devfreq/fdab0000.npu/cur_freq": "1000000000",
+    "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+    "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+    "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+    "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+    "/sys/class/devfreq/dmc/governor": "performance",
+    "/sys/class/thermal/thermal_zone2/temp": "85888",
+    "/sys/class/thermal/thermal_zone0/temp": "83153",
+    "/sys/class/thermal/thermal_zone5/temp": "81307",
+    "/sys/class/thermal/thermal_zone3/temp": "83153",
+    "/sys/class/thermal/thermal_zone1/temp": "85000",
+    "/sys/class/thermal/thermal_zone6/temp": "82230",
+    "/sys/class/thermal/thermal_zone4/temp": "83153",
+    "/sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq": "600000",
+    "/sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq": "2304000",
+    "/sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq": "408000"
+  },
+  "hardware_samples": [
+    {
+      "frame": 500,
+      "elapsed_seconds": 10.839913890999924,
+      "hardware": {
+        "host": "orangepicm5",
+        "kernel": "6.1.99-rockchip-rk3588",
+        "/sys/class/devfreq/fdab0000.npu/cur_freq": "1000000000",
+        "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+        "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+        "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+        "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+        "/sys/class/devfreq/dmc/governor": "performance",
+        "/sys/class/thermal/thermal_zone2/temp": "85000",
+        "/sys/class/thermal/thermal_zone0/temp": "83153",
+        "/sys/class/thermal/thermal_zone5/temp": "81307",
+        "/sys/class/thermal/thermal_zone3/temp": "84076",
+        "/sys/class/thermal/thermal_zone1/temp": "85000",
+        "/sys/class/thermal/thermal_zone6/temp": "82230",
+        "/sys/class/thermal/thermal_zone4/temp": "84076",
+        "/sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq": "600000",
+        "/sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq": "2304000",
+        "/sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq": "408000"
+      }
+    },
+    {
+      "frame": 1000,
+      "elapsed_seconds": 21.237523079999846,
+      "hardware": {
+        "host": "orangepicm5",
+        "kernel": "6.1.99-rockchip-rk3588",
+        "/sys/class/devfreq/fdab0000.npu/cur_freq": "1000000000",
+        "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+        "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+        "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+        "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+        "/sys/class/devfreq/dmc/governor": "performance",
+        "/sys/class/thermal/thermal_zone2/temp": "85888",
+        "/sys/class/thermal/thermal_zone0/temp": "83153",
+        "/sys/class/thermal/thermal_zone5/temp": "81307",
+        "/sys/class/thermal/thermal_zone3/temp": "84076",
+        "/sys/class/thermal/thermal_zone1/temp": "85000",
+        "/sys/class/thermal/thermal_zone6/temp": "83153",
+        "/sys/class/thermal/thermal_zone4/temp": "83153",
+        "/sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq": "408000",
+        "/sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq": "2016000",
+        "/sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq": "408000"
+      }
+    },
+    {
+      "frame": 1500,
+      "elapsed_seconds": 31.872914463000598,
+      "hardware": {
+        "host": "orangepicm5",
+        "kernel": "6.1.99-rockchip-rk3588",
+        "/sys/class/devfreq/fdab0000.npu/cur_freq": "1000000000",
+        "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+        "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+        "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+        "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+        "/sys/class/devfreq/dmc/governor": "performance",
+        "/sys/class/thermal/thermal_zone2/temp": "85888",
+        "/sys/class/thermal/thermal_zone0/temp": "83153",
+        "/sys/class/thermal/thermal_zone5/temp": "81307",
+        "/sys/class/thermal/thermal_zone3/temp": "84076",
+        "/sys/class/thermal/thermal_zone1/temp": "85888",
+        "/sys/class/thermal/thermal_zone6/temp": "82230",
+        "/sys/class/thermal/thermal_zone4/temp": "84076",
+        "/sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq": "408000",
+        "/sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq": "2208000",
+        "/sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq": "408000"
+      }
+    },
+    {
+      "frame": 2000,
+      "elapsed_seconds": 42.39431132500067,
+      "hardware": {
+        "host": "orangepicm5",
+        "kernel": "6.1.99-rockchip-rk3588",
+        "/sys/class/devfreq/fdab0000.npu/cur_freq": "1000000000",
+        "/sys/class/devfreq/fb000000.gpu/cur_freq": "300000000",
+        "/sys/class/devfreq/dmc/cur_freq": "2112000000",
+        "/sys/class/devfreq/fdab0000.npu/governor": "performance",
+        "/sys/class/devfreq/fb000000.gpu/governor": "simple_ondemand",
+        "/sys/class/devfreq/dmc/governor": "performance",
+        "/sys/class/thermal/thermal_zone2/temp": "85000",
+        "/sys/class/thermal/thermal_zone0/temp": "84076",
+        "/sys/class/thermal/thermal_zone5/temp": "81307",
+        "/sys/class/thermal/thermal_zone3/temp": "84076",
+        "/sys/class/thermal/thermal_zone1/temp": "85000",
+        "/sys/class/thermal/thermal_zone6/temp": "82230",
+        "/sys/class/thermal/thermal_zone4/temp": "83153",
+        "/sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq": "600000",
+        "/sys/devices/system/cpu/cpufreq/policy4/scaling_cur_freq": "2304000",
+        "/sys/devices/system/cpu/cpufreq/policy0/scaling_cur_freq": "408000"
+      }
+    }
+  ],
+  "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+  "upstream_files": {
+    "ultralytics/trackers/__init__.py": "665bbf220e68b27ee1a9c87f83905efdee29c1952479e4d089eb090a2d291462",
+    "ultralytics/trackers/basetrack.py": "8747dcc7309d65fff9e87d4d1bf9822004dacff7168f47bd689284d71826b454",
+    "ultralytics/trackers/bot_sort.py": "c549a58f46a04b43c68f2f7b3770b48cb315d3bcafb2eac4e50727ba857f11cc",
+    "ultralytics/trackers/byte_tracker.py": "093fd88f0d9a847a29ac47cd7133348413281acb39a9caade8f6b193de7a9585",
+    "ultralytics/trackers/track.py": "3ed181e024cc77296f71caf3868dfb9f2b0cbd54bc81220d1858196349fe02e5",
+    "ultralytics/trackers/utils/__init__.py": "966e8c72415808f4dba88a17ef0d2cfdd6b176335e05e296e835e9a6fd7e4143",
+    "ultralytics/trackers/utils/gmc.py": "914e78468cee189700565c9be7f1e35e23485085f956e1fad7700c73a19d9f08",
+    "ultralytics/trackers/utils/kalman_filter.py": "ce3a5d2ace0067c510c66a2e4046a26c593dcb92d7fdfef5f7d0054976ebf7a9",
+    "ultralytics/trackers/utils/matching.py": "eb83ca1c6a044f05e1b99f6e744db5ee16e3247ca02ce3da600eba276a8c4a7a",
+    "ultralytics/utils/metrics.py": "e957d3b4fccfa69b97d917d7afce06a08fc004f7c73e15db6cc2a41f61ef5157",
+    "ultralytics/utils/ops.py": "fa579f5439d102917e29a4187b4d03f53032b0d3ad25addfbdb653286f6d7442"
+  },
+  "scope": "Actual video decode + C++ RKNN preprocessing/inference/postprocessing + per-frame live GMC + ordered public Dist association. Bounded pipeline, no frame skipping, no cached detections/warps, no rendering/encoding. Compact GMC is explicitly an algorithm variant; public retains the upstream algorithm."
+}

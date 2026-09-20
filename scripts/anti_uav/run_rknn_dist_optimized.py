@@ -61,6 +61,7 @@ def main():
     p.add_argument("--preprocess", choices=("native","cached"), default="cached")
     p.add_argument("--cpus", default="4,5,6,7")
     p.add_argument("--worker-affinity", choices=("pinned", "shared"), default="pinned")
+    p.add_argument("--dispatch", choices=("round-robin", "ready"), default="round-robin")
     p.add_argument("--inflight", type=int, default=4)
     p.add_argument("--frames", type=int, default=0)
     p.add_argument("--warmup", type=int, default=100)
@@ -106,6 +107,10 @@ def main():
     flow_pool = ThreadPoolExecutor(max_workers=1, initializer=flow_init, initargs=(cpus,)) if flow else None
     ready_ms = (time.perf_counter()-ENTRY)*1000
     slots, results, stop = threading.Semaphore(args.inflight), queue.Queue(), threading.Event()
+    available = queue.Queue()
+    for worker in range(args.workers):
+        available.put(worker)
+    assigned = [0] * args.workers
 
     def run_flow(frame):
         start = time.perf_counter()
@@ -130,7 +135,20 @@ def main():
                     raise RuntimeError(f"Decode failed at frame {index}")
                 decode_ms = (time.perf_counter()-start)*1000
                 worker = index % args.workers
+                if args.dispatch == "ready":
+                    while not stop.is_set():
+                        try:
+                            worker = available.get(timeout=.1)
+                            break
+                        except queue.Empty:
+                            continue
+                    else:
+                        slots.release()
+                        return
                 detected = npu_pools[worker].submit(detectors[worker].infer, frame)
+                assigned[worker] += 1
+                if args.dispatch == "ready":
+                    detected.add_done_callback(lambda future, worker=worker: available.put(worker))
                 motion = flow_pool.submit(run_flow, frame) if flow_pool else None
                 results.put((index, frame, start, decode_ms, detected, motion))
         except BaseException as error:
@@ -200,6 +218,7 @@ def main():
             initialization_to_models_ready_ms=ready_ms, stages_ms={k:stats(v) for k,v in timing.items()},
             input_wh=[960,544], source_wh=source_shape, source_fps=fps,
             npu_core_masks=masks, detector_count=det_count, displayed_tracks=track_count,
+            npu_worker_frame_counts=assigned,
             rejected_degenerate_boxes=invalid, tracker_config=CONFIG if tracker else None,
             compact_gmc_counts=flow.counts if isinstance(flow,EfficientGMC) else None,
             compact_gmc_seconds=flow.seconds if isinstance(flow,EfficientGMC) else None,

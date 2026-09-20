@@ -6,12 +6,10 @@ import os
 from pathlib import Path
 import sys
 
-import cv2
-import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.anti_uav.matte_drone_catalog import card, digest, dump, gallery, pack_alpha
+from scripts.anti_uav.matte_drone_catalog import card, digest, dump, gallery
 
 
 def main(root):
@@ -20,7 +18,8 @@ def main(root):
     if digest(root / "catalog.json") != refinement["source_catalog_sha256"]:
         raise ValueError("Parent catalog changed")
     revised = {r["id"]: r for r in refinement["records"]}
-    exclusions = refinement["rules"]["exclude"]
+    exclusions = dict(refinement["rules"]["exclude"])
+    exclusions["295"] = "Close-up review: translucent rotor overlaps charger; accessory face remains in alpha. Preserve RGB; do not invent hidden foreground."
     out = root / "screened"
     out.mkdir(exist_ok=False)
     for name in ("cutouts", "previews", "contact_sheets", "rgba"):
@@ -40,31 +39,7 @@ def main(root):
             mask=os.path.relpath(base / chosen["mask"], out),
             cutout=f"cutouts/{aid}.png", preview=f"previews/{aid}.jpg",
             status="visually_screened_compositing_candidate")
-        if aid == "295":
-            # Explicit visual review: two components are drone and detached battery.
-            # This selection must NOT be applied to other aircraft automatically.
-            rgba = np.array(Image.open(base / chosen["rgba"]).convert("RGBA"))
-            count, labels, stats, _ = cv2.connectedComponentsWithStats((rgba[..., 3] >= 4).astype(np.uint8), 8)
-            if count != 3:
-                raise ValueError("Reviewed drone/battery component structure changed")
-            main = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-            alpha = rgba[..., 3].copy()
-            alpha[labels != main] = 0
-            rgba, bounds, quality = pack_alpha(rgba[..., :3], alpha)
-            full = Image.fromarray(rgba)
-            row.update(rgba=f"rgba/{aid}.png", bounds=bounds, quality=quality,
-                method="roi_segmentation_then_visually_verified_detached_battery_removal")
-            full.save(out / row["rgba"])
-            full.crop(bounds).save(out / row["cutout"])
-            Image.fromarray(alpha).save(out / "rgba/295_alpha.png")
-            row.update(mask="rgba/295_alpha.png")
-            for key in ("rgba", "mask"):
-                row[key + "_sha256"] = digest(out / row[key])
-            source_rgb = np.array(Image.open(root / old["raw"]).convert("RGB"))
-            if not np.array_equal(rgba[..., :3], source_rgb):
-                raise ValueError("Source pixels changed")
-        else:
-            os.link(base / chosen["cutout"], out / row["cutout"])
+        os.link(base / chosen["cutout"], out / row["cutout"])
         row["cutout_sha256"] = digest(out / row["cutout"])
         if aid == "315":
             row["review_note"] = "Small drone in kit image is intentional; inspect at intended synthesis scale."
@@ -74,7 +49,8 @@ def main(root):
         rows.append(row)
     summary = dict(source_entries_processed=len(initial["records"]), screened_candidates=len(rows),
         unique_source_images=len({r["embedded_sha256"] for r in rows}), excluded=exclusions,
-        kit_images_refined=sorted(revised, key=int), detached_battery_removed=["295"],
+        kit_images_refined=sorted(revised, key=int),
+        kit_refinements_accepted=sorted(set(revised) - set(exclusions), key=int),
         review_scope=refinement["rules"]["visual_review_scope"], training_configuration_changed=False,
         note="Screened for compositing validation, not a pixel-perfect segmentation guarantee.")
     dump(out / "catalog.json", dict(records=rows, summary=summary,

@@ -7,10 +7,12 @@ All 279 passed source-RGB identity checks. All 19 overview pages were visually
 screened for gross accessory/silhouette errors, not pixel-level mask accuracy.
 
 **Prefer `screened/index.html` and `screened/catalog.json` for the final review.**
-`screened/cutouts/` contains 276 candidates (268 unique source images).
+`screened/cutouts/` contains 275 candidates (267 unique source images).
 Eight kit images were re-segmented using visually selected drone ROIs: IDs 110,
-150, 151, 207, 295, 296, 315, 319. An independently segmented battery was removed
-from ID 295 after visual inspection; component removal was NOT applied globally.
+150, 151, 207, 295, 296, 315, 319. Seven refinements were accepted. Close-up review
+of ID 295 revealed charger contamination behind a translucent rotor even after
+removing a detached battery; this candidate is excluded rather than inventing
+foreground pixels. No global largest-component deletion is used.
 ID 315 is a small drone in a kit photograph, not an empty mask.
 
 Excluded from the screened catalog, but retained in the original 279 results:
@@ -18,9 +20,10 @@ Excluded from the screened catalog, but retained in the original 279 results:
 - 252: manual-cover line drawing and text, not a drone photograph.
 - 253: low-resolution manual-cover line drawing with a truncated drone.
 - 258: cropped close-up with no complete aircraft silhouette.
+- 295: translucent rotor overlaps a charger; reliable clean foreground is not recovered.
 
-The 276 new candidates plus 53 existing enabled IDs would give 329 asset entries
-(318 unique source images/cutouts across the two groups). This is an inventory,
+The 275 new candidates plus 53 existing enabled IDs would give 328 asset entries
+(317 exact-hash-distinct source images/cutouts across the two groups). This is an inventory,
 not a claim that the current training configuration has been changed. Validate
 compositing at the actual target scale before switching the online asset index.
 

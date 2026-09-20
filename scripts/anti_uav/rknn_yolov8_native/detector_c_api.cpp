@@ -21,7 +21,11 @@ const char* au_detector_error() { return api_error.c_str(); }
 void* au_detector_create(const char* model, const char* core, int threads) {
     try {
         cv::setNumThreads(threads);
-        return make_detector<NativeYoloV8>(model, core);
+        std::unique_ptr<NativeYoloV8> detector(make_detector<NativeYoloV8>(model, core));
+        if (detector->input_width() != 960 || detector->input_height() != 544)
+            throw std::runtime_error("This deployment requires 960x544 input");
+        detector->set_padding_value(114);
+        return detector.release();
     } catch (const std::exception& e) {
         api_error = e.what();
         return nullptr;

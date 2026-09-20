@@ -22,7 +22,7 @@ from dist_numpy_runtime import CONFIG, as_results, load_dist, observations, sour
 
 class Detector:
     def __init__(self, library, model, core, threads, conf, iou):
-        self.lib = ct.CDLL(str(library))
+        self.lib = ct.CDLL(str(Path(library).resolve()))
         self.lib.au_detector_create.argtypes = [ct.c_char_p, ct.c_char_p, ct.c_int]
         self.lib.au_detector_create.restype = ct.c_void_p
         self.lib.au_detector_destroy.argtypes = [ct.c_void_p]
@@ -205,7 +205,7 @@ def main():
             tracker_config=None if args.detector_only else CONFIG,
             upstream_files=source_hashes(args.upstream), source_fps=fps,
             source_resolution=[int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))],
-            input_resolution=[960,544], padding_value=0,
+            input_resolution=[960,544], padding_value=114,
             frames=processed, measured_frames=measured,
             measured_seconds=end-steady_start, steady_fps=measured/(end-steady_start),
             all_frames_fps=processed/(end-loop_start), total_detections=total_detections,

@@ -323,7 +323,7 @@ public:
 
         const int row_stride = input_native_attr_.w_stride > 0 ? input_native_attr_.w_stride * 3 : input_width_ * 3;
         cv::Mat input_rgb(input_height_, input_width_, CV_8UC3, input_mem_->virt_addr, row_stride);
-        input_rgb.setTo(cv::Scalar(0, 0, 0));
+        input_rgb.setTo(cv::Scalar::all(padding_value_));
         cv::resize(frame_bgr, resized_bgr_, cv::Size(resized_width, resized_height), 0.0, 0.0, cv::INTER_LINEAR);
         cv::Mat destination = input_rgb(cv::Rect(left, top, resized_width, resized_height));
         cv::cvtColor(resized_bgr_, destination, cv::COLOR_BGR2RGB);
@@ -389,10 +389,12 @@ public:
         return nms(std::move(candidates), nms_threshold, max_detections);
     }
 
+    void set_padding_value(int value) { padding_value_ = value; }
     int input_height() const { return input_height_; }
     int input_width() const { return input_width_; }
 
 private:
+    int padding_value_ = 0;
     std::vector<uint8_t> model_data_;
     rknn_context context_ = 0;
     rknn_input_output_num io_num_{};

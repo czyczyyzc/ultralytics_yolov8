@@ -1,5 +1,29 @@
 # Drone Catalog: 279 Alpha-Only Cutout Candidates
 
+## Completed Results
+
+All 279 entries (271 unique source images) have full-resolution RGBA results.
+All 279 passed source-RGB identity checks. All 19 overview pages were visually
+screened for gross accessory/silhouette errors, not pixel-level mask accuracy.
+
+**Prefer `screened/index.html` and `screened/catalog.json` for the final review.**
+`screened/cutouts/` contains 276 candidates (268 unique source images).
+Eight kit images were re-segmented using visually selected drone ROIs: IDs 110,
+150, 151, 207, 295, 296, 315, 319. An independently segmented battery was removed
+from ID 295 after visual inspection; component removal was NOT applied globally.
+ID 315 is a small drone in a kit photograph, not an empty mask.
+
+Excluded from the screened catalog, but retained in the original 279 results:
+
+- 252: manual-cover line drawing and text, not a drone photograph.
+- 253: low-resolution manual-cover line drawing with a truncated drone.
+- 258: cropped close-up with no complete aircraft silhouette.
+
+The 276 new candidates plus 53 existing enabled IDs would give 329 asset entries
+(318 unique source images/cutouts across the two groups). This is an inventory,
+not a claim that the current training configuration has been changed. Validate
+compositing at the actual target scale before switching the online asset index.
+
 ## Locations
 
 - Server: `root@47.107.185.207`
@@ -82,3 +106,23 @@ Recheck that GPU 0 is free before rerunning. `--resume` checks source/model/scri
 identity and per-file hashes; a changed configuration requires a fresh output
 directory. `--limit 15` chooses 15 evenly spaced catalog records for a pilot;
 remove the limit with `--resume` to finish the same library.
+
+The second-stage scripts use fresh output subdirectories (`refined/`, `screened/`)
+and deliberately refuse to overwrite a previous run:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+PYTHONPATH=$SOURCES/matting_dependencies \
+.venv/bin/python scripts/anti_uav/refine_drone_cutout_rois.py \
+  --library $DATA/drone_asset_matted279_20260920 \
+  --rules scripts/anti_uav/drone_cutout_roi_review_20260920.json \
+  --model $SOURCES/birefnet-e2bf8e4
+
+# Run only after reviewing the eight refined comparison cards.
+.venv/bin/python scripts/anti_uav/publish_screened_drone_cutouts.py \
+  $DATA/drone_asset_matted279_20260920
+```
+
+These commands reproduce this specific catalog's reviewed selection, not a
+general automatic approval policy for future photographs. The screened gallery
+enlarges tight cutouts for inspection; PNG training assets retain source pixels.

@@ -10,3 +10,8 @@ if [[ -f "$HERE/gmc.cpp" ]]; then
     $(pkg-config --cflags opencv4) "$HERE/gmc.cpp" -o "$OUT/libdist_gmc.so" \
     $(pkg-config --libs opencv4)
 fi
+if [[ -f "$HERE/video.cpp" ]]; then
+  g++ -std=c++17 -O3 -DNDEBUG -ffp-contract=off \
+    $(pkg-config --cflags opencv4) "$HERE/video.cpp" -o "$OUT/anti_uav_dist_native" \
+    $(pkg-config --libs opencv4) -lcrypto -ldl -pthread
+fi

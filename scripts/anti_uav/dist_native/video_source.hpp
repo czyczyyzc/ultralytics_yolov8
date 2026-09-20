@@ -95,7 +95,10 @@ class VideoSource {
     }
 #endif
 public:
-    VideoSource(const std::string& path,const std::string& selected):backend(selected) {
+    VideoSource(const std::string& path,const std::string& selected,int threads=1,
+                const std::string& threading="slice"):backend(selected) {
+        if(threads<1 || threads>32 || (threading!="slice" && threading!="frame" && threading!="auto"))
+            throw std::runtime_error("Invalid decoder thread configuration");
         if(backend=="opencv") {
             if(!cpu.open(path)) throw std::runtime_error("Video open failed");
             rate=cpu.get(cv::CAP_PROP_FPS);count=cpu.get(cv::CAP_PROP_FRAME_COUNT);
@@ -115,8 +118,9 @@ public:
             if(!dec) throw std::runtime_error("Requested FFmpeg decoder is unavailable");
             codec=avcodec_alloc_context3(dec);if(!codec) throw std::bad_alloc();
             check(avcodec_parameters_to_context(codec,st->codecpar),"Codec parameters");
-            codec->thread_count=1;
-            if(backend=="ffmpeg") codec->thread_type=FF_THREAD_SLICE;
+            codec->thread_count=backend=="ffmpeg"?threads:1;
+            if(backend=="ffmpeg") codec->thread_type=threading=="slice"?FF_THREAD_SLICE:
+                threading=="frame"?FF_THREAD_FRAME:(FF_THREAD_SLICE|FF_THREAD_FRAME);
             check(avcodec_open2(codec,dec,nullptr),"Open decoder");
             rate=av_q2d(av_guess_frame_rate(format,st,nullptr));
             count=st->nb_frames;w=codec->width;h=codec->height;

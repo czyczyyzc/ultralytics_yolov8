@@ -93,7 +93,8 @@ std::string stats(std::vector<double> values) {
 }
 struct Args {
     std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv";
-    int workers=3,inflight=9,frames=0,warmup=100;
+    int workers=3,inflight=9,frames=0,warmup=100,decode_threads=1;
+    std::string decode_threading="slice";
     double conf=.03,iou=.45;
     bool save=false,detector_only=false,pyramid_cache=true;
 };
@@ -114,6 +115,8 @@ Args parse(int argc,char** argv) {
         else if(key=="--output") a.output=value;
         else if(key=="--cpus") a.cpus=value;
         else if(key=="--decoder") a.decoder=value;
+        else if(key=="--decode-threads") a.decode_threads=std::stoi(value);
+        else if(key=="--decode-threading") a.decode_threading=value;
         else if(key=="--preprocess") a.preprocess=value;
         else if(key=="--workers") a.workers=std::stoi(value);
         else if(key=="--inflight") a.inflight=std::stoi(value);
@@ -170,7 +173,7 @@ int run(const Args& args) {
     if(fs::exists(args.output)) throw std::runtime_error("Output already exists");
     fs::create_directories(args.output);
     const auto before=hardware();
-    VideoSource cap(args.video,args.decoder);
+    VideoSource cap(args.video,args.decoder,args.decode_threads,args.decode_threading);
     double fps=cap.fps();
     int total=args.frames?args.frames:cap.frames();
     if(fps<=0 || total<=args.warmup) throw std::runtime_error("Invalid video FPS/count/warmup");
@@ -326,6 +329,8 @@ int run(const Args& args) {
     out<<"{\"runtime\":\"native_cpp_no_python\",\"opencv_version\":"<<quote(CV_VERSION)<<",\"frames\":"<<total<<",\"measured_frames\":"<<total-args.warmup<<",\"measured_seconds\":"<<seconds<<",\"steady_fps\":"<<(total-args.warmup)/seconds<<",\"all_frames_fps\":"<<total/all_seconds;
     out<<",\"model_load_ms\":"<<load_ms<<",\"first_result\":"<<first_result<<",\"model_sha256\":"<<quote(model_sha)<<",\"detector_library_sha256\":"<<quote(sha256(args.detector));
     out<<",\"decoder_backend\":"<<quote(args.decoder)<<",\"preprocess_backend\":"<<quote(args.preprocess);
+    if(args.decoder=="ffmpeg") out<<",\"software_decode_threads\":"<<args.decode_threads
+        <<",\"software_decode_threading\":"<<quote(args.decode_threading);
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));
     out<<",\"args\":{\"conf\":"<<args.conf<<",\"iou\":"<<args.iou<<",\"actual_conf_float32\":"<<float(args.conf)<<",\"actual_iou_float32\":"<<float(args.iou)<<",\"workers\":"<<args.workers<<",\"inflight\":"<<args.inflight<<",\"warmup\":"<<args.warmup<<",\"detector_only\":"<<(args.detector_only?"true":"false")<<",\"pyramid_cache\":"<<(args.pyramid_cache?"true":"false")<<",\"cpus\":"<<quote(args.cpus)<<",\"video\":"<<quote(args.video)<<",\"model\":"<<quote(args.model)<<",\"save_observations\":"<<(args.save?"true":"false")<<'}';
     out<<",\"input_wh\":[960,544],\"source_wh\":["<<source_w<<','<<source_h<<"],\"source_fps\":"<<fps<<",\"npu_core_masks\":[";

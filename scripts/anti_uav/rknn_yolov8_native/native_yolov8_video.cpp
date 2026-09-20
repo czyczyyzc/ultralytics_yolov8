@@ -389,6 +389,20 @@ public:
         return nms(std::move(candidates), nms_threshold, max_detections);
     }
 
+    void copy_rgb_input(const cv::Mat& rgb) {
+        if (rgb.type() != CV_8UC3 || rgb.rows != input_height_ || rgb.cols != input_width_)
+            throw std::runtime_error("Invalid RGB tensor shape");
+        const size_t row_bytes = static_cast<size_t>(input_width_) * 3;
+        const size_t stride = input_native_attr_.w_stride > 0 ? input_native_attr_.w_stride * 3 : row_bytes;
+        auto* destination = static_cast<uint8_t*>(input_mem_->virt_addr);
+        if (stride == row_bytes && rgb.isContinuous()) {
+            std::memcpy(destination, rgb.data, row_bytes * input_height_);
+        } else {
+            for (int y = 0; y < input_height_; ++y)
+                std::memcpy(destination + y * stride, rgb.ptr(y), row_bytes);
+        }
+    }
+
     void set_padding_value(int value) { padding_value_ = value; }
     int input_height() const { return input_height_; }
     int input_width() const { return input_width_; }

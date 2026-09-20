@@ -6,12 +6,12 @@
 
 namespace {
 thread_local std::string api_error;
-template <typename T> T* make_detector(const char* model, const char* core) {
+template <typename T> T* make_detector(const char* model, const char* core, bool defer_io = false) {
     if constexpr (std::is_constructible_v<T, const std::string&, const std::string&,
                                         bool, const std::string&, bool>) {
-        return new T(model, core, false, "opencv", false);
+        return new T(model, core, false, "opencv", defer_io);
     } else {
-        return new T(model, core);
+        return new T(model, core, defer_io);
     }
 }
 }
@@ -32,9 +32,33 @@ void* au_detector_create(const char* model, const char* core, int threads) {
     }
 }
 void au_detector_destroy(void* handle) { delete static_cast<NativeYoloV8*>(handle); }
-int au_detector_infer(void* handle, unsigned char* bgr, int width, int height,
+int au_detector_create_pool(const char* model, const char** cores, int count,
+                            int threads, void** handles) {
+    try {
+        if (count < 1 || count > 3 || !handles || !cores)
+            throw std::runtime_error("Invalid RKNN pool size");
+        cv::setNumThreads(threads);
+        std::vector<std::unique_ptr<NativeYoloV8>> pool;
+        pool.emplace_back(make_detector<NativeYoloV8>(model, cores[0], true));
+        for (int i = 1; i < count; ++i)
+            pool.emplace_back(new NativeYoloV8(*pool.front(), cores[i], true));
+        // Duplicate model/weights before binding separate per-worker I/O buffers.
+        for (int i = 0; i < count; ++i) {
+            pool[i]->initialize_deferred_io(cores[i]);
+            if (pool[i]->input_width() != 960 || pool[i]->input_height() != 544)
+                throw std::runtime_error("This deployment requires 960x544 input");
+            pool[i]->set_padding_value(114);
+        }
+        for (int i = 0; i < count; ++i) handles[i] = pool[i].release();
+        return 0;
+    } catch (const std::exception& e) {
+        api_error = e.what();
+        return -1;
+    }
+}
+int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height,
                       size_t stride, float conf, float iou, int capacity,
-                      float* boxes, double* times_ms) {
+                      float* boxes, double* times_ms, int cached_preprocess) {
     try {
         if (!handle || !bgr || width <= 0 || height <= 0 || capacity <= 0 ||
             stride < static_cast<size_t>(width) * 3 || !boxes || !times_ms)
@@ -42,7 +66,27 @@ int au_detector_infer(void* handle, unsigned char* bgr, int width, int height,
         auto& detector = *static_cast<NativeYoloV8*>(handle);
         cv::Mat frame(height, width, CV_8UC3, bgr, stride);
         auto start = Clock::now();
-        const auto letterbox = detector.preprocess(frame);
+        LetterboxInfo letterbox;
+        if (cached_preprocess) {
+            // OpenCV operates in cached RAM; only the final bulk copy touches DMA memory.
+            thread_local cv::Mat resized, rgb;
+            const float ratio = std::min(static_cast<float>(detector.input_height()) / height,
+                                         static_cast<float>(detector.input_width()) / width);
+            const int rw = std::max(1, static_cast<int>(std::round(width * ratio)));
+            const int rh = std::max(1, static_cast<int>(std::round(height * ratio)));
+            const float dw = (detector.input_width() - rw) * .5f;
+            const float dh = (detector.input_height() - rh) * .5f;
+            rgb.create(detector.input_height(), detector.input_width(), CV_8UC3);
+            rgb.setTo(cv::Scalar::all(114));
+            cv::resize(frame, resized, cv::Size(rw, rh), 0, 0, cv::INTER_LINEAR);
+            cv::Mat roi = rgb(cv::Rect(static_cast<int>(std::round(dw-.1f)),
+                                      static_cast<int>(std::round(dh-.1f)), rw, rh));
+            cv::cvtColor(resized, roi, cv::COLOR_BGR2RGB);
+            detector.copy_rgb_input(rgb);
+            letterbox = LetterboxInfo{ratio, dw, dh};
+        } else {
+            letterbox = detector.preprocess(frame);
+        }
         times_ms[0] = elapsed_ms(start);
         start = Clock::now();
         detector.run();
@@ -60,5 +104,11 @@ int au_detector_infer(void* handle, unsigned char* bgr, int width, int height,
         api_error = e.what();
         return -1;
     }
+}
+int au_detector_infer(void* handle, unsigned char* bgr, int width, int height,
+                      size_t stride, float conf, float iou, int capacity,
+                      float* boxes, double* times_ms) {
+    return au_detector_infer_ex(handle, bgr, width, height, stride, conf, iou,
+                                capacity, boxes, times_ms, 0);
 }
 }

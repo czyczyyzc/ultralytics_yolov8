@@ -21,7 +21,7 @@ from dist_numpy_runtime import CONFIG, as_results, load_dist, observations, sour
 
 
 class Detector:
-    def __init__(self, library, model, core, threads, conf, iou):
+    def __init__(self, library, model, core, threads, conf, iou, handle=None, cached=False):
         self.lib = ct.CDLL(str(Path(library).resolve()))
         self.lib.au_detector_create.argtypes = [ct.c_char_p, ct.c_char_p, ct.c_int]
         self.lib.au_detector_create.restype = ct.c_void_p
@@ -30,19 +30,24 @@ class Detector:
         self.lib.au_detector_infer.argtypes = [ct.c_void_p, ct.c_void_p, ct.c_int,
             ct.c_int, ct.c_size_t, ct.c_float, ct.c_float, ct.c_int, ct.c_void_p, ct.c_void_p]
         self.lib.au_detector_infer.restype = ct.c_int
-        self.handle = self.lib.au_detector_create(os.fsencode(model), core.encode(), threads)
+        self.handle = handle if handle is not None else self.lib.au_detector_create(os.fsencode(model), core.encode(), threads)
         if not self.handle:
             raise RuntimeError(self.lib.au_detector_error().decode())
         self.conf, self.iou = conf, iou
+        self.cached = cached
+        if cached:
+            self.lib.au_detector_infer_ex.argtypes = self.lib.au_detector_infer.argtypes + [ct.c_int]
+            self.lib.au_detector_infer_ex.restype = ct.c_int
 
     def infer(self, frame):
         if frame.dtype != np.uint8 or frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError("Expected uint8 BGR frame")
         frame = np.ascontiguousarray(frame)
         boxes, stages = np.empty((100, 5), np.float32), np.empty(3, np.float64)
-        count = self.lib.au_detector_infer(self.handle, frame.ctypes.data,
+        call = self.lib.au_detector_infer_ex if self.cached else self.lib.au_detector_infer
+        count = call(self.handle, frame.ctypes.data,
             frame.shape[1], frame.shape[0], frame.strides[0], self.conf, self.iou, 100,
-            boxes.ctypes.data, stages.ctypes.data)
+            boxes.ctypes.data, stages.ctypes.data, *([1] if self.cached else []))
         if count < 0:
             raise RuntimeError(self.lib.au_detector_error().decode())
         found = boxes[:count].copy()

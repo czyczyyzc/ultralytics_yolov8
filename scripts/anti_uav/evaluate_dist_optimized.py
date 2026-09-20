@@ -31,6 +31,7 @@ def main():
     p.add_argument("--width", type=int, default=480)
     p.add_argument("--corners", type=int, default=256)
     p.add_argument("--refresh", type=int, default=1)
+    p.add_argument("--resize-first", action="store_true")
     args = p.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     meta, gt, included = load_ground_truth(args.manifest,args.coco)
@@ -53,7 +54,7 @@ def main():
         cv2.setRNGSeed(20260917)
         tracker = load_dist(args.upstream)(SimpleNamespace(**CONFIG), frame_rate=meta["video"]["fps"])
         if args.gmc == "compact":
-            tracker.gmc = EfficientGMC(args.width,args.corners,args.refresh)
+            tracker.gmc = EfficientGMC(args.width,args.corners,args.refresh,args.resize_first)
         cap = cv2.VideoCapture(str(args.video))
         try:
             with (args.output / "observations.jsonl").open("x") as stream:

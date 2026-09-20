@@ -66,6 +66,7 @@ def main():
     p.add_argument("--gmc-width", type=int, default=480)
     p.add_argument("--gmc-corners", type=int, default=256)
     p.add_argument("--gmc-refresh", type=int, default=1)
+    p.add_argument("--gmc-resize-first", action="store_true")
     p.add_argument("--save-observations", action="store_true")
     args = p.parse_args()
     cpus = [int(x) for x in args.cpus.split(",")]
@@ -86,7 +87,7 @@ def main():
     tracker = flow = supplied = None
     if not args.detector_only:
         tracker = load_dist(args.upstream)(SimpleNamespace(**CONFIG), frame_rate=fps)
-        flow = tracker.gmc if args.gmc == "public" else EfficientGMC(args.gmc_width, args.gmc_corners, args.gmc_refresh)
+        flow = tracker.gmc if args.gmc == "public" else EfficientGMC(args.gmc_width, args.gmc_corners, args.gmc_refresh, args.gmc_resize_first)
         supplied = SuppliedWarp()
         tracker.gmc = supplied
     masks = [str(i) if args.core_mode == "split" else "all" for i in range(args.workers)]

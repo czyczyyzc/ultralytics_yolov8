@@ -9,10 +9,11 @@ import numpy as np
 
 
 class EfficientGMC:
-    def __init__(self, max_width=480, max_corners=256, refresh=1):
+    def __init__(self, max_width=480, max_corners=256, refresh=1, resize_first=False):
         if max_width < 64 or max_corners < 8 or refresh < 1:
             raise ValueError("Invalid GMC budget")
         self.max_width, self.max_corners, self.refresh = max_width, max_corners, refresh
+        self.resize_first = resize_first
         self.previous = self.points = None
         self.index = 0
         self.counts = dict(frames=0, estimated=0, identity_fallback=0, refreshes=0)
@@ -31,8 +32,12 @@ class EfficientGMC:
         height, width = raw_frame.shape[:2]
         w = min(width, self.max_width)
         h = max(1, round(height*w/width))
-        # Convert before resize to preserve the reference grayscale convention.
-        gray = cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY) if raw_frame.ndim == 3 else raw_frame
+        # Resize-first avoids full-resolution color conversion. Color inputs may
+        # differ by rounding; keep the reference order available explicitly.
+        source = raw_frame
+        if self.resize_first and source.shape[:2] != (h, w):
+            source = cv2.resize(source, (w, h), interpolation=cv2.INTER_LINEAR)
+        gray = cv2.cvtColor(source, cv2.COLOR_BGR2GRAY) if source.ndim == 3 else source
         if gray.shape != (h, w):
             gray = cv2.resize(gray, (w, h), interpolation=cv2.INTER_LINEAR)
         self.seconds["preprocess"] += time.perf_counter()-start

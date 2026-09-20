@@ -40,6 +40,19 @@ class TestGMC(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             holder.put(np.full((2,3),np.nan))
 
+    def test_gray_resize_order(self):
+        rng = np.random.default_rng(71)
+        gray = rng.integers(0,256,(540,960),dtype=np.uint8)
+        old, fast = EfficientGMC(320,128,5), EfficientGMC(320,128,5,True)
+        for dx in range(6):
+            frame = cv2.cvtColor(np.roll(gray,dx,axis=1),cv2.COLOR_GRAY2BGR)
+            cv2.setRNGSeed(99)
+            a = old.apply(frame)
+            cv2.setRNGSeed(99)
+            b = fast.apply(frame)
+            np.testing.assert_array_equal(old.previous,fast.previous)
+            np.testing.assert_array_equal(a,b)
+
 
 if __name__ == "__main__":
     unittest.main()

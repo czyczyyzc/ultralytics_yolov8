@@ -64,7 +64,8 @@ class Detector:
 def hardware():
     data = dict(host=platform.node(), kernel=platform.release())
     for pattern in ("/sys/class/devfreq/*/cur_freq", "/sys/class/devfreq/*/governor",
-                    "/sys/class/thermal/thermal_zone*/temp"):
+                    "/sys/class/thermal/thermal_zone*/temp",
+                    "/sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq"):
         import glob
         for name in glob.glob(pattern):
             try:

@@ -1,0 +1,47 @@
+{
+  "trials": [
+    {
+      "trial": 1,
+      "process_launch_to_first_result_ms": 247.57709599998634,
+      "model_load_ms": 41.82498,
+      "first_result": {
+        "event": "first_result",
+        "process_entry_ms": 154.432356,
+        "frame_read_ms": 88.874509,
+        "decode_ms": 56.230188,
+        "gmc_ms": 3.224912,
+        "association_ms": 0.004959
+      }
+    },
+    {
+      "trial": 2,
+      "process_launch_to_first_result_ms": 261.14931699999033,
+      "model_load_ms": 41.562775,
+      "first_result": {
+        "event": "first_result",
+        "process_entry_ms": 154.763976,
+        "frame_read_ms": 89.748622,
+        "decode_ms": 56.327604,
+        "gmc_ms": 3.863945,
+        "association_ms": 0.004958
+      }
+    },
+    {
+      "trial": 3,
+      "process_launch_to_first_result_ms": 245.00784099996054,
+      "model_load_ms": 39.300058,
+      "first_result": {
+        "event": "first_result",
+        "process_entry_ms": 152.114223,
+        "frame_read_ms": 89.003133,
+        "decode_ms": 56.315354,
+        "gmc_ms": 3.245912,
+        "association_ms": 0.004958
+      }
+    }
+  ],
+  "median_ms": 247.57709599998634,
+  "min_ms": 245.00784099996054,
+  "max_ms": 261.14931699999033,
+  "scope": "Fresh process launch (including shell/interpreter/imports/model load/decode) to first result on stdout. OS and filesystem caches are not reset. Not board power-on or camera/display latency."
+}

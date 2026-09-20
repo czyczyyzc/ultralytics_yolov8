@@ -95,15 +95,30 @@ commit `600c210d9bef793ee0fe502cbc350e676a6e083a`. Finite cost-limit padding
 matches its Python wrapper; do not substitute a different assignment solver
 without rerunning equivalence checks.
 
-## Opt-in Input Experiments
+## Validated Software Input Optimization
 
-Stable defaults remain `--decoder opencv --preprocess opencv`. The following
-are experiments, not validated performance improvements on the RK3588S:
+The original launcher/defaults remain `--decoder opencv --preprocess opencv`.
+A separate RK3588S-tested launcher selects four frame-decoding threads and
+fused preprocessing, without replacing the original deployment:
 
-- `--decoder ffmpeg`: native FFmpeg software H264/HEVC decoding, one decoding
-  thread, no frame-thread pipeline. No frame discard, low-delay flag or changed
-  presentation order is requested. This tests first-read buffering overhead
-  separately from MPP. It still performs CPU BGR conversion.
+```bash
+bash scripts/anti_uav/dist_native/run_optimized_on_board.sh \
+  --output /home/orangepi/deployments/expanded28_dist_latency_20260920/new_run \
+  --save-observations
+```
+
+Its executable and all three libraries are in
+`/home/orangepi/deployments/expanded28_dist_latency_20260920/`; override that
+directory with `ANTI_UAV_LATENCY_DEPLOY`. Build the executable with `build.sh`
+and rebuild the detector with `scripts/anti_uav/build_dist_detector_on_board.sh`.
+FFmpeg development libraries are required for the direct software decoder.
+
+- `--decoder ffmpeg --decode-threads 4 --decode-threading frame`: native FFmpeg
+  software H264/HEVC decoding with explicit frame threading. The bare FFmpeg
+  option defaults to one thread/slice mode, which was slower in this test.
+  No frame discard, low-delay flag or changed presentation order is requested.
+  CPU BGR conversion is still performed. Frame threading can buffer future
+  compressed frames; file-read timings are not live-camera capture latency.
 - `--preprocess fused`: one-pass half-size BGR-to-RGB downsampling with ARM NEON,
   cached letterbox padding and the existing contiguous RGB copy to RKNN memory.
   Other resize ratios fall back to the existing OpenCV resize/color conversion.
@@ -112,8 +127,10 @@ are experiments, not validated performance improvements on the RK3588S:
 - `--decoder rkmpp` / `--preprocess rga`: experimental hardware paths. The first
   combined MPP trial crashed; do not select it as the deployment default.
 
-For a separate build, point `ANTI_UAV_NATIVE_DEPLOY` at a new directory and
-pass `--detector-library` for its rebuilt library. Do not rebuild over the
-validated release. First compare CPU-decoded pixels, prepared tensors and full
-detector/tracker observations; only then quote FPS or latency gains. Report both
-process-launch and first-read timings to avoid hiding initialization costs.
+The complete 14,201-frame Video00009 optimized run exactly matched reference
+detector boxes/scores, displayed tracks/IDs and GMC warps. Board OpenCV 4.5.4
+pixel tests also passed for 264 randomized color/grayscale/stride layouts.
+See `deliverables/expanded28_dist_latency_20260920/README.md` for measurements
+and first-frame limitations. This remains a software decode path, not zero-copy.
+Do not generalize file benchmark latency to compressed live streams or camera
+sensor-to-result latency. Other resize ratios use the OpenCV fallback.

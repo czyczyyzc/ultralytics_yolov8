@@ -1,0 +1,7 @@
+[trace_headers @ 0x5585200e2000] 18          dependent_slice_segments_enabled_flag                       0 = 0
+[trace_headers @ 0x5585200e2000] 38          tiles_enabled_flag                                          0 = 0
+[trace_headers @ 0x5585200e2000] 39          entropy_coding_sync_enabled_flag                            0 = 0
+[trace_headers @ 0x5585200e2000] 18          dependent_slice_segments_enabled_flag                       0 = 0
+[trace_headers @ 0x5585200e2000] 38          tiles_enabled_flag                                          0 = 0
+[trace_headers @ 0x5585200e2000] 39          entropy_coding_sync_enabled_flag                            0 = 0
+[trace_headers @ 0x5585200e2000] 19          slice_type                                                011 = 2

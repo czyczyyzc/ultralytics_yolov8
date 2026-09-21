@@ -10,6 +10,7 @@ mount -t tmpfs -o mode=755 tmpfs /run
 chmod 1777 /tmp
 
 rescue() {
+    printf '%s\n' "$*" > /run/camera-vendor-rescue-reason
     echo "Camera Ubuntu root handoff failed: $*" > /dev/console
     hostname orangepi-camera-rescue
     mkdir -p /run/sshd /run/ssh
@@ -31,7 +32,8 @@ done
 test "$(cat /sys/class/block/mmcblk0/device/cid)" = 4501004456343033320175a9ff04bc00 || rescue "wrong eMMC"
 test "$(blkid -s UUID -o value /dev/mmcblk0p1)" = 25606694-45b8-4ae4-abd1-ee4d5bed51fe || rescue "wrong root UUID"
 mount -t ext4 -o ro /dev/mmcblk0p1 /newroot || rescue "cannot mount root"
-test -x /newroot/sbin/init || rescue "missing Ubuntu init"
+# Resolve absolute init symlinks inside Ubuntu, not inside this initramfs.
+chroot /newroot /bin/sh -c 'test -x /sbin/init' || rescue "missing Ubuntu init"
 grep -q '^ID=ubuntu$' /newroot/etc/os-release || rescue "unexpected root OS"
 mount -o remount,rw /newroot || rescue "cannot remount root writable"
 mkdir -p /run/camera-vendor

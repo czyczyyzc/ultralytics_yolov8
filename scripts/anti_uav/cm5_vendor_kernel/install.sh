@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deliberately restricted to the previously audited 32GB eMMC CM5.
 set -euo pipefail
-mode=${1:?prepare, trial, persist, or restore required}
+mode=${1:?prepare, rebuild, trial, persist, or restore required}
 stage=$(realpath "${2:?staging directory required}")
 boot=/boot/camera-vendor-ubuntu
 original_sha=7632c8e9f07eebc2dbb477b360ca4993f6fe3ca84e7a2140dbf8ec27ed618192
@@ -33,7 +33,7 @@ prepare)
     head -c 3413 "$boot/restore-block.bin" | cmp - /boot/boot.scr
     cp -a /home/orangepi/camera_boot_stage/live_diag_20260907/rootfs "$stage/rootfs"
     root="$stage/rootfs"
-    for name in switch_root blkid; do
+    for name in switch_root blkid chroot; do
         tool=$(command -v "$name")
         install -D "$tool" "$root$tool"
         while read -r lib; do
@@ -55,6 +55,29 @@ prepare)
     sync
     original; extents
     echo 'Prepared and backed up. Boot selection has not changed.'
+    ;;
+rebuild)
+    original; extents; assets
+    test "$(sha "$boot/original/boot.scr")" = "$original_sha"
+    sha256sum -c "$boot/SHA256SUMS"
+    root="$stage/rootfs"
+    test -d "$root/etc/ssh"
+    tool=$(command -v chroot)
+    install -D "$tool" "$root$tool"
+    while read -r lib; do
+        install -D "$lib" "$root$lib"
+    done < <(ldd "$tool" | awk '$2 == "=>" && $3 ~ /^\// {print $3} $1 ~ /^\// {print $1}')
+    install -m 755 "$stage/init" "$root/init"
+    chroot "$root" /bin/sh -n /init
+    chroot "$root" "$tool" --help >/dev/null
+    umask 077
+    (cd "$root" && find . -print0 | cpio --null -o --format=newc | gzip -1) > "$boot/initramfs.cpio.gz.new"
+    gzip -t "$boot/initramfs.cpio.gz.new"
+    mv "$boot/initramfs.cpio.gz.new" "$boot/initramfs.cpio.gz"
+    sha256sum "$boot/initramfs.cpio.gz" "$boot/original/boot.scr" > "$boot/SHA256SUMS"
+    sync
+    original; extents
+    echo 'Initramfs rebuilt. Original boot selection is unchanged.'
     ;;
 trial)
     original; extents; assets

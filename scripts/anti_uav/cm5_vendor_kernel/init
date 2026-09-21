@@ -1,0 +1,45 @@
+#!/bin/sh
+# Board-specific bridge from the camera kernel to the existing Ubuntu root.
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /proc /sys /run /tmp /newroot
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o mode=755 tmpfs /run
+chmod 1777 /tmp
+
+rescue() {
+    echo "Camera Ubuntu root handoff failed: $*" > /dev/console
+    hostname orangepi-camera-rescue
+    mkdir -p /run/sshd /run/ssh
+    cp /etc/ssh/ssh_host_ed25519_key /run/ssh/host_ed25519
+    chmod 600 /run/ssh/host_ed25519
+    ip link set lo up
+    ip link set eth0 up
+    ip addr add 192.168.144.50/24 dev eth0
+    /usr/sbin/sshd -f /etc/ssh/sshd_config -E /run/rescue-sshd.log
+    echo "Rescue SSH on port 2222; Ubuntu root has not been switched." > /dev/console
+    while :; do sleep 3600; done
+}
+
+count=0
+while test ! -b /dev/mmcblk0p1 && test "$count" -lt 30; do
+    sleep 1
+    count=$((count+1))
+done
+test "$(cat /sys/class/block/mmcblk0/device/cid)" = 4501004456343033320175a9ff04bc00 || rescue "wrong eMMC"
+test "$(blkid -s UUID -o value /dev/mmcblk0p1)" = 25606694-45b8-4ae4-abd1-ee4d5bed51fe || rescue "wrong root UUID"
+mount -t ext4 -o ro /dev/mmcblk0p1 /newroot || rescue "cannot mount root"
+test -x /newroot/sbin/init || rescue "missing Ubuntu init"
+grep -q '^ID=ubuntu$' /newroot/etc/os-release || rescue "unexpected root OS"
+mount -o remount,rw /newroot || rescue "cannot remount root writable"
+mkdir -p /run/camera-vendor
+uname -r > /run/camera-vendor/root-verified
+cat /proc/sys/kernel/random/boot_id > /run/camera-vendor/boot-id
+dmesg > /newroot/var/log/camera-vendor-earlyboot.log
+mount --move /dev /newroot/dev || rescue "move dev"
+mount --move /proc /newroot/proc
+mount --move /sys /newroot/sys
+mount --move /run /newroot/run
+exec switch_root /newroot /sbin/init

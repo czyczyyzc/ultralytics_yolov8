@@ -20,6 +20,8 @@
 
 本版优先复用已经验证的训练方案，不另造训练框架。默认模型为 **P3 训练完成后冻结，再训练 Add-on P2**；P3 阶段权重和最终 Add-on 阶段权重都允许单独推理。Tracker 不属于检测训练 loss，也不包含在本接口的检测精度指标中。
 
+交接 ZIP 仅包含接口说明和示例，不是独立训练 SDK。参考脚本应在完整仓库的 `docs/anti_uav_training_platform/examples/` 位置运行，直接使用已同步的 47 服务器版本即可。
+
 ## 2. 现有代码和真实路径
 
 本地仓库：`/Users/czyczyyzc/Documents/codes/ultralytics_yolov8`
@@ -444,3 +446,27 @@ OOM、训练异常、冻结校验失败、产物损坏等发生在 202 之后，
 8. 测试指标不参与 best 选择；服务器 PT 评测、RKNN 板端精度/FPS、Tracker 指标分别展示。
 9. 取消、OOM、worker 重启/失联和损坏产物不会遗留僵尸 running 或泄漏 GPU 租约；不伪装可 resume。
 10. 未实现的能力在 `/capabilities` 中关闭。本文契约、离线示例验证，不等于 HTTP 服务已完成联调。
+
+## 11. 本次交付验证记录
+
+日期 2026-09-21；参考 worker 代码 `6ea9fdc`。仅执行只读查询和隔离 CPU 推理，没有启动训练、抢占 GPU 或修改已有模型。
+
+| 检查 | 结果 |
+| --- | --- |
+| OpenAPI 3.0.3 校验（openapi-spec-validator 0.7.2） | 通过，18 个 HTTP 操作 |
+| 文档 4 个 JSON 请求/响应与 schema 对照 | 通过 |
+| 曲线读取单元测试 | 6 项通过，含空文件、空格、NaN/Infinity、半行、重复轮次和阶段游标 |
+| 47 上真实 28 视频 results.csv | 正确读取 P3 15 + Add-on 15，共 30 个曲线点 |
+| P3 best CPU 单图加载 | 通过，输入断言 `[1,3,544,960]`，输出和预览正常 |
+| Add-on best CPU 单图加载 | 通过，同上 |
+| Add-on `epoch9.pt`（UI 第 10 轮）CPU 视频加载 | 通过，3 帧按 0/1/2 顺序输出，4 个检测框，3 张预览 |
+
+短视频取自 Video00009 的 9.7 秒附近并重编码，仅验证接口调用、checkpoint 加载和坐标输出，不用于精度/FPS比较。测试目录：
+
+```text
+/mnt/chenziye/codes/ultralytics_yolov8/runs/platform_handoff_smoke_20260921/p3_image
+/mnt/chenziye/codes/ultralytics_yolov8/runs/platform_handoff_smoke_20260921/addon_image_v2
+/mnt/chenziye/codes/ultralytics_yolov8/runs/platform_handoff_smoke_20260921/addon_epoch10_video
+```
+
+**尚未验证/尚未实现：** HTTP 服务、数据库/队列、鉴权、上传限额、GPU 租约、运行中 checkpoint 原子发布回调、端到端取消恢复、整段可视化视频编码。这些是平台团队按本契约接入的工作，不属于本次离线示例的测试结论。

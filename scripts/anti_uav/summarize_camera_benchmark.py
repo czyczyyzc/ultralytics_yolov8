@@ -13,6 +13,10 @@ def summarize(path):
         rows = list(csv.DictReader(stream))
     if len(rows) != data["frames"]:
         raise ValueError(f"{path}: incomplete timestamp log")
+    if sum(data["npu_worker_frame_counts"]) != len(rows):
+        raise ValueError(f"{path}: worker frame count mismatch")
+    if not data["args"]["detector_only"] and data["compact_gmc_counts"]["frames"] != len(rows):
+        raise ValueError(f"{path}: GMC selected-frame count mismatch")
     periods, gaps = [], 0
     for index, row in enumerate(rows):
         if int(row["index"]) != index or not int(row["timestamp_valid"]):
@@ -22,6 +26,8 @@ def summarize(path):
             raise ValueError(f"{path}: timestamp order/clock mismatch")
         if index:
             previous = rows[index - 1]
+            if float(row["output_ms"]) <= float(previous["output_ms"]):
+                raise ValueError(f"{path}: non-increasing output time")
             delta = (int(row["sequence"]) - int(previous["sequence"])) % (2**32)
             if not 0 < delta < 2**31:
                 raise ValueError(f"{path}: repeated or out-of-order sensor sequence")

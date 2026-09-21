@@ -29,6 +29,17 @@ def summarize(path):
             periods.append((values[0] - float(previous["frame_ms"])) / delta)
     if gaps != data["camera"]["sequence_gaps"]:
         raise ValueError(f"{path}: gap count mismatch")
+    scheduler = data.get("capture_scheduler", {"mode": "direct"})
+    if scheduler["mode"] == "independent":
+        if (scheduler["slot_taken"] != len(rows)
+                or scheduler["slot_published"] != scheduler["slot_taken"] + scheduler["slot_replaced"] + scheduler["slot_remaining"]
+                or scheduler["read_completed"] != scheduler["slot_published"] + scheduler["shutdown_discarded"]):
+            raise ValueError(f"{path}: mailbox accounting mismatch")
+    for row in rows:
+        if "ready_ms" in row:
+            values = [float(row[key]) for key in ("dequeue_ms", "ready_ms", "dispatch_ms", "output_ms")]
+            if not all(math.isfinite(v) for v in values) or values != sorted(values):
+                raise ValueError(f"{path}: capture/dispatch order mismatch")
     measured = rows[data["args"]["warmup"] :]
     frame_age = statistics.mean(float(row["frame_to_output_ms"]) for row in measured)
     if abs(frame_age - data["stages_ms"]["driver_to_output"]["mean"]) > 1e-6:
@@ -44,6 +55,7 @@ def summarize(path):
         "npu_core_masks": data["npu_core_masks"],
         "inflight": data["args"]["inflight"],
         "camera": data["camera"],
+        "capture_scheduler": scheduler,
         "processed_fps": data["steady_fps"],
         "observed_sensor_fps": 1000 / statistics.median(periods) if periods else None,
         "skipped_fraction_between_first_and_last": gaps / (len(rows) + gaps),

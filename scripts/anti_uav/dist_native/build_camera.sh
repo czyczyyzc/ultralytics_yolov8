@@ -21,3 +21,5 @@ g++ "${flags[@]}" "${inc[@]}" "$HERE/video.cpp" -o "$OUT/anti_uav_dist_native" \
     "${lib[@]}" "${cv[@]}" -lcrypto -ldl -pthread
 g++ "${flags[@]}" "$HERE/fused_half_rgb_test.cpp" -o "$OUT/fused_half_rgb_test"
 "$OUT/fused_half_rgb_test"
+g++ "${flags[@]}" "$HERE/latest_frame_slot_test.cpp" -pthread -o "$OUT/latest_frame_slot_test"
+"$OUT/latest_frame_slot_test"

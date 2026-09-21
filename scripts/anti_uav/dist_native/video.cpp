@@ -1,5 +1,5 @@
 // Native video decode -> split-core RKNN + ordered GMC -> ordered Dist.
-// No Python interpreter, Python bindings, cached observations or frame skipping.
+// No Python interpreter or cached observations. Live capture may skip stale frames.
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -29,6 +29,7 @@
 #include <vector>
 #include "video_source.hpp"
 #include "camera_source.hpp"
+#include "latest_frame_slot.hpp"
 namespace fs=std::filesystem;
 using Clock=std::chrono::steady_clock;
 static const auto ENTRY=Clock::now();
@@ -99,7 +100,7 @@ struct Args {
     std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv";
     int workers=3,inflight=9,frames=0,warmup=100,decode_threads=1;
     std::string decode_threading="slice";
-    std::string camera_policy="latest",camera_format,camera_start="lazy";
+    std::string camera_policy="latest",camera_format,camera_start="lazy",camera_dispatch="direct";
     std::vector<std::string> core_masks;
     int camera_buffers=4,npu_warmup=0;
     double camera_fps=120;
@@ -129,6 +130,7 @@ Args parse(int argc,char** argv) {
         else if(key=="--camera-format") a.camera_format=value;
         else if(key=="--camera-policy") a.camera_policy=value;
         else if(key=="--camera-start") a.camera_start=value;
+        else if(key=="--camera-dispatch") a.camera_dispatch=value;
         else if(key=="--npu-masks") {
             a.core_masks.clear();std::stringstream masks(value);std::string mask;
             while(std::getline(masks,mask,',')) a.core_masks.push_back(mask);
@@ -158,6 +160,9 @@ Args parse(int argc,char** argv) {
         throw std::runtime_error("Camera requires raw8-gray, explicit frame count and valid rate/policy");
     if(a.camera_start!="lazy" && a.camera_start!="overlap") throw std::runtime_error("Invalid camera start mode");
     if(a.camera_start=="overlap" && a.decoder!="v4l2") throw std::runtime_error("Overlapped startup requires camera input");
+    if(a.camera_dispatch!="direct" && a.camera_dispatch!="independent") throw std::runtime_error("Invalid camera dispatch mode");
+    if(a.camera_dispatch=="independent" && (a.decoder!="v4l2" || a.camera_policy!="latest"))
+        throw std::runtime_error("Independent capture requires V4L2 latest policy");
     if(a.core_masks.empty()) for(int w=0;w<a.workers;++w) a.core_masks.push_back(std::to_string(w));
     if(a.core_masks.size()!=size_t(a.workers)) throw std::runtime_error("One NPU mask required per worker");
     for(const auto& mask:a.core_masks)
@@ -187,6 +192,8 @@ struct Work {
     std::deque<int> available;
     std::deque<JobPtr> ordered,motion;
     std::array<JobPtr,3> pending;
+    LatestFrameSlot<JobPtr> latest;
+    uint64_t capture_completed=0,capture_shutdown_discarded=0;
     void fail() {std::lock_guard<std::mutex> lock(mutex);if(!failure) failure=std::current_exception();stop=true;cv.notify_all();}
 };
 struct Threads {
@@ -269,11 +276,12 @@ int run(const Args& args) {
     std::ofstream latencies;
     if(camera) {
         latencies.open(fs::path(args.output)/"latency.csv");latencies.exceptions(std::ios::badbit|std::ios::failbit);
-        latencies<<"index,sequence,flags,timestamp_valid,frame_ms,dequeue_ms,output_ms,read_ms,copy_ms,dispatch_wait_ms,worker_wait_ms,preprocess_ms,npu_ms,postprocess_ms,gmc_ms,association_ms,read_to_output_ms,frame_to_output_ms\n"<<std::setprecision(17);
+        latencies<<"index,sequence,flags,timestamp_valid,frame_ms,dequeue_ms,output_ms,read_ms,copy_ms,dispatch_wait_ms,worker_wait_ms,preprocess_ms,npu_ms,postprocess_ms,gmc_ms,association_ms,read_to_output_ms,frame_to_output_ms,ready_ms,dispatch_ms\n"<<std::setprecision(17);
     }
     if(camera_startup.valid()) camera_startup.get();
-    Work work;Threads threads{work,{}};
+    Work work;
     std::array<int,3> assigned{};
+    Threads threads{work,{}};
     for(int worker=0;worker<args.workers;++worker) {
         work.available.push_back(worker);
         threads.threads.emplace_back([&,worker] {
@@ -313,9 +321,34 @@ int run(const Args& args) {
         } catch(...) {work.fail();}
     });
     auto started=Clock::now(),measured=started;
+    if(camera && args.camera_dispatch=="independent") threads.threads.emplace_back([&] {
+        try {
+            while(true) {
+                {std::lock_guard<std::mutex> lock(work.mutex);if(work.stop || work.done) return;}
+                auto job=std::make_shared<Job>();job->begin=Clock::now();
+                camera->read(job->frame,job->capture);
+                job->decode=ms(job->begin);job->ready_ms=monotonic_ms();
+                {std::lock_guard<std::mutex> lock(work.mutex);
+                 ++work.capture_completed;
+                 if(work.stop || work.done) {++work.capture_shutdown_discarded;return;}
+                 work.latest.publish(std::move(job));work.cv.notify_all();}
+            }
+        } catch(...) {work.fail();}
+    });
     threads.threads.emplace_back([&] {
         try {
             for(int index=0;index<total;++index) {
+                if(camera && args.camera_dispatch=="independent") {
+                    std::unique_lock<std::mutex> lock(work.mutex);
+                    work.cv.wait(lock,[&]{return work.stop || (work.inflight<args.inflight && !work.available.empty() && work.latest.ready());});
+                    if(work.stop) return;
+                    auto job=work.latest.take();job->index=index;job->motion=!flow;
+                    ++work.inflight;
+                    int worker=work.available.front();work.available.pop_front();++assigned[worker];
+                    job->dispatch_ms=monotonic_ms();
+                    work.pending[worker]=job;work.ordered.push_back(job);if(flow) work.motion.push_back(job);work.cv.notify_all();
+                    continue;
+                }
                 {std::unique_lock<std::mutex> lock(work.mutex);work.cv.wait(lock,[&]{return work.stop || (work.inflight<args.inflight && (!camera || !work.available.empty()));});
                  if(work.stop) return;++work.inflight;}
                 auto job=std::make_shared<Job>();job->index=index;job->begin=Clock::now();
@@ -362,7 +395,8 @@ int run(const Args& args) {
             have_sequence=true;last_sequence=job->capture.sequence;
             auto& c=job->capture;
             latencies<<index<<','<<c.sequence<<','<<c.flags<<','<<c.valid<<','<<c.frame_ms<<','<<c.dequeue_ms<<','<<output_ms<<','<<job->decode<<','<<c.copy_ms<<','<<job->dispatch_ms-job->ready_ms<<','<<job->worker_start_ms-job->dispatch_ms<<','<<job->native[0]<<','<<job->native[1]<<','<<job->native[2]<<','<<job->gmc<<','<<association_ms<<','<<latency<<',';
-            if(c.valid) latencies<<output_ms-c.frame_ms;latencies<<'\n';
+            if(c.valid) latencies<<output_ms-c.frame_ms;
+            latencies<<','<<job->ready_ms<<','<<job->dispatch_ms<<'\n';
         }
         if(index==0) {
             if(camera) first_image=job->frame;
@@ -413,6 +447,7 @@ int run(const Args& args) {
     }
     double seconds=ms(measured)/1000,all_seconds=ms(started)/1000;
     for(auto& thread:threads.threads) thread.join();
+    if(work.failure) std::rethrow_exception(work.failure);
     if(camera) {latencies.close();cv::imwrite((fs::path(args.output)/"first_raw_gray.png").string(),first_image);}
     if(args.save) observations.close();
     std::ofstream out(fs::path(args.output)/"summary.json");out.exceptions(std::ios::badbit|std::ios::failbit);out<<std::setprecision(17);
@@ -420,6 +455,11 @@ int run(const Args& args) {
     out<<",\"model_load_ms\":"<<load_ms<<",\"first_result\":"<<first_result<<",\"model_sha256\":"<<quote(model_sha)<<",\"detector_library_sha256\":"<<quote(sha256(args.detector));
     out<<",\"decoder_backend\":"<<quote(args.decoder)<<",\"preprocess_backend\":"<<quote(args.preprocess);
     out<<",\"npu_warmup_per_worker\":"<<args.npu_warmup<<",\"npu_warmup_ms\":"<<npu_warmup_ms;
+    if(camera) out<<",\"capture_scheduler\":{\"mode\":"<<quote(args.camera_dispatch)
+        <<",\"read_completed\":"<<(args.camera_dispatch=="independent"?work.capture_completed:uint64_t(total))
+        <<",\"slot_published\":"<<work.latest.published<<",\"slot_replaced\":"<<work.latest.replaced
+        <<",\"slot_taken\":"<<work.latest.taken<<",\"slot_remaining\":"<<int(work.latest.ready())
+        <<",\"shutdown_discarded\":"<<work.capture_shutdown_discarded<<'}';
     if(camera) out<<",\"camera\":{\"format\":\"raw8-gray\",\"policy\":"<<quote(args.camera_policy)<<",\"start_mode\":"<<quote(args.camera_start)<<",\"streamon_call_ms\":"<<camera->streamon_call_ms<<",\"buffers\":"<<camera->buffer_count()<<",\"drained_frames\":"<<camera->discarded<<",\"sequence_gaps\":"<<sequence_gaps<<",\"timestamp_scope\":\"Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display\"}";
     if(args.decoder=="ffmpeg") out<<",\"software_decode_threads\":"<<args.decode_threads
         <<",\"software_decode_threading\":"<<quote(args.decode_threading);

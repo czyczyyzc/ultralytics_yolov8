@@ -24,30 +24,42 @@ def main():
     p.add_argument("--device", type=int, default=0)
     p.add_argument("--epochs", type=int, default=15)
     p.add_argument("--prepare-timeout-hours", type=float, default=24)
+    p.add_argument("--comparison-kind", choices=("combined", "assets-only"), default="combined")
+    p.add_argument("--reference-label", default="previous_28")
+    p.add_argument("--experiment-label", default="expanded_online")
+    p.add_argument("--preview-count", type=int, default=20)
+    p.add_argument("--wait-reference", action="store_true")
     a = p.parse_args()
     for key in ("cache", "run_dir", "initial_p3", "reference_run", "old_run"):
         setattr(a, key, getattr(a, key).resolve())
-    if a.epochs < 1 or a.prepare_timeout_hours <= 0:
+    if a.epochs < 1 or a.prepare_timeout_hours <= 0 or a.preview_count < 1:
         raise ValueError("Invalid training/wait budget")
+    if a.reference_label == a.experiment_label or any(
+            not label.replace("_", "").isalnum() for label in (a.reference_label, a.experiment_label)):
+        raise ValueError("Use distinct alphanumeric/underscore arm labels")
     a.run_dir.mkdir(parents=True, exist_ok=True)
     lock = (a.run_dir/"experiment.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     if (a.run_dir/"experiment.json").exists():
         raise FileExistsError("Use a new experiment; do not overwrite training")
     from scripts.anti_uav.synthesize_gray_drone_replacements import sha256
+    comparison_note = ("Only asset catalog changes; same data, sampling, initialization, epochs and replacement probability"
+                       if a.comparison_kind == "assets-only" else
+                       "Combined data expansion and online replacement; not an augmentation-only ablation")
     protocol = dict(cache=str(a.cache), initial_p3=str(a.initial_p3), initial_sha256=sha256(a.initial_p3),
                     reference_run=str(a.reference_run), epochs_per_stage=a.epochs, device=a.device,
                     batch=64, input_hw=[544, 960], initialization="Same pretrained P3 as the 28-video experiment; fresh optimizer, not random initialization",
                     stages=["train_p3", "freeze_p3_train_addon_p2"],
-                    comparison="Combined data expansion and online replacement; not an augmentation-only ablation",
+                    comparison=comparison_note, reference_label=a.reference_label, experiment_label=a.experiment_label,
                     git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
     (a.run_dir/"experiment.json").write_text(json.dumps(protocol, indent=2)+"\n")
     (a.run_dir/"logs").mkdir()
     config = a.run_dir/"yolo_config"
     config.mkdir()
-    font = a.reference_run.parent/"yolo_config/Arial.ttf"
-    if font.is_file():
-        shutil.copy2(font, config/"Arial.ttf")
+    for font in (a.reference_run/"yolo_config/Arial.ttf", a.reference_run.parent/"yolo_config/Arial.ttf"):
+        if font.is_file():
+            shutil.copy2(font, config/"Arial.ttf")
+            break
     env = dict(os.environ, PYTHONPATH=str(ROOT), OMP_NUM_THREADS="4", OPENBLAS_NUM_THREADS="4",
                WANDB_MODE="disabled", WANDB_DISABLED="true", MPLBACKEND="Agg", YOLO_CONFIG_DIR=str(config))
     for key in ("CUDA_VISIBLE_DEVICES", "ANTI_UAV_TRUST_DATASET_CACHE"):
@@ -77,10 +89,26 @@ def main():
                 raise TimeoutError("Cache preparation exceeded wait budget")
             os.kill(state["pid"], 0)
             time.sleep(30)
+        if a.comparison_kind == "assets-only":
+            import yaml
+            from scripts.anti_uav.prepare_gray_asset_ablation import assert_asset_only_configs
+            reference = json.loads((a.reference_run/"protocol.json").read_text())
+            if (reference["epochs"] != a.epochs or reference["batch"] != 64
+                    or reference["input_hw"] != [544, 960] or reference["seed"] != 20260915
+                    or not reference.get("fixed_validation")
+                    or sha256(Path(reference["initial_p3"])) != protocol["initial_sha256"]):
+                raise ValueError("Reference training protocol differs beyond asset catalog")
+            assert_asset_only_configs(yaml.safe_load(Path(reference["data_yaml"]).read_text()),
+                                      yaml.safe_load((a.cache/"train_online_gray_monitor.yaml").read_text()))
         execute("augmentation_smoke", "benchmark_online_gray_replacement.py",
                 ["--cache", str(a.cache), "--output", str(a.run_dir/"augmentation_smoke")])
         execute("augmentation_preview", "preview_online_gray_replacements.py",
-                ["--cache", str(a.cache), "--output", str(a.run_dir/"augmentation_preview"), "--count", "20", "--seed", "20260921"])
+                ["--cache", str(a.cache), "--output", str(a.run_dir/"augmentation_preview"), "--count", str(a.preview_count), "--seed", "20260921"])
+        if a.comparison_kind == "assets-only":
+            preview = json.loads((a.run_dir/"augmentation_preview/summary.json").read_text())
+            assets = json.loads((a.cache/"index.json").read_text())["asset_ids"]
+            if set(preview["asset_ids_used"]) != set(assets):
+                raise ValueError("Expanded experiment requires at least one successful preview per asset")
         usage = subprocess.check_output(["nvidia-smi", f"--id={a.device}",
             "--query-gpu=memory.used,utilization.gpu", "--format=csv,noheader,nounits"], text=True)
         memory, utilization = map(int, usage.strip().split(","))
@@ -90,11 +118,24 @@ def main():
                 ["--dataset", str(a.cache), "--data-yaml", str(a.cache/"train_online_gray_monitor.yaml"),
                  "--run-dir", str(a.run_dir), "--initial-p3", str(a.initial_p3), "--old-run", str(a.old_run),
                  "--device", str(a.device), "--epochs", str(a.epochs), "--fixed-validation", "--skip-final-test"])
+        if a.wait_reference:
+            status("waiting_for_reference")
+            deadline = time.monotonic()+a.prepare_timeout_hours*3600
+            while True:
+                reference_state = json.loads((a.reference_run/"experiment_status.json").read_text())
+                if reference_state["stage"] == "complete":
+                    break
+                if reference_state["stage"] == "failed":
+                    raise RuntimeError(f"Reference run failed: {reference_state.get('error')}")
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Reference run did not finish in time")
+                os.kill(reference_state["pid"], 0)
+                time.sleep(30)
         from ultralytics import YOLO
         from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayValidator
         from scripts.anti_uav.run_native_pool_comparison import clean, HOLDOUT
         models = {}
-        for group, run in (("previous_28", a.reference_run), ("expanded_online", a.run_dir)):
+        for group, run in ((a.reference_label, a.reference_run), (a.experiment_label, a.run_dir)):
             for branch, subdir in (("p3", "training_p3/p3"), ("addon", "training_addon/p2")):
                 models[f"{group}_{branch}"] = run/subdir/"weights/best.pt"
         output = a.run_dir/"comparison"
@@ -114,7 +155,7 @@ def main():
         lines = ["# Online Augmentation and Approved-Video Expansion", "",
                  "PT FP32 detector evaluation at 960x544, not RKNN or tracking metrics.",
                  "Video00009's unchanged validation subset selects checkpoints; it is not an untouched test.",
-                 "Video00004 is test-only. Data volume and replacement change together; this does not isolate their individual effects.", "",
+                 "Video00004 is test-only. " + comparison_note + ".", "",
                  "| Split | Model | Conf | Precision | Recall | FP | mAP50 | 4-8px recall |",
                  "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for name, result in results.items():

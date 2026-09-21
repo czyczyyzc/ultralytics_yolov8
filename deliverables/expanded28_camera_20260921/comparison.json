@@ -1,0 +1,1408 @@
+{
+  "runs": {
+    "fifo3_2000": {
+      "frames": 2000,
+      "measured_seconds": 21.187645004,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "fifo",
+        "buffers": 4,
+        "drained_frames": 0,
+        "sequence_gaps": 675,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 89.67490250291151,
+      "observed_sensor_fps": 119.99760004872321,
+      "skipped_fraction_between_first_and_last": 0.2523364485981308,
+      "first_result": {
+        "process_entry_ms": 213.593063,
+        "frame_read_ms": 145.97714,
+        "decode_ms": 109.412053,
+        "gmc_ms": 2.674583,
+        "association_ms": 0.007,
+        "streamon_to_output_ms": 145.97684799996205,
+        "driver_to_output_ms": 44.93086299998686
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 0.6169151221052642,
+          "p50": 0.538709,
+          "p95": 1.2014041500000001,
+          "max": 1.904875
+        },
+        "preprocess": {
+          "mean": 0.6978936142105251,
+          "p50": 0.69125,
+          "p95": 0.80444615,
+          "max": 0.98875
+        },
+        "npu": {
+          "mean": 31.633692578421062,
+          "p50": 30.813274,
+          "p95": 35.53683074999999,
+          "max": 42.306254
+        },
+        "postprocess": {
+          "mean": 0.30482333052631605,
+          "p50": 0.301291,
+          "p95": 0.334833,
+          "max": 0.40775
+        },
+        "gmc": {
+          "mean": 3.1920499015789527,
+          "p50": 2.881667,
+          "p95": 4.4293093,
+          "max": 5.960501
+        },
+        "association": {
+          "mean": 0.005840085263157926,
+          "p50": 0.005542,
+          "p95": 0.01020805,
+          "max": 0.023625
+        },
+        "ordered_latency": {
+          "mean": 33.62834493105262,
+          "p50": 32.608191,
+          "p95": 38.0084147,
+          "max": 46.62263
+        },
+        "dispatch_wait": {
+          "mean": 0.003490641050677943,
+          "p50": 0.00029200012795627117,
+          "p95": 0.0008749999105930328,
+          "max": 2.7171670000534505
+        },
+        "worker_wait": {
+          "mean": 0.08371216947641714,
+          "p50": 0.01254200004041195,
+          "p95": 0.07323715004604307,
+          "max": 7.932459000032395
+        },
+        "detector_done_to_output": {
+          "mean": 0.2857810300011433,
+          "p50": 0.06474999990314245,
+          "p95": 1.8117462000111109,
+          "max": 11.026458999840543
+        },
+        "capture_copy": {
+          "mean": 0.5578522984215402,
+          "p50": 0.479937499971129,
+          "p95": 1.1421815500943922,
+          "max": 1.8512079999782145
+        },
+        "driver_to_dequeue": {
+          "mean": 27.70026447052773,
+          "p50": 27.434909499948844,
+          "p95": 38.24350710001308,
+          "max": 45.036387000000104
+        },
+        "driver_to_output": {
+          "mean": 61.31978618316009,
+          "p50": 61.32133449986577,
+          "p95": 72.49377094996161,
+          "max": 83.99318700004369
+        }
+      },
+      "detections": 16,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 42.538,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0.000292,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "latest1_2000": {
+      "frames": 2000,
+      "measured_seconds": 56.731141990999994,
+      "workers": 1,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 3455,
+        "sequence_gaps": 5167,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 33.491305362783315,
+      "observed_sensor_fps": 119.99999999999999,
+      "skipped_fraction_between_first_and_last": 0.7209432119436305,
+      "first_result": {
+        "process_entry_ms": 182.444227,
+        "frame_read_ms": 139.701931,
+        "decode_ms": 110.072095,
+        "gmc_ms": 2.645125,
+        "association_ms": 0.00525,
+        "streamon_to_output_ms": 139.70163900009356,
+        "driver_to_output_ms": 38.06236199988052
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 0.3608544910526322,
+          "p50": 0.353646,
+          "p95": 0.47893155,
+          "max": 1.234625
+        },
+        "preprocess": {
+          "mean": 0.48968350684210576,
+          "p50": 0.4850415,
+          "p95": 0.54075,
+          "max": 0.58275
+        },
+        "npu": {
+          "mean": 28.533866928947344,
+          "p50": 28.574586,
+          "p95": 28.66617,
+          "max": 55.227964
+        },
+        "postprocess": {
+          "mean": 0.2842620510526328,
+          "p50": 0.284375,
+          "p95": 0.28875,
+          "max": 0.306541
+        },
+        "gmc": {
+          "mean": 2.800559647894732,
+          "p50": 2.5531045,
+          "p95": 3.80628015,
+          "max": 4.455792
+        },
+        "association": {
+          "mean": 0.00413722578947363,
+          "p50": 0.004375,
+          "p95": 0.004959,
+          "max": 0.020125
+        },
+        "ordered_latency": {
+          "mean": 29.794790719473667,
+          "p50": 29.7645865,
+          "p95": 30.00085155,
+          "max": 56.534923
+        },
+        "dispatch_wait": {
+          "mean": 0.00036137368407492573,
+          "p50": 0.0002919998951256275,
+          "p95": 0.0005840000230818987,
+          "max": 0.001167000038549304
+        },
+        "worker_wait": {
+          "mean": 0.06696588736934293,
+          "p50": 0.011375000001862645,
+          "p95": 0.020999999961350112,
+          "max": 3.7814589999616146
+        },
+        "detector_done_to_output": {
+          "mean": 0.057349821578123066,
+          "p50": 0.05891699995845556,
+          "p95": 0.06445800000801682,
+          "max": 0.09100000001490116
+        },
+        "capture_copy": {
+          "mean": 0.2460686194706757,
+          "p50": 0.2257499999832362,
+          "p95": 0.34649999998509884,
+          "max": 1.0721660000272095
+        },
+        "driver_to_dequeue": {
+          "mean": 11.556767318422146,
+          "p50": 11.630293000140227,
+          "p95": 15.234583550028038,
+          "max": 34.35242499993183
+        },
+        "driver_to_output": {
+          "mean": 41.27752873894612,
+          "p50": 41.291420500027016,
+          "p95": 44.99240139994072,
+          "max": 67.54500900022686
+        }
+      },
+      "detections": 8,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 39.769,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "latest3_12000": {
+      "frames": 12000,
+      "measured_seconds": 137.744880715,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 3997,
+        "sequence_gaps": 4667,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 86.39159537712044,
+      "observed_sensor_fps": 119.99760004872321,
+      "skipped_fraction_between_first_and_last": 0.28001439971200576,
+      "first_result": {
+        "process_entry_ms": 211.260896,
+        "frame_read_ms": 144.109598,
+        "decode_ms": 109.269719,
+        "gmc_ms": 2.701708,
+        "association_ms": 0.006417,
+        "streamon_to_output_ms": 144.10901499981992,
+        "driver_to_output_ms": 43.27452699979767
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 1.751161963109247,
+          "p50": 0.564958,
+          "p95": 9.786029549999979,
+          "max": 16.856001
+        },
+        "preprocess": {
+          "mean": 0.6804543819327732,
+          "p50": 0.678708,
+          "p95": 0.767667,
+          "max": 1.022583
+        },
+        "npu": {
+          "mean": 31.596773548991695,
+          "p50": 30.7861495,
+          "p95": 35.8888423,
+          "max": 40.397004
+        },
+        "postprocess": {
+          "mean": 0.3029810327731109,
+          "p50": 0.300708,
+          "p95": 0.32725,
+          "max": 0.413292
+        },
+        "gmc": {
+          "mean": 3.1164123721848838,
+          "p50": 2.8525,
+          "p95": 4.396584,
+          "max": 5.707333
+        },
+        "association": {
+          "mean": 0.0051499761344536805,
+          "p50": 0.00525,
+          "p95": 0.008167,
+          "max": 0.032375
+        },
+        "ordered_latency": {
+          "mean": 34.60398916504207,
+          "p50": 33.197503499999996,
+          "p95": 43.2813404,
+          "max": 49.638755
+        },
+        "dispatch_wait": {
+          "mean": 0.0005585809243733392,
+          "p50": 0.0002919998951256275,
+          "p95": 0.0005840000230818987,
+          "max": 0.4897079998627305
+        },
+        "worker_wait": {
+          "mean": 0.09504988168008204,
+          "p50": 0.017791999969631433,
+          "p95": 0.07174999988637865,
+          "max": 6.5126259999815375
+        },
+        "detector_done_to_output": {
+          "mean": 0.17510538689064317,
+          "p50": 0.06270799995400012,
+          "p95": 0.8216687500942492,
+          "max": 9.472750999964774
+        },
+        "capture_copy": {
+          "mean": 0.47334715630231083,
+          "p50": 0.4678340000100434,
+          "p95": 0.5509589999099263,
+          "max": 2.334792000008747
+        },
+        "driver_to_dequeue": {
+          "mean": 10.692136556387629,
+          "p50": 10.625350499991328,
+          "p95": 15.033294399851,
+          "max": 15.739421000005677
+        },
+        "driver_to_output": {
+          "mean": 44.06599763554648,
+          "p50": 44.362010000040755,
+          "p95": 49.65775464986218,
+          "max": 57.01279199984856
+        }
+      },
+      "detections": 84,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 44.384,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0.000291,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "latest3_2000": {
+      "frames": 2000,
+      "measured_seconds": 22.08036851,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 678,
+        "sequence_gaps": 788,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 86.0492884953214,
+      "observed_sensor_fps": 120.00480019055917,
+      "skipped_fraction_between_first_and_last": 0.28263988522238165,
+      "first_result": {
+        "process_entry_ms": 201.861937,
+        "frame_read_ms": 138.308348,
+        "decode_ms": 106.66047,
+        "gmc_ms": 2.732625,
+        "association_ms": 0.008167,
+        "streamon_to_output_ms": 138.30805599992163,
+        "driver_to_output_ms": 40.1116059999913
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 1.7664096552631576,
+          "p50": 0.566709,
+          "p95": 10.23688814999999,
+          "max": 17.487168
+        },
+        "preprocess": {
+          "mean": 0.6822556773684209,
+          "p50": 0.680167,
+          "p95": 0.7668066,
+          "max": 1.010626
+        },
+        "npu": {
+          "mean": 31.70539470263157,
+          "p50": 30.815898500000003,
+          "p95": 36.12267175,
+          "max": 39.755921
+        },
+        "postprocess": {
+          "mean": 0.30172074947368466,
+          "p50": 0.299833,
+          "p95": 0.325792,
+          "max": 0.395208
+        },
+        "gmc": {
+          "mean": 3.106095731578941,
+          "p50": 2.850021,
+          "p95": 4.38375,
+          "max": 5.717834
+        },
+        "association": {
+          "mean": 0.005212697368421071,
+          "p50": 0.00525,
+          "p95": 0.00875,
+          "max": 0.02625
+        },
+        "ordered_latency": {
+          "mean": 34.731916243157904,
+          "p50": 33.226524,
+          "p95": 43.304818299999994,
+          "max": 49.535505
+        },
+        "dispatch_wait": {
+          "mean": 0.0004600810546329931,
+          "p50": 0.0002919998951256275,
+          "p95": 0.0005840000230818987,
+          "max": 0.08137500006705523
+        },
+        "worker_wait": {
+          "mean": 0.0869653294671719,
+          "p50": 0.01720800017938018,
+          "p95": 0.07029199996031821,
+          "max": 6.360375999938697
+        },
+        "detector_done_to_output": {
+          "mean": 0.18674559789452408,
+          "p50": 0.06241600005887449,
+          "p95": 0.910757999971972,
+          "max": 7.577793000033125
+        },
+        "capture_copy": {
+          "mean": 0.49886565579223985,
+          "p50": 0.4687089999206364,
+          "p95": 0.6147023999947122,
+          "max": 1.7036249998491257
+        },
+        "driver_to_dequeue": {
+          "mean": 10.66468176684085,
+          "p50": 10.368025499978103,
+          "p95": 15.096441700088326,
+          "max": 15.734539999859408
+        },
+        "driver_to_output": {
+          "mean": 44.17578836737029,
+          "p50": 44.52613700006623,
+          "p95": 49.8644456500886,
+          "max": 55.30268600001
+        }
+      },
+      "detections": 4,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 41.615,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0.000292,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "latest3_buf2_1000": {
+      "frames": 1000,
+      "measured_seconds": 11.245512797,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 2,
+        "drained_frames": 0,
+        "sequence_gaps": 499,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 80.03192173149239,
+      "observed_sensor_fps": 119.99760004872321,
+      "skipped_fraction_between_first_and_last": 0.33288859239492996,
+      "first_result": {
+        "process_entry_ms": 207.555562,
+        "frame_read_ms": 139.54939,
+        "decode_ms": 108.30722,
+        "gmc_ms": 2.688,
+        "association_ms": 0.006417,
+        "streamon_to_output_ms": 139.54909799993038,
+        "driver_to_output_ms": 39.72561199986376
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 4.947206121111107,
+          "p50": 2.5770215,
+          "p95": 10.71767215,
+          "max": 12.69071
+        },
+        "preprocess": {
+          "mean": 0.6743567122222219,
+          "p50": 0.671125,
+          "p95": 0.746667,
+          "max": 0.798584
+        },
+        "npu": {
+          "mean": 31.400628439999988,
+          "p50": 30.336544500000002,
+          "p95": 35.587375949999995,
+          "max": 39.255712
+        },
+        "postprocess": {
+          "mean": 0.30803634666666685,
+          "p50": 0.307125,
+          "p95": 0.32813955,
+          "max": 0.385875
+        },
+        "gmc": {
+          "mean": 3.1007170655555547,
+          "p50": 2.802917,
+          "p95": 4.3713257,
+          "max": 4.785084
+        },
+        "association": {
+          "mean": 0.006035900000000002,
+          "p50": 0.005833,
+          "p95": 0.009639549999999986,
+          "max": 0.030333
+        },
+        "ordered_latency": {
+          "mean": 37.42881191888885,
+          "p50": 37.159941,
+          "p95": 42.48517725,
+          "max": 47.269546
+        },
+        "dispatch_wait": {
+          "mean": 0.00044621999918793636,
+          "p50": 0.0002919998951256275,
+          "p95": 0.0005840000230818987,
+          "max": 0.08254100009799004
+        },
+        "worker_wait": {
+          "mean": 0.039453113335960854,
+          "p50": 0.021292000077664852,
+          "p95": 0.0670985499746166,
+          "max": 2.769958000164479
+        },
+        "detector_done_to_output": {
+          "mean": 0.056692568885369436,
+          "p50": 0.06416699988767505,
+          "p95": 0.0767079999204725,
+          "max": 1.1027919999323785
+        },
+        "capture_copy": {
+          "mean": 0.4674982777739772,
+          "p50": 0.4601040000561625,
+          "p95": 0.5145292000379413,
+          "max": 1.165207999991253
+        },
+        "driver_to_dequeue": {
+          "mean": 7.794972088888494,
+          "p50": 7.39369049994275,
+          "p95": 11.01802774980897,
+          "max": 14.726846999954432
+        },
+        "driver_to_output": {
+          "mean": 40.79048295555222,
+          "p50": 39.314591499976814,
+          "p95": 46.397917050053366,
+          "max": 52.53680700017139
+        }
+      },
+      "detections": 3,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 41.615,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0.000291,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "latest3_buf3_2000": {
+      "frames": 2000,
+      "measured_seconds": 22.41955617,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 3,
+        "drained_frames": 399,
+        "sequence_gaps": 833,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 84.74744038610467,
+      "observed_sensor_fps": 119.99760004704689,
+      "skipped_fraction_between_first_and_last": 0.2940345923049771,
+      "first_result": {
+        "process_entry_ms": 212.798563,
+        "frame_read_ms": 144.994807,
+        "decode_ms": 111.330637,
+        "gmc_ms": 2.708125,
+        "association_ms": 0.00525,
+        "streamon_to_output_ms": 144.9945149999112,
+        "driver_to_output_ms": 42.09303499991074
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 2.3125839389473697,
+          "p50": 0.590042,
+          "p95": 9.7442486,
+          "max": 24.878003
+        },
+        "preprocess": {
+          "mean": 0.6704160136842096,
+          "p50": 0.6680625,
+          "p95": 0.7545556,
+          "max": 0.911751
+        },
+        "npu": {
+          "mean": 31.548067237894706,
+          "p50": 30.718774,
+          "p95": 35.70992,
+          "max": 39.801129
+        },
+        "postprocess": {
+          "mean": 0.30373432052631566,
+          "p50": 0.301584,
+          "p95": 0.32609855,
+          "max": 0.408333
+        },
+        "gmc": {
+          "mean": 3.1132196115789457,
+          "p50": 2.866063,
+          "p95": 4.3557947,
+          "max": 5.645209
+        },
+        "association": {
+          "mean": 0.005323846842105285,
+          "p50": 0.00525,
+          "p95": 0.00875,
+          "max": 0.03675
+        },
+        "ordered_latency": {
+          "mean": 35.07593847105269,
+          "p50": 34.338357,
+          "p95": 41.8607329,
+          "max": 65.582132
+        },
+        "dispatch_wait": {
+          "mean": 0.0005417252668963843,
+          "p50": 0.0002919998951256275,
+          "p95": 0.0005840000230818987,
+          "max": 0.1356250001117587
+        },
+        "worker_wait": {
+          "mean": 0.08476541263026822,
+          "p50": 0.02099999994970858,
+          "p95": 0.07116699988255278,
+          "max": 5.112041999818757
+        },
+        "detector_done_to_output": {
+          "mean": 0.15389009526612138,
+          "p50": 0.06241700006648898,
+          "p95": 0.5721041500102706,
+          "max": 7.4366260000970215
+        },
+        "capture_copy": {
+          "mean": 0.46685631473659,
+          "p50": 0.4612704999744892,
+          "p95": 0.5442645500297658,
+          "max": 1.898750000167638
+        },
+        "driver_to_dequeue": {
+          "mean": 10.42397915263501,
+          "p50": 9.492713499930687,
+          "p95": 15.058894149807747,
+          "max": 23.270794000010937
+        },
+        "driver_to_output": {
+          "mean": 43.70070162368791,
+          "p50": 44.25200199987739,
+          "p95": 49.566913849918635,
+          "max": 59.31117199989967
+        }
+      },
+      "detections": 8,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 42.538,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "startup_w0_1": {
+      "frames": 1,
+      "measured_seconds": 0.140974764,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 0,
+        "sequence_gaps": 0,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 7.093468161436326,
+      "observed_sensor_fps": null,
+      "skipped_fraction_between_first_and_last": 0.0,
+      "first_result": {
+        "process_entry_ms": 206.322687,
+        "frame_read_ms": 140.772639,
+        "decode_ms": 110.567636,
+        "gmc_ms": 2.706667,
+        "association_ms": 0.005833,
+        "streamon_to_output_ms": 140.77234699996188,
+        "driver_to_output_ms": 38.63504000008106
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 110.567636,
+          "p50": 110.567636,
+          "p95": 110.567636,
+          "max": 110.567636
+        },
+        "preprocess": {
+          "mean": 1.276917,
+          "p50": 1.276917,
+          "p95": 1.276917,
+          "max": 1.276917
+        },
+        "npu": {
+          "mean": 28.525295,
+          "p50": 28.525295,
+          "p95": 28.525295,
+          "max": 28.525295
+        },
+        "postprocess": {
+          "mean": 0.28875,
+          "p50": 0.28875,
+          "p95": 0.28875,
+          "max": 0.28875
+        },
+        "gmc": {
+          "mean": 2.706667,
+          "p50": 2.706667,
+          "p95": 2.706667,
+          "max": 2.706667
+        },
+        "association": {
+          "mean": 0.005833,
+          "p50": 0.005833,
+          "p95": 0.005833,
+          "max": 0.005833
+        },
+        "ordered_latency": {
+          "mean": 140.772639,
+          "p50": 140.772639,
+          "p95": 140.772639,
+          "max": 140.772639
+        },
+        "dispatch_wait": {
+          "mean": 0.0008750001434236765,
+          "p50": 0.0008750001434236765,
+          "p95": 0.0008750001434236765,
+          "max": 0.0008750001434236765
+        },
+        "worker_wait": {
+          "mean": 0.0936249999795109,
+          "p50": 0.0936249999795109,
+          "p95": 0.0936249999795109,
+          "max": 0.0936249999795109
+        },
+        "detector_done_to_output": {
+          "mean": 0.016333000035956502,
+          "p50": 0.016333000035956502,
+          "p95": 0.016333000035956502,
+          "max": 0.016333000035956502
+        },
+        "capture_copy": {
+          "mean": 0.9747500000521541,
+          "p50": 0.9747500000521541,
+          "p95": 0.9747500000521541,
+          "max": 0.9747500000521541
+        },
+        "driver_to_dequeue": {
+          "mean": 7.407161999959499,
+          "p50": 7.407161999959499,
+          "p95": 7.407161999959499,
+          "max": 7.407161999959499
+        },
+        "driver_to_output": {
+          "mean": 38.63504000008106,
+          "p50": 38.63504000008106,
+          "p95": 38.63504000008106,
+          "max": 38.63504000008106
+        }
+      },
+      "detections": 0,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 41.615,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0.000292,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "startup_w0_2": {
+      "frames": 1,
+      "measured_seconds": 0.139939056,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 0,
+        "sequence_gaps": 0,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 7.145967884762635,
+      "observed_sensor_fps": null,
+      "skipped_fraction_between_first_and_last": 0.0,
+      "first_result": {
+        "process_entry_ms": 207.520563,
+        "frame_read_ms": 139.742181,
+        "decode_ms": 109.480303,
+        "gmc_ms": 2.654167,
+        "association_ms": 0.004958,
+        "streamon_to_output_ms": 139.74188899993896,
+        "driver_to_output_ms": 38.69084000005387
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 109.480303,
+          "p50": 109.480303,
+          "p95": 109.480303,
+          "max": 109.480303
+        },
+        "preprocess": {
+          "mean": 1.267292,
+          "p50": 1.267292,
+          "p95": 1.267292,
+          "max": 1.267292
+        },
+        "npu": {
+          "mean": 28.599378,
+          "p50": 28.599378,
+          "p95": 28.599378,
+          "max": 28.599378
+        },
+        "postprocess": {
+          "mean": 0.283208,
+          "p50": 0.283208,
+          "p95": 0.283208,
+          "max": 0.283208
+        },
+        "gmc": {
+          "mean": 2.654167,
+          "p50": 2.654167,
+          "p95": 2.654167,
+          "max": 2.654167
+        },
+        "association": {
+          "mean": 0.004958,
+          "p50": 0.004958,
+          "p95": 0.004958,
+          "max": 0.004958
+        },
+        "ordered_latency": {
+          "mean": 139.742181,
+          "p50": 139.742181,
+          "p95": 139.742181,
+          "max": 139.742181
+        },
+        "dispatch_wait": {
+          "mean": 0.0008750001434236765,
+          "p50": 0.0008750001434236765,
+          "p95": 0.0008750001434236765,
+          "max": 0.0008750001434236765
+        },
+        "worker_wait": {
+          "mean": 0.0918749999254942,
+          "p50": 0.0918749999254942,
+          "p95": 0.0918749999254942,
+          "max": 0.0918749999254942
+        },
+        "detector_done_to_output": {
+          "mean": 0.016041999915614724,
+          "p50": 0.016041999915614724,
+          "p95": 0.016041999915614724,
+          "max": 0.016041999915614724
+        },
+        "capture_copy": {
+          "mean": 0.9709590000566095,
+          "p50": 0.9709590000566095,
+          "p95": 0.9709590000566095,
+          "max": 0.9709590000566095
+        },
+        "driver_to_dequeue": {
+          "mean": 7.408128000097349,
+          "p50": 7.408128000097349,
+          "p95": 7.408128000097349,
+          "max": 7.408128000097349
+        },
+        "driver_to_output": {
+          "mean": 38.69084000005387,
+          "p50": 38.69084000005387,
+          "p95": 38.69084000005387,
+          "max": 38.69084000005387
+        }
+      },
+      "detections": 0,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 40.692,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "startup_w0_3": {
+      "frames": 1,
+      "measured_seconds": 0.13908447300000001,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 0,
+        "sequence_gaps": 0,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 7.189875177511726,
+      "observed_sensor_fps": null,
+      "skipped_fraction_between_first_and_last": 0.0,
+      "first_result": {
+        "process_entry_ms": 204.197312,
+        "frame_read_ms": 138.891972,
+        "decode_ms": 108.647594,
+        "gmc_ms": 2.659417,
+        "association_ms": 0.004666,
+        "streamon_to_output_ms": 138.89168000011705,
+        "driver_to_output_ms": 38.65363900014199
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 108.647594,
+          "p50": 108.647594,
+          "p95": 108.647594,
+          "max": 108.647594
+        },
+        "preprocess": {
+          "mean": 1.270792,
+          "p50": 1.270792,
+          "p95": 1.270792,
+          "max": 1.270792
+        },
+        "npu": {
+          "mean": 28.544252,
+          "p50": 28.544252,
+          "p95": 28.544252,
+          "max": 28.544252
+        },
+        "postprocess": {
+          "mean": 0.288459,
+          "p50": 0.288459,
+          "p95": 0.288459,
+          "max": 0.288459
+        },
+        "gmc": {
+          "mean": 2.659417,
+          "p50": 2.659417,
+          "p95": 2.659417,
+          "max": 2.659417
+        },
+        "association": {
+          "mean": 0.004666,
+          "p50": 0.004666,
+          "p95": 0.004666,
+          "max": 0.004666
+        },
+        "ordered_latency": {
+          "mean": 138.891972,
+          "p50": 138.891972,
+          "p95": 138.891972,
+          "max": 138.891972
+        },
+        "dispatch_wait": {
+          "mean": 0.0008750001434236765,
+          "p50": 0.0008750001434236765,
+          "p95": 0.0008750001434236765,
+          "max": 0.0008750001434236765
+        },
+        "worker_wait": {
+          "mean": 0.08049999992363155,
+          "p50": 0.08049999992363155,
+          "p95": 0.08049999992363155,
+          "max": 0.08049999992363155
+        },
+        "detector_done_to_output": {
+          "mean": 0.057166000129655004,
+          "p50": 0.057166000129655004,
+          "p95": 0.057166000129655004,
+          "max": 0.057166000129655004
+        },
+        "capture_copy": {
+          "mean": 0.9773750000167638,
+          "p50": 0.9773750000167638,
+          "p95": 0.9773750000167638,
+          "max": 0.9773750000167638
+        },
+        "driver_to_dequeue": {
+          "mean": 7.381428000051528,
+          "p50": 7.381428000051528,
+          "p95": 7.381428000051528,
+          "max": 7.381428000051528
+        },
+        "driver_to_output": {
+          "mean": 38.65363900014199,
+          "p50": 38.65363900014199,
+          "p95": 38.65363900014199,
+          "max": 38.65363900014199
+        }
+      },
+      "detections": 0,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 39.769,
+      "npu_warmup_per_worker": 0,
+      "npu_warmup_ms": 0.000292,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "startup_w3_1": {
+      "frames": 1,
+      "measured_seconds": 0.137524639,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 0,
+        "sequence_gaps": 0,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 7.271424286378239,
+      "observed_sensor_fps": null,
+      "skipped_fraction_between_first_and_last": 0.0,
+      "first_result": {
+        "process_entry_ms": 475.380547,
+        "frame_read_ms": 137.36043,
+        "decode_ms": 104.993302,
+        "gmc_ms": 2.290167,
+        "association_ms": 0.005542,
+        "streamon_to_output_ms": 137.3601389999967,
+        "driver_to_output_ms": 40.837924000108615
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 104.993302,
+          "p50": 104.993302,
+          "p95": 104.993302,
+          "max": 104.993302
+        },
+        "preprocess": {
+          "mean": 1.184458,
+          "p50": 1.184458,
+          "p95": 1.184458,
+          "max": 1.184458
+        },
+        "npu": {
+          "mean": 28.518295,
+          "p50": 28.518295,
+          "p95": 28.518295,
+          "max": 28.518295
+        },
+        "postprocess": {
+          "mean": 0.286708,
+          "p50": 0.286708,
+          "p95": 0.286708,
+          "max": 0.286708
+        },
+        "gmc": {
+          "mean": 2.290167,
+          "p50": 2.290167,
+          "p95": 2.290167,
+          "max": 2.290167
+        },
+        "association": {
+          "mean": 0.005542,
+          "p50": 0.005542,
+          "p95": 0.005542,
+          "max": 0.005542
+        },
+        "ordered_latency": {
+          "mean": 137.36043,
+          "p50": 137.36043,
+          "p95": 137.36043,
+          "max": 137.36043
+        },
+        "dispatch_wait": {
+          "mean": 0.0005830000154674053,
+          "p50": 0.0005830000154674053,
+          "p95": 0.0005830000154674053,
+          "max": 0.0005830000154674053
+        },
+        "worker_wait": {
+          "mean": 2.356374999973923,
+          "p50": 2.356374999973923,
+          "p95": 2.356374999973923,
+          "max": 2.356374999973923
+        },
+        "detector_done_to_output": {
+          "mean": 0.01837499998509884,
+          "p50": 0.01837499998509884,
+          "p95": 0.01837499998509884,
+          "max": 0.01837499998509884
+        },
+        "capture_copy": {
+          "mean": 1.01616600016132,
+          "p50": 1.01616600016132,
+          "p95": 1.01616600016132,
+          "max": 1.01616600016132
+        },
+        "driver_to_dequeue": {
+          "mean": 7.4085460000205785,
+          "p50": 7.4085460000205785,
+          "p95": 7.4085460000205785,
+          "max": 7.4085460000205785
+        },
+        "driver_to_output": {
+          "mean": 40.837924000108615,
+          "p50": 40.837924000108615,
+          "p95": 40.837924000108615,
+          "max": 40.837924000108615
+        }
+      },
+      "detections": 0,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 39.769,
+      "npu_warmup_per_worker": 3,
+      "npu_warmup_ms": 270.130318,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "startup_w3_2": {
+      "frames": 1,
+      "measured_seconds": 0.14015489,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 0,
+        "sequence_gaps": 0,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 7.134963325218264,
+      "observed_sensor_fps": null,
+      "skipped_fraction_between_first_and_last": 0.0,
+      "first_result": {
+        "process_entry_ms": 477.675673,
+        "frame_read_ms": 139.992431,
+        "decode_ms": 110.221428,
+        "gmc_ms": 2.394875,
+        "association_ms": 0.004958,
+        "streamon_to_output_ms": 139.99213999998756,
+        "driver_to_output_ms": 38.19475100003183
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 110.221428,
+          "p50": 110.221428,
+          "p95": 110.221428,
+          "max": 110.221428
+        },
+        "preprocess": {
+          "mean": 1.242209,
+          "p50": 1.242209,
+          "p95": 1.242209,
+          "max": 1.242209
+        },
+        "npu": {
+          "mean": 28.148169,
+          "p50": 28.148169,
+          "p95": 28.148169,
+          "max": 28.148169
+        },
+        "postprocess": {
+          "mean": 0.2905,
+          "p50": 0.2905,
+          "p95": 0.2905,
+          "max": 0.2905
+        },
+        "gmc": {
+          "mean": 2.394875,
+          "p50": 2.394875,
+          "p95": 2.394875,
+          "max": 2.394875
+        },
+        "association": {
+          "mean": 0.004958,
+          "p50": 0.004958,
+          "p95": 0.004958,
+          "max": 0.004958
+        },
+        "ordered_latency": {
+          "mean": 139.992431,
+          "p50": 139.992431,
+          "p95": 139.992431,
+          "max": 139.992431
+        },
+        "dispatch_wait": {
+          "mean": 0.0008750001434236765,
+          "p50": 0.0008750001434236765,
+          "p95": 0.0008750001434236765,
+          "max": 0.0008750001434236765
+        },
+        "worker_wait": {
+          "mean": 0.018958000000566244,
+          "p50": 0.018958000000566244,
+          "p95": 0.018958000000566244,
+          "max": 0.018958000000566244
+        },
+        "detector_done_to_output": {
+          "mean": 0.06679199985228479,
+          "p50": 0.06679199985228479,
+          "p95": 0.06679199985228479,
+          "max": 0.06679199985228479
+        },
+        "capture_copy": {
+          "mean": 0.9905010000802577,
+          "p50": 0.9905010000802577,
+          "p95": 0.9905010000802577,
+          "max": 0.9905010000802577
+        },
+        "driver_to_dequeue": {
+          "mean": 7.388622000114992,
+          "p50": 7.388622000114992,
+          "p95": 7.388622000114992,
+          "max": 7.388622000114992
+        },
+        "driver_to_output": {
+          "mean": 38.19475100003183,
+          "p50": 38.19475100003183,
+          "p95": 38.19475100003183,
+          "max": 38.19475100003183
+        }
+      },
+      "detections": 0,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 39.769,
+      "npu_warmup_per_worker": 3,
+      "npu_warmup_ms": 270.561986,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    },
+    "startup_w3_3": {
+      "frames": 1,
+      "measured_seconds": 0.141211306,
+      "workers": 3,
+      "camera": {
+        "format": "raw8-gray",
+        "policy": "latest",
+        "buffers": 4,
+        "drained_frames": 0,
+        "sequence_gaps": 0,
+        "timestamp_scope": "Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display"
+      },
+      "processed_fps": 7.081585946099811,
+      "observed_sensor_fps": null,
+      "skipped_fraction_between_first_and_last": 0.0,
+      "first_result": {
+        "process_entry_ms": 479.292673,
+        "frame_read_ms": 141.013264,
+        "decode_ms": 110.725719,
+        "gmc_ms": 2.420834,
+        "association_ms": 0.004667,
+        "streamon_to_output_ms": 141.01268099993467,
+        "driver_to_output_ms": 38.77603599987924
+      },
+      "stages_ms": {
+        "decode": {
+          "mean": 110.725719,
+          "p50": 110.725719,
+          "p95": 110.725719,
+          "max": 110.725719
+        },
+        "preprocess": {
+          "mean": 1.2215,
+          "p50": 1.2215,
+          "p95": 1.2215,
+          "max": 1.2215
+        },
+        "npu": {
+          "mean": 28.686294,
+          "p50": 28.686294,
+          "p95": 28.686294,
+          "max": 28.686294
+        },
+        "postprocess": {
+          "mean": 0.288167,
+          "p50": 0.288167,
+          "p95": 0.288167,
+          "max": 0.288167
+        },
+        "gmc": {
+          "mean": 2.420834,
+          "p50": 2.420834,
+          "p95": 2.420834,
+          "max": 2.420834
+        },
+        "association": {
+          "mean": 0.004667,
+          "p50": 0.004667,
+          "p95": 0.004667,
+          "max": 0.004667
+        },
+        "ordered_latency": {
+          "mean": 141.013264,
+          "p50": 141.013264,
+          "p95": 141.013264,
+          "max": 141.013264
+        },
+        "dispatch_wait": {
+          "mean": 0.0005830000154674053,
+          "p50": 0.0005830000154674053,
+          "p95": 0.0005830000154674053,
+          "max": 0.0005830000154674053
+        },
+        "worker_wait": {
+          "mean": 0.02275000000372529,
+          "p50": 0.02275000000372529,
+          "p95": 0.02275000000372529,
+          "max": 0.02275000000372529
+        },
+        "detector_done_to_output": {
+          "mean": 0.06474999990314245,
+          "p50": 0.06474999990314245,
+          "p95": 0.06474999990314245,
+          "max": 0.06474999990314245
+        },
+        "capture_copy": {
+          "mean": 1.0176249998621643,
+          "p50": 1.0176249998621643,
+          "p95": 1.0176249998621643,
+          "max": 1.0176249998621643
+        },
+        "driver_to_dequeue": {
+          "mean": 7.423615999985486,
+          "p50": 7.423615999985486,
+          "p95": 7.423615999985486,
+          "max": 7.423615999985486
+        },
+        "driver_to_output": {
+          "mean": 38.77603599987924,
+          "p50": 38.77603599987924,
+          "p95": 38.77603599987924,
+          "max": 38.77603599987924
+        }
+      },
+      "detections": 0,
+      "displayed_tracks": 0,
+      "peak_sampled_temperature_c": 38.846,
+      "npu_warmup_per_worker": 3,
+      "npu_warmup_ms": 270.975277,
+      "model_sha256": "2afa76f9f093265b0e347d26285ed15c98c449d958eed040f27e7345f29deb53",
+      "timestamp_flags": [
+        8193
+      ],
+      "audit": "pass"
+    }
+  },
+  "startup_medians": {
+    "0": {
+      "trials": 3,
+      "process_entry_ms": 206.322687,
+      "frame_read_ms": 139.742181,
+      "decode_ms": 109.480303,
+      "gmc_ms": 2.659417,
+      "association_ms": 0.004958,
+      "streamon_to_output_ms": 139.74188899993896,
+      "driver_to_output_ms": 38.65363900014199,
+      "npu_warmup_ms": 0.000292
+    },
+    "3": {
+      "trials": 3,
+      "process_entry_ms": 477.675673,
+      "frame_read_ms": 139.992431,
+      "decode_ms": 110.221428,
+      "gmc_ms": 2.394875,
+      "association_ms": 0.004958,
+      "streamon_to_output_ms": 139.99213999998756,
+      "driver_to_output_ms": 38.77603599987924,
+      "npu_warmup_ms": 270.561986
+    }
+  }
+}

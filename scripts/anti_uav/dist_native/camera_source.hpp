@@ -31,7 +31,7 @@ class CameraSource {
     int fd=-1,w=0,h=0,stride=0;
     v4l2_buf_type type=V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     std::vector<Buffer> buffers;
-    bool streaming=false,latest;
+    bool streaming=false,latest,fresh;
     uint32_t pixel=0;
     int call(unsigned long request,void* arg) {
         int r;do {r=ioctl(fd,request,arg);} while(r<0 && errno==EINTR);return r;
@@ -58,8 +58,8 @@ class CameraSource {
     }
 public:
     uint64_t discarded=0;
-    double stream_start_ms=0;
-    CameraSource(const std::string& path,bool newest,int n):latest(newest) {
+    double stream_start_ms=0,streamon_call_ms=0;
+    CameraSource(const std::string& path,bool newest,int n,bool wait_fresh=false):latest(newest),fresh(wait_fresh) {
         if(n<2 || n>16) throw std::runtime_error("Camera buffers must be 2..16");
         try {
             fd=open(path.c_str(),O_RDWR|O_NONBLOCK|O_CLOEXEC);
@@ -93,9 +93,20 @@ public:
     int width() const{return w;}
     int height() const{return h;}
     int buffer_count() const{return buffers.size();}
+    void start() {
+        if(streaming) return;
+        stream_start_ms=monotonic_ms();check(VIDIOC_STREAMON,&type);
+        streamon_call_ms=monotonic_ms()-stream_start_ms;streaming=true;
+    }
     void read(cv::Mat& image,CaptureStamp& stamp) {
-        if(!streaming) {stream_start_ms=monotonic_ms();check(VIDIOC_STREAMON,&type);streaming=true;}
+        start();
         v4l2_plane plane{};v4l2_buffer b{};
+        // Discard the already-completed backlog, then wait for a new DMA completion.
+        // Bounded draining prevents starvation if the consumer is descheduled.
+        if(fresh) for(size_t i=0;i<buffers.size();++i) {
+            if(!dequeue(b,plane)) break;
+            queue(b.index);++discarded;
+        }
         double deadline=monotonic_ms()+3000;
         while(!dequeue(b,plane)) {
             if(monotonic_ms()>deadline) throw std::runtime_error("Camera capture timeout");

@@ -16,6 +16,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -98,7 +99,8 @@ struct Args {
     std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv";
     int workers=3,inflight=9,frames=0,warmup=100,decode_threads=1;
     std::string decode_threading="slice";
-    std::string camera_policy="latest",camera_format;
+    std::string camera_policy="latest",camera_format,camera_start="lazy";
+    std::vector<std::string> core_masks;
     int camera_buffers=4,npu_warmup=0;
     double camera_fps=120;
     double conf=.03,iou=.45;
@@ -126,6 +128,12 @@ Args parse(int argc,char** argv) {
         else if(key=="--preprocess") a.preprocess=value;
         else if(key=="--camera-format") a.camera_format=value;
         else if(key=="--camera-policy") a.camera_policy=value;
+        else if(key=="--camera-start") a.camera_start=value;
+        else if(key=="--npu-masks") {
+            a.core_masks.clear();std::stringstream masks(value);std::string mask;
+            while(std::getline(masks,mask,',')) a.core_masks.push_back(mask);
+            if(value.empty() || value.back()==',') throw std::runtime_error("Empty NPU mask");
+        }
         else if(key=="--camera-buffers") a.camera_buffers=std::stoi(value);
         else if(key=="--camera-fps") a.camera_fps=std::stod(value);
         else if(key=="--npu-warmup") a.npu_warmup=std::stoi(value);
@@ -146,8 +154,15 @@ Args parse(int argc,char** argv) {
        (a.preprocess!="opencv" && a.preprocess!="rga" && a.preprocess!="fused")) throw std::runtime_error("Invalid image backend");
     if(a.npu_warmup<0 || a.npu_warmup>100 || (a.decoder=="v4l2" &&
        (a.camera_format!="raw8-gray" || a.frames<=a.warmup || !std::isfinite(a.camera_fps) ||
-        a.camera_fps<=0 || (a.camera_policy!="latest" && a.camera_policy!="fifo"))))
+        a.camera_fps<=0 || (a.camera_policy!="latest" && a.camera_policy!="fifo" && a.camera_policy!="fresh"))))
         throw std::runtime_error("Camera requires raw8-gray, explicit frame count and valid rate/policy");
+    if(a.camera_start!="lazy" && a.camera_start!="overlap") throw std::runtime_error("Invalid camera start mode");
+    if(a.camera_start=="overlap" && a.decoder!="v4l2") throw std::runtime_error("Overlapped startup requires camera input");
+    if(a.core_masks.empty()) for(int w=0;w<a.workers;++w) a.core_masks.push_back(std::to_string(w));
+    if(a.core_masks.size()!=size_t(a.workers)) throw std::runtime_error("One NPU mask required per worker");
+    for(const auto& mask:a.core_masks)
+        if(mask!="0" && mask!="1" && mask!="2" && mask!="0_1" && mask!="0_1_2")
+            throw std::runtime_error("Unsupported explicit NPU mask");
     return a;
 }
 struct Job {
@@ -192,8 +207,11 @@ int run(const Args& args) {
     const auto before=hardware();
     std::unique_ptr<VideoSource> cap;
     std::unique_ptr<CameraSource> camera;
-    if(args.decoder=="v4l2") camera=std::make_unique<CameraSource>(args.video,args.camera_policy=="latest",args.camera_buffers);
+    if(args.decoder=="v4l2") camera=std::make_unique<CameraSource>(args.video,args.camera_policy!="fifo",args.camera_buffers,args.camera_policy=="fresh");
     else cap=std::make_unique<VideoSource>(args.video,args.decoder,args.decode_threads,args.decode_threading);
+    // Future destruction joins before CameraSource destruction, including error paths.
+    std::future<void> camera_startup;
+    if(camera && args.camera_start=="overlap") camera_startup=std::async(std::launch::async,[&]{camera->start();});
     double fps=camera?args.camera_fps:cap->fps();
     int total=args.frames?args.frames:cap->frames();
     if(fps<=0 || total<=args.warmup) throw std::runtime_error("Invalid video FPS/count/warmup");
@@ -207,7 +225,8 @@ int run(const Args& args) {
     auto infer=det.get<int(*)(void*,unsigned char*,int,int,size_t,float,float,int,float*,double*,int,int)>("au_detector_infer_image");
     auto destroy=det.get<void(*)(void*)>("au_detector_destroy");
     auto det_error=det.get<const char*(*)()>("au_detector_error");
-    const char* masks[]={"0","1","2"};void* handles[3]{};
+    const char* masks[3]{};void* handles[3]{};
+    for(int i=0;i<args.workers;++i) masks[i]=args.core_masks[i].c_str();
     auto loading=Clock::now();
     if(create(args.model.c_str(),masks,args.workers,1,handles)) throw std::runtime_error(det_error());
     std::vector<std::unique_ptr<void,decltype(destroy)>> owned;
@@ -252,6 +271,7 @@ int run(const Args& args) {
         latencies.open(fs::path(args.output)/"latency.csv");latencies.exceptions(std::ios::badbit|std::ios::failbit);
         latencies<<"index,sequence,flags,timestamp_valid,frame_ms,dequeue_ms,output_ms,read_ms,copy_ms,dispatch_wait_ms,worker_wait_ms,preprocess_ms,npu_ms,postprocess_ms,gmc_ms,association_ms,read_to_output_ms,frame_to_output_ms\n"<<std::setprecision(17);
     }
+    if(camera_startup.valid()) camera_startup.get();
     Work work;Threads threads{work,{}};
     std::array<int,3> assigned{};
     for(int worker=0;worker<args.workers;++worker) {
@@ -334,7 +354,11 @@ int run(const Args& args) {
         double association_ms=ms(association_start),latency=ms(job->begin);
         double output_ms=monotonic_ms();
         if(camera) {
-            if(have_sequence) sequence_gaps+=uint32_t(job->capture.sequence-last_sequence)-1;
+            if(have_sequence) {
+                uint32_t gap=job->capture.sequence-last_sequence;
+                if(gap==0 || gap>=0x80000000u) throw std::runtime_error("Non-increasing camera sequence");
+                sequence_gaps+=gap-1;
+            }
             have_sequence=true;last_sequence=job->capture.sequence;
             auto& c=job->capture;
             latencies<<index<<','<<c.sequence<<','<<c.flags<<','<<c.valid<<','<<c.frame_ms<<','<<c.dequeue_ms<<','<<output_ms<<','<<job->decode<<','<<c.copy_ms<<','<<job->dispatch_ms-job->ready_ms<<','<<job->worker_start_ms-job->dispatch_ms<<','<<job->native[0]<<','<<job->native[1]<<','<<job->native[2]<<','<<job->gmc<<','<<association_ms<<','<<latency<<',';
@@ -396,7 +420,7 @@ int run(const Args& args) {
     out<<",\"model_load_ms\":"<<load_ms<<",\"first_result\":"<<first_result<<",\"model_sha256\":"<<quote(model_sha)<<",\"detector_library_sha256\":"<<quote(sha256(args.detector));
     out<<",\"decoder_backend\":"<<quote(args.decoder)<<",\"preprocess_backend\":"<<quote(args.preprocess);
     out<<",\"npu_warmup_per_worker\":"<<args.npu_warmup<<",\"npu_warmup_ms\":"<<npu_warmup_ms;
-    if(camera) out<<",\"camera\":{\"format\":\"raw8-gray\",\"policy\":"<<quote(args.camera_policy)<<",\"buffers\":"<<camera->buffer_count()<<",\"drained_frames\":"<<camera->discarded<<",\"sequence_gaps\":"<<sequence_gaps<<",\"timestamp_scope\":\"Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display\"}";
+    if(camera) out<<",\"camera\":{\"format\":\"raw8-gray\",\"policy\":"<<quote(args.camera_policy)<<",\"start_mode\":"<<quote(args.camera_start)<<",\"streamon_call_ms\":"<<camera->streamon_call_ms<<",\"buffers\":"<<camera->buffer_count()<<",\"drained_frames\":"<<camera->discarded<<",\"sequence_gaps\":"<<sequence_gaps<<",\"timestamp_scope\":\"Driver MONOTONIC frame timestamp, not verified sensor exposure time; no display\"}";
     if(args.decoder=="ffmpeg") out<<",\"software_decode_threads\":"<<args.decode_threads
         <<",\"software_decode_threading\":"<<quote(args.decode_threading);
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));

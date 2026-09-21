@@ -1,0 +1,133 @@
+{
+  "source_weights": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/expanded28_p3_camera_20260921/best.pt",
+  "onnx": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/expanded28_p3_camera_20260921/detector.onnx",
+  "imgsz": [
+    544,
+    960
+  ],
+  "format": "rknn_yolov8_rkopt",
+  "layout": "branch-major NCHW bbox/class/score_sum outputs; DFL and NMS run in runtime postprocess",
+  "output_shapes": [
+    [
+      1,
+      64,
+      68,
+      120
+    ],
+    [
+      1,
+      1,
+      68,
+      120
+    ],
+    [
+      1,
+      1,
+      68,
+      120
+    ],
+    [
+      1,
+      64,
+      34,
+      60
+    ],
+    [
+      1,
+      1,
+      34,
+      60
+    ],
+    [
+      1,
+      1,
+      34,
+      60
+    ],
+    [
+      1,
+      64,
+      17,
+      30
+    ],
+    [
+      1,
+      1,
+      17,
+      30
+    ],
+    [
+      1,
+      1,
+      17,
+      30
+    ]
+  ],
+  "validation": {
+    "output_count": 9,
+    "branch_count": 3,
+    "pair_per_branch": 3,
+    "branches": [
+      {
+        "bbox": [
+          1,
+          64,
+          68,
+          120
+        ],
+        "class": [
+          1,
+          1,
+          68,
+          120
+        ],
+        "score_sum": [
+          1,
+          1,
+          68,
+          120
+        ]
+      },
+      {
+        "bbox": [
+          1,
+          64,
+          34,
+          60
+        ],
+        "class": [
+          1,
+          1,
+          34,
+          60
+        ],
+        "score_sum": [
+          1,
+          1,
+          34,
+          60
+        ]
+      },
+      {
+        "bbox": [
+          1,
+          64,
+          17,
+          30
+        ],
+        "class": [
+          1,
+          1,
+          17,
+          30
+        ],
+        "score_sum": [
+          1,
+          1,
+          17,
+          30
+        ]
+      }
+    ]
+  }
+}

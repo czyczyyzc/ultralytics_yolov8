@@ -1,0 +1,16 @@
+{
+  "input_shape": [
+    1,
+    3,
+    256,
+    256
+  ],
+  "reference_levels": 3,
+  "addon_levels": 4,
+  "legacy_max_abs_error": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "bit_exact": true
+}

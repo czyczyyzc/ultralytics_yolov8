@@ -1,5 +1,8 @@
 // Equivalent native implementation of efficient_gmc.py with optional pyramid reuse.
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/video/tracking.hpp>
+#include <opencv2/calib3d.hpp>
 #include <algorithm>
 #include <array>
 #include <chrono>

@@ -68,15 +68,15 @@ int au_detector_create_pool(const char* model, const char** cores, int count,
         return -1;
     }
 }
-int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height,
+int au_detector_infer_image(void* handle, unsigned char* bgr, int width, int height,
                       size_t stride, float conf, float iou, int capacity,
-                      float* boxes, double* times_ms, int cached_preprocess) {
+                      float* boxes, double* times_ms, int cached_preprocess, int channels) {
     try {
         if (!handle || !bgr || width <= 0 || height <= 0 || capacity <= 0 ||
-            stride < static_cast<size_t>(width) * 3 || !boxes || !times_ms)
+            (channels!=1 && channels!=3) || stride < static_cast<size_t>(width)*channels || !boxes || !times_ms)
             throw std::runtime_error("Invalid detector input");
         auto& detector = *static_cast<NativeYoloV8*>(handle);
-        cv::Mat frame(height, width, CV_8UC3, bgr, stride);
+        cv::Mat frame(height, width, CV_MAKETYPE(CV_8U,channels), bgr, stride);
         auto start = Clock::now();
         LetterboxInfo letterbox;
         if (cached_preprocess) {
@@ -98,9 +98,12 @@ int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height
             cv::Mat roi=rgb(content);
             bool fused=cached_preprocess==3 && width==2*rw && height==2*rh;
             if(fused) {
-                if(!fused_half_rgb(frame.data,width,height,frame.step,roi.data,roi.step))
+                bool ok=channels==1?fused_half_gray_rgb(frame.data,width,height,frame.step,roi.data,roi.step):
+                                   fused_half_rgb(frame.data,width,height,frame.step,roi.data,roi.step);
+                if(!ok)
                     throw std::runtime_error("Invalid fused preprocessing layout");
             } else if(cached_preprocess==2) {
+                if(channels!=3) throw std::runtime_error("RGA expects BGR input");
 #ifdef AU_ENABLE_RGA
                 if(frame.step%3) throw std::runtime_error("RGA requires a whole-pixel stride");
                 resized.create(rh,rw,CV_8UC3);
@@ -112,10 +115,11 @@ int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height
                 throw std::runtime_error("RGA preprocessing not compiled");
 #endif
             } else cv::resize(frame, resized, cv::Size(rw, rh), 0, 0, cv::INTER_LINEAR);
-            if(!fused) cv::cvtColor(resized, roi, cv::COLOR_BGR2RGB);
+            if(!fused) cv::cvtColor(resized, roi, channels==1?cv::COLOR_GRAY2RGB:cv::COLOR_BGR2RGB);
             detector.copy_rgb_input(rgb);
             letterbox = LetterboxInfo{ratio, dw, dh};
         } else {
+            if(channels!=3) throw std::runtime_error("Gray input requires cached preprocessing");
             letterbox = detector.preprocess(frame);
         }
         times_ms[0] = elapsed_ms(start);
@@ -135,6 +139,12 @@ int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height
         api_error = e.what();
         return -1;
     }
+}
+int au_detector_infer_ex(void* handle, unsigned char* bgr, int width, int height,
+                      size_t stride, float conf, float iou, int capacity,
+                      float* boxes, double* times_ms, int cached_preprocess) {
+    return au_detector_infer_image(handle,bgr,width,height,stride,conf,iou,capacity,
+                                   boxes,times_ms,cached_preprocess,3);
 }
 int au_detector_infer(void* handle, unsigned char* bgr, int width, int height,
                       size_t stride, float conf, float iou, int capacity,

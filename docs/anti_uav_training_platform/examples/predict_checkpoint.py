@@ -61,12 +61,15 @@ def main():
     cv2.setNumThreads(1)
     torch.set_num_threads(4)
     model = YOLO(str(args.checkpoint))
+    options = dict(imgsz=[544, 960], conf=args.conf, iou=args.nms_iou, max_det=100,
+                   device=args.device, half=False, save=False, verbose=False,
+                   mode="predict", task="detect", batch=1)
+    # This repository's Model.predict accepts a predictor instance, not a class.
+    predictor = FixedCanvasPredictor(overrides=options, _callbacks=model.callbacks)
     frames = detections = 0
     with (args.output / "predictions.jsonl").open("x") as stream:
         for frame_index, result in enumerate(model.predict(
-            source=str(args.source), predictor=FixedCanvasPredictor, imgsz=[544, 960],
-            conf=args.conf, iou=args.nms_iou, max_det=100, device=args.device,
-            half=False, stream=True, save=False, verbose=False,
+            source=str(args.source), predictor=predictor, stream=True, **options,
         )):
             boxes = []
             if result.boxes is not None:

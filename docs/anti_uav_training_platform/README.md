@@ -372,6 +372,8 @@ Content-Type: application/json
 
 **固定输入注意：**当前 `ultralytics/engine/predictor.py` 的 `pre_transform` 使用 `auto=same_shapes and self.model.pt`；不能假定加 `rect=False` 就关闭 auto padding。参考 worker 显式使用 `LetterBox((544,960), auto=False)` 并断言张量形状。灰度图片最终按 3 通道 BGR/RGB 约定输入，不直接当 1 通道网络。
 
+本仓库 `Model.predict(predictor=...)` 接收已经创建的 predictor 实例，而不是类；参考示例已按此版本构造实例并传入完整 overrides，不照搬其他 Ultralytics 版本的自定义 predictor 写法。
+
 本接口 `.pt` 模型推理使用服务器 PyTorch，这是训练平台预览，不是板端部署。RKNN INT8 要另行导出、用合规训练校准集量化并在板端验证；不能将 .pt 换后缀当 .rknn，也不能把服务器 FPS 当 RK3588 FPS。Dist/GMC 跟踪可作为后续独立管线 profile，不混入 detector-only 的精度与耗时。
 
 ## 8. 独立评测与不泄漏测试

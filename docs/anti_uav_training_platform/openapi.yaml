@@ -1,0 +1,486 @@
+openapi: 3.0.3
+info:
+  title: Anti-UAV Training Platform API
+  version: 1.0.0
+  description: >-
+    平台待实现的接口契约，不代表已有运行中的 HTTP 服务。底层复用仓库的
+    run_rebalanced_fullscale_training.py 和 FixedShapeGray trainers。
+    v1 为单 GPU、544x960、batch=64、P3 后冻结并训练 Add-on P2。
+    请求中的资源 ID 均由平台注册，示例 ID 不代表已存在记录。
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /capabilities:
+    get:
+      operationId: getCapabilities
+      summary: 获取实际已实现的训练和推理能力
+      responses:
+        '200':
+          description: 前端以服务端能力为准；不要仅凭本文件显示尚未实现的按钮
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles, inference_backends, metrics_granularity, resume_supported]
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, input_hw, batch, max_gpus, equal_stage_epochs]
+                      properties:
+                        id: {type: string, enum: [frozen_p3_addon_p2_gray_v1]}
+                        input_hw: {type: array, items: {type: integer}, example: [544, 960]}
+                        batch: {type: integer, enum: [64]}
+                        max_gpus: {type: integer, enum: [1]}
+                        equal_stage_epochs: {type: boolean, enum: [true]}
+                  inference_backends: {type: array, items: {type: string, enum: [pytorch]}}
+                  metrics_granularity: {type: string, enum: [epoch]}
+                  resume_supported: {type: boolean, enum: [false]}
+        default: {$ref: '#/components/responses/Error'}
+  /resources:
+    get:
+      operationId: listResources
+      summary: 查询可预约资源；显存空闲不等同于已获使用授权
+      responses:
+        '200':
+          description: 资源及排队状态
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, kind, state]
+                      properties:
+                        id: {type: string, example: gpu47-6}
+                        kind: {type: string, enum: [gpu, cpu]}
+                        state: {type: string, enum: [available, reserved, external_busy, offline]}
+                        gpu_uuid: {type: string, nullable: true}
+                        memory_free_mb: {type: integer, nullable: true}
+                        observed_at: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/Error'}
+  /datasets:
+    get:
+      operationId: listDatasets
+      summary: 列出已登记的不可变数据集版本，不接收任意服务器路径
+      responses:
+        '200':
+          description: 数据集列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Dataset'}}
+        default: {$ref: '#/components/responses/Error'}
+  /datasets/{dataset_id}:
+    parameters:
+      - {name: dataset_id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getDataset
+      summary: 查询数据集划分、版本哈希及可用性
+      responses:
+        '200':
+          description: 数据集详情
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Dataset'}
+        default: {$ref: '#/components/responses/Error'}
+  /checkpoints:
+    get:
+      operationId: listCheckpoints
+      summary: 列出可加载的内部可信 checkpoint，包括已登记的初始化权重
+      parameters:
+        - {name: job_id, in: query, schema: {type: string}}
+        - {name: stage, in: query, schema: {type: string, enum: [p3, addon_p2]}}
+      responses:
+        '200':
+          description: 只返回已完成写入和校验的不可变快照
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Checkpoint'}}
+        default: {$ref: '#/components/responses/Error'}
+  /media:
+    get:
+      operationId: listMedia
+      summary: 列出授权访问的测试图片和视频
+      responses:
+        '200':
+          description: 现有文件由管理员通过白名单导入，或使用上传接口创建
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Media'}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: uploadMedia
+      summary: 上传推理图片或视频；不接受 PT、YAML、压缩包或 URL
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        '201':
+          description: 已完整接收并校验媒体；拒绝超限、损坏或伪造类型的文件
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Media'}
+        default: {$ref: '#/components/responses/Error'}
+  /training-jobs:
+    post:
+      operationId: createTrainingJob
+      summary: 一键提交 P3 + 冻结 Add-on P2 训练，立即返回，不阻塞 HTTP
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TrainingRequest'}
+      responses:
+        '202':
+          description: 任务已入队；同幂等键和相同请求返回原任务
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: listTrainingJobs
+      summary: 查询当前用户授权范围内的训练任务
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200':
+          description: 任务列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Job'}}
+                  next_cursor: {type: string, nullable: true}
+        default: {$ref: '#/components/responses/Error'}
+  /training-jobs/{job_id}:
+    parameters:
+      - {$ref: '#/components/parameters/JobId'}
+    get:
+      operationId: getTrainingJob
+      summary: 查询训练状态、阶段和已经完成的 epoch
+      responses:
+        '200':
+          description: 状态来自 worker/进程退出码与产物核验，不能仅转发历史 status.json
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+  /training-jobs/{job_id}/metrics:
+    parameters:
+      - {$ref: '#/components/parameters/JobId'}
+    get:
+      operationId: getTrainingMetrics
+      summary: 增量读取完成 epoch 的 loss 和 validation 曲线
+      parameters:
+        - {name: after_sequence, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: 0..1 的比例；无分母或非有限数为 null。尚未完成一轮时 items 为空
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, latest_sequence]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/MetricPoint'}}
+                  latest_sequence: {type: integer, minimum: 0}
+        default: {$ref: '#/components/responses/Error'}
+  /training-jobs/{job_id}/logs:
+    parameters:
+      - {$ref: '#/components/parameters/JobId'}
+    get:
+      operationId: getTrainingLogs
+      summary: 游标读取日志，不解析 tqdm 作为稳定指标协议
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: max_bytes, in: query, schema: {type: integer, minimum: 1024, maximum: 65536, default: 16384}}
+      responses:
+        '200':
+          description: 游标由服务端编码 UTF-8 安全边界、文件标识和 attempt，不由前端计算字节偏移
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, next_cursor, terminal]
+                properties:
+                  text: {type: string}
+                  next_cursor: {type: string}
+                  terminal: {type: boolean}
+        default: {$ref: '#/components/responses/Error'}
+  /training-jobs/{job_id}/cancel:
+    parameters:
+      - {$ref: '#/components/parameters/JobId'}
+    post:
+      operationId: cancelTrainingJob
+      summary: 取消整个任务进程组，不承诺暂停续训或保存当前未结束 epoch
+      responses:
+        '202':
+          description: 已请求取消；重复请求不额外发送破坏性操作，终态保持原终态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+  /inference-jobs:
+    post:
+      operationId: createInferenceJob
+      summary: 点击 checkpoint 后创建隔离推理任务，不修改训练模型或全局默认模型
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [checkpoint_id, media_id, resource_id]
+              properties:
+                checkpoint_id: {type: string}
+                media_id: {type: string}
+                resource_id: {type: string, description: GPU 预约资源或 cpu47；不能借用正在训练的 GPU}
+                backend: {type: string, enum: [pytorch], default: pytorch}
+                conf: {type: number, minimum: 0, exclusiveMinimum: true, maximum: 1, default: 0.03}
+                nms_iou: {type: number, minimum: 0, exclusiveMinimum: true, maximum: 1, default: 0.45}
+                preview_frames: {type: integer, minimum: 0, maximum: 100, default: 3}
+      responses:
+        '202':
+          description: 创建时固定 checkpoint 哈希；输出 JSONL 和若干预测预览图，v1 不承诺整段可视化视频
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+  /inference-jobs/{job_id}:
+    parameters:
+      - {$ref: '#/components/parameters/JobId'}
+    get:
+      operationId: getInferenceJob
+      summary: 查询推理结果及可下载产物
+      responses:
+        '200':
+          description: 不把无标注视频覆盖率命名为 Precision/Recall/mAP
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+  /evaluation-jobs:
+    post:
+      operationId: createEvaluationJob
+      summary: 对指定 checkpoint 和已登记带标注数据集独立评测
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [checkpoint_id, dataset_id, split, resource_id]
+              properties:
+                checkpoint_id: {type: string}
+                dataset_id: {type: string}
+                split: {type: string, enum: [validation, test]}
+                resource_id: {type: string}
+      responses:
+        '202':
+          description: 固定形状和阈值集合的 PT 评测；测试集结果不得回流挑 best
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+  /evaluation-jobs/{job_id}:
+    parameters:
+      - {$ref: '#/components/parameters/JobId'}
+    get:
+      operationId: getEvaluationJob
+      summary: 查询评测状态，结果经 artifacts 提供
+      responses:
+        '200':
+          description: 评测任务及结果文件
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        default: {$ref: '#/components/responses/Error'}
+  /artifacts/{artifact_id}/download:
+    parameters:
+      - {name: artifact_id, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: downloadArtifact
+      summary: 授权下载 checkpoint、JSONL、预览图或评测 JSON
+      responses:
+        '200':
+          description: Content-Type 按已登记类型设置；Content-Disposition 使用安全文件名
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    JobId: {name: job_id, in: path, required: true, schema: {type: string}}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 按用户和接口作用域保存；同键不同请求体返回 409
+      schema: {type: string, minLength: 8, maxLength: 128}
+  responses:
+    Error:
+      description: 400/401/403/404/409/413/422/429/500；查看 error.code，不依赖 message 文案
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message, request_id, details]
+                properties:
+                  code: {type: string, example: UNSUPPORTED_CONFIG}
+                  message: {type: string}
+                  request_id: {type: string}
+                  details: {type: object, additionalProperties: true}
+  schemas:
+    Dataset:
+      type: object
+      required: [id, version, name, state, manifest_sha256, available_splits, training_video_count, candidate_slots, epoch_slots]
+      properties:
+        id: {type: string, example: ds_gray28_20260916}
+        version: {type: string}
+        name: {type: string}
+        state: {type: string, enum: [preparing, ready, invalid]}
+        manifest_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        available_splits: {type: array, items: {type: string, enum: [train, validation, test]}}
+        training_video_count: {type: integer, minimum: 0}
+        candidate_slots: {type: integer, minimum: 0, description: 候选列表含重复曝光，非唯一样本数}
+        epoch_slots: {type: integer, minimum: 0, description: sampler 的每轮实际长度}
+        unique_images: {type: integer, minimum: 0, nullable: true}
+        validation_video_names: {type: array, items: {type: string}}
+        test_video_names: {type: array, items: {type: string}}
+        excluded_uncertain: {type: integer, minimum: 0, nullable: true}
+        excluded_unreviewed: {type: integer, minimum: 0, nullable: true}
+        target_negative_fraction: {type: number, minimum: 0, maximum: 1, nullable: true}
+        compatible_profiles: {type: array, items: {type: string}}
+        warnings: {type: array, items: {type: string}}
+    TrainingRequest:
+      type: object
+      additionalProperties: false
+      required: [dataset_id, profile_id, initial_checkpoint_id, resource_id]
+      properties:
+        dataset_id: {type: string}
+        profile_id: {type: string, enum: [frozen_p3_addon_p2_gray_v1]}
+        initial_checkpoint_id: {type: string, description: 经审核无测试/验证来源泄漏、含可追溯 train_args 的 P3 初始化权重}
+        resource_id: {type: string, description: 单 GPU 资源，不接受逗号分隔多 GPU}
+        epochs_per_stage: {type: integer, minimum: 1, maximum: 500, default: 15}
+        checkpoint_publish_every:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 5
+          description: 平台按一基 epoch 发布快照；底层脚本仍每轮保存，不等同于 save_period
+    Job:
+      type: object
+      required: [id, kind, state, stage, created_at, updated_at, artifacts]
+      properties:
+        id: {type: string, example: train_20260921_0001}
+        kind: {type: string, enum: [training, inference, evaluation]}
+        state: {type: string, enum: [queued, running, cancel_requested, cancelled, succeeded, failed]}
+        stage: {type: string, nullable: true, description: 见 README 阶段映射；不要把 stage 当作终态}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        epoch: {type: integer, minimum: 0, nullable: true, description: 当前阶段已完成轮数；0 表示尚未完成一轮}
+        epochs_per_stage: {type: integer, minimum: 1, nullable: true}
+        global_epoch: {type: integer, minimum: 0, nullable: true}
+        resource_id: {type: string}
+        dataset_id: {type: string, nullable: true}
+        checkpoint_id: {type: string, nullable: true}
+        checkpoint_sha256: {type: string, nullable: true}
+        resolved_config: {type: object, additionalProperties: true}
+        artifacts: {type: array, items: {$ref: '#/components/schemas/Artifact'}}
+        error_code: {type: string, nullable: true}
+        error_message: {type: string, nullable: true}
+    MetricPoint:
+      type: object
+      required: [sequence, stage, epoch, global_epoch, source, values]
+      properties:
+        sequence: {type: integer, minimum: 1}
+        stage: {type: string, enum: [p3, addon_p2]}
+        epoch: {type: integer, minimum: 1}
+        global_epoch: {type: integer, minimum: 1}
+        source: {type: string, enum: [results.csv]}
+        values:
+          type: object
+          description: 原始 CSV 列名去首尾空白；非有限数转 null；fitness_reconstructed 仅用于展示
+          additionalProperties: {type: number, nullable: true}
+    Checkpoint:
+      type: object
+      required: [id, job_id, stage, aliases, epoch, sha256, artifact_id, ready, inference_supported, resume_supported]
+      properties:
+        id: {type: string, example: ckpt_addon_ep10_immutable}
+        job_id: {type: string, nullable: true}
+        stage: {type: string, enum: [p3, addon_p2]}
+        aliases: {type: array, items: {type: string, enum: [initial, periodic, best, last]}}
+        epoch: {type: integer, minimum: 1, nullable: true, description: 一基轮数；历史 stripped best 无可靠映射时为 null}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        artifact_id: {type: string}
+        ready: {type: boolean, enum: [true]}
+        inference_supported: {type: boolean}
+        resume_supported: {type: boolean, enum: [false], description: v1 无公开恢复训练接口，与文件是否含 optimizer 分开}
+        optimizer_state_present: {type: boolean, nullable: true}
+        source_commit: {type: string}
+        selection_fitness: {type: number, nullable: true}
+        input_hw: {type: array, items: {type: integer}, example: [544, 960]}
+    Media:
+      type: object
+      required: [id, name, kind, sha256, width, height]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [image, video]}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        width: {type: integer, minimum: 1}
+        height: {type: integer, minimum: 1}
+        frame_count: {type: integer, minimum: 1, nullable: true}
+        fps: {type: number, minimum: 0, nullable: true}
+    Artifact:
+      type: object
+      required: [id, kind, name, size_bytes, sha256, download_url]
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [checkpoint, predictions, preview, metrics, log, manifest]}
+        name: {type: string}
+        size_bytes: {type: integer, format: int64, minimum: 0}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        download_url: {type: string, description: 同源鉴权下载路径，不返回任意文件系统路径}

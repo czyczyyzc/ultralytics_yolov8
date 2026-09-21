@@ -4,6 +4,12 @@
       "frames": 2000,
       "measured_seconds": 21.187645004,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 9,
       "camera": {
         "format": "raw8-gray",
         "policy": "fifo",
@@ -119,6 +125,10 @@
       "frames": 2000,
       "measured_seconds": 56.731141990999994,
       "workers": 1,
+      "npu_core_masks": [
+        "0"
+      ],
+      "inflight": 1,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -234,6 +244,12 @@
       "frames": 12000,
       "measured_seconds": 137.744880715,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -349,6 +365,12 @@
       "frames": 2000,
       "measured_seconds": 22.08036851,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -464,6 +486,12 @@
       "frames": 1000,
       "measured_seconds": 11.245512797,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -579,6 +607,12 @@
       "frames": 2000,
       "measured_seconds": 22.41955617,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -694,6 +728,12 @@
       "frames": 1,
       "measured_seconds": 0.140974764,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -809,6 +849,12 @@
       "frames": 1,
       "measured_seconds": 0.139939056,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -924,6 +970,12 @@
       "frames": 1,
       "measured_seconds": 0.13908447300000001,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -1039,6 +1091,12 @@
       "frames": 1,
       "measured_seconds": 0.137524639,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -1154,6 +1212,12 @@
       "frames": 1,
       "measured_seconds": 0.14015489,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -1269,6 +1333,12 @@
       "frames": 1,
       "measured_seconds": 0.141211306,
       "workers": 3,
+      "npu_core_masks": [
+        "0",
+        "1",
+        "2"
+      ],
+      "inflight": 3,
       "camera": {
         "format": "raw8-gray",
         "policy": "latest",
@@ -1404,5 +1474,6 @@
       "driver_to_output_ms": 38.77603599987924,
       "npu_warmup_ms": 270.561986
     }
-  }
+  },
+  "camera_startup_medians": {}
 }

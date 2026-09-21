@@ -41,6 +41,8 @@ def summarize(path):
         "frames": len(rows),
         "measured_seconds": data["measured_seconds"],
         "workers": data["args"]["workers"],
+        "npu_core_masks": data["npu_core_masks"],
+        "inflight": data["args"]["inflight"],
         "camera": data["camera"],
         "processed_fps": data["steady_fps"],
         "observed_sensor_fps": 1000 / statistics.median(periods) if periods else None,
@@ -67,7 +69,7 @@ def main():
         raise ValueError("No completed camera runs")
     if len({run["model_sha256"] for run in runs.values()}) != 1:
         raise ValueError("Comparison mixes different models")
-    result = {"runs": runs, "startup_medians": {}}
+    result = {"runs": runs, "startup_medians": {}, "camera_startup_medians": {}}
     for warm in (0, 3):
         selected = [run for name, run in runs.items() if name.startswith(f"startup_w{warm}_")]
         if selected:
@@ -76,6 +78,19 @@ def main():
                 **{key: statistics.median(run["first_result"][key] for run in selected)
                    for key in selected[0]["first_result"]},
                 "npu_warmup_ms": statistics.median(run["npu_warmup_ms"] for run in selected),
+            }
+    for mode in ("lazy", "overlap"):
+        selected = [run for name, run in runs.items() if name.startswith(f"startup_{mode}_")]
+        if selected:
+            if any(run["camera"]["start_mode"] != mode or run["npu_warmup_per_worker"] != 0
+                   for run in selected):
+                raise ValueError(f"Mixed startup configuration: {mode}")
+            result["camera_startup_medians"][mode] = {
+                "trials": len(selected),
+                **{key: statistics.median(run["first_result"][key] for run in selected)
+                   for key in selected[0]["first_result"]},
+                "streamon_call_ms": statistics.median(run["camera"]["streamon_call_ms"]
+                                                       for run in selected),
             }
     (args.directory / "comparison.json").write_text(json.dumps(result, indent=2) + "\n")
     for name, run in runs.items():

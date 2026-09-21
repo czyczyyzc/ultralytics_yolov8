@@ -1,5 +1,7 @@
 # Pure P3 Camera Latency: Removing Add-on P2 Computation
 
+Deployment handover (Chinese): [DEPLOYMENT_HANDOVER_ZH.md](DEPLOYMENT_HANDOVER_ZH.md).
+
 Measured 2026-09-21 on the live RK3588S CM5 camera. The complete Add-on P2 branch
 is absent from this model, not merely ignored during postprocessing. No model
 retraining was performed. The source is the P3 checkpoint from the same expanded

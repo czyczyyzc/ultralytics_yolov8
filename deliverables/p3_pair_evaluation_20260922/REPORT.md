@@ -38,4 +38,3 @@ Pooled counts are summed and ratios recomputed; pooled AP is recomputed from all
 | gray40_assets328_prob50_p3 | 55.93% | 61.77% | 769 | 606 | 476 | 63.64% | 35.27% | 61.61% |
 | gray40_assets328_prob15_p3 | 54.30% | 61.93% | 771 | 649 | 474 | 62.12% | 34.83% | 61.98% |
 | gray40_prob00_p3 | 62.47% | 61.77% | 769 | 462 | 476 | 65.51% | 36.67% | 61.98% |
-

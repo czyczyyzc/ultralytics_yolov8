@@ -1,0 +1,60 @@
+{
+  "models": {
+    "old28_p3": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/native_fullpool_14_vs_28_20260916/expanded_28/training_p3/p3/weights/best.pt",
+      "sha256": "8c551c6b115ee9d93c9625280b1d5326b8264d4040e6b69c973af3939f63863f"
+    },
+    "gray40_assets53_prob50_p3": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_online53_20260921/training_p3/p3/weights/best.pt",
+      "sha256": "966779a2e1cbd3cb3f8f5f9f6265ba1a067ef42c866479ffe0080814d02f181b"
+    },
+    "gray40_assets328_prob50_p3": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_online328_20260922/training_p3/p3/weights/best.pt",
+      "sha256": "c4b6d9a34d669694f49ee46fd22c26a6a67766b7955828b6f01d3827222fa94b"
+    },
+    "gray40_assets328_prob15_p3": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_prob15_v2_20260922/training_p3/p3/weights/best.pt",
+      "sha256": "21212d90193c972fbe9db8d7aa67974ade8d9692163aa581dc9105abcefef550"
+    },
+    "gray40_prob00_p3": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_prob00_v2_20260922/training_p3/p3/weights/best.pt",
+      "sha256": "9403a985e5e86979c4745f284426db20299e68df0f3a7b529227d58fed742e6b"
+    }
+  },
+  "datasets": {
+    "Video00004_test": {
+      "config": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_yolo_lovo_positive_mixed_v1_20260828/folds/holdout_Video00004/holdout_all.yaml",
+      "list": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_yolo_lovo_positive_mixed_v1_20260828/folds/holdout_Video00004/holdout_all_frames.txt",
+      "list_sha256": "df50c0d3f6dc98a437e77bcd42a2f5254a780d63773e4a593b4d9d5373c4c2f3",
+      "native_frames": 2359,
+      "excluded_zoom_views": 0
+    },
+    "Video00009_selection_subset": {
+      "config": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_online_replacement_40videos_assets328_20260922/train_online_gray_monitor.yaml",
+      "list": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_online_replacement_40videos_20260921/val_monitor.txt",
+      "list_sha256": "1257014083d92661a9e07944e2b2bd7c8c56e1cb341ea4a9890990f6d579b2fb",
+      "native_frames": 1421,
+      "excluded_zoom_views": 64
+    }
+  },
+  "input_hw": [
+    544,
+    960
+  ],
+  "dtype": "FP32",
+  "nms_iou": 0.45,
+  "matching_iou": 0.5,
+  "conf_floor": 0.001,
+  "thresholds": [
+    0.01,
+    0.03,
+    0.05
+  ],
+  "max_det": 100,
+  "checkpoint_selection": false,
+  "threshold_tuning": false,
+  "pooled_is_independent_test": false,
+  "python": "3.10.12",
+  "torch": "2.5.1+cu121",
+  "git_commit": "35dee6f91c7bd357ee613afd1168bbd642c1221b"
+}

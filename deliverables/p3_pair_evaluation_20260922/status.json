@@ -1,0 +1,8 @@
+{
+  "stage": "complete",
+  "time": "2026-09-22T17:12:31+0800",
+  "pid": 2039328,
+  "report": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/p3_pair_evaluation_20260922/REPORT.md",
+  "models": 5,
+  "pooled_frames": 3780
+}

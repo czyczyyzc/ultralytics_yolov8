@@ -20,7 +20,7 @@ from scripts.anti_uav.evaluate_p3_gray_pair import MODELS, PairValidator, pool_n
 from scripts.anti_uav.run_gray_probability_ablation import sha256, write_json
 from scripts.anti_uav.run_native_pool_comparison import clean
 from ultralytics import YOLO
-from ultralytics.utils import SETTINGS
+from ultralytics.utils import SETTINGS, ops
 
 
 GROUPS = ("all", "replaced", "original_retained", "negative_unchanged", "replaced_original_4to8px")
@@ -70,6 +70,12 @@ class FrameValidator(PairValidator):
     def init_metrics(self, model):
         super().init_metrics(model)
         self.frames = []
+
+    def postprocess(self, preds):
+        # Offline accuracy must not silently omit the tail of a slow NMS batch.
+        return ops.non_max_suppression(preds, self.args.conf, self.args.iou, labels=self.lb,
+            multi_label=True, agnostic=self.args.single_cls or self.args.agnostic_nms,
+            max_det=self.args.max_det, max_time_img=float("inf"))
 
     def update_metrics(self, preds, batch):
         super().update_metrics(preds, batch)
@@ -208,6 +214,7 @@ def main():
         write_json(root/"protocol.json", dict(dataset=str(dataset), reference=str(reference), models=weights,
             input_hw=[544,960], dtype="FP32", nms_iou=.45, matching_iou=.5, conf_floor=.001,
             thresholds=[.01,.03,.05], max_det=100, batch=32, groups=list(GROUPS),
+            nms_wall_clock_truncation=False,
             checkpoint_selection=False, threshold_tuning=False, assets_seen_during_training=True,
             independent_test=False, protected=protected, python=platform.python_version(), torch=torch.__version__,
             git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()))
@@ -247,6 +254,9 @@ def main():
                     changes.append(dict(video=identity[0], frame=identity[1],
                         original=original["entry"]["metrics"], synthetic=synthetic["entry"]["metrics"]))
             result["control_check"]["unchanged_frame_count_differences"] = changes
+            if changes:
+                write_json(root/f"{name}_invalid_controls.json", changes)
+                raise AssertionError("Unchanged frames have different counts; investigate before reporting accuracy")
             old = previous[name]["splits"]["pooled_native"]
             current = result["variants"]["original"]["combined"]["all"]
             result["control_check"]["reference_original_differences"] = {

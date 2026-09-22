@@ -1,9 +1,24 @@
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from scripts.anti_uav.evaluate_synthetic_gray_pair import frame_entry, groups_for, pool_frames, serializable
+from scripts.anti_uav.evaluate_synthetic_gray_pair import FrameValidator, frame_entry, groups_for, pool_frames, serializable
+from ultralytics.utils import ops
+
+
+def test_offline_nms_cannot_silently_skip_batch_tail(monkeypatch):
+    args = SimpleNamespace(conf=.001,iou=.45,single_cls=False,agnostic_nms=False,max_det=100)
+    validator = SimpleNamespace(args=args,lb=[])
+    seen = {}
+    def fake(preds, conf, iou, **kwargs):
+        seen.update(kwargs)
+        return ['all_frames_processed']
+    monkeypatch.setattr(ops,'non_max_suppression',fake)
+    assert FrameValidator.postprocess(validator,None)==['all_frames_processed']
+    assert seen['max_time_img']==float('inf')
+    assert seen['max_det']==100 and seen['multi_label']
 
 
 def test_raw_frame_arrays_are_json_serializable_without_changing_memory_arrays():

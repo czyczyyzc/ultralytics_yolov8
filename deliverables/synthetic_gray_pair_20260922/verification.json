@@ -1,0 +1,24 @@
+{
+  "complete": true,
+  "frames": 3780,
+  "gt_boxes_each_side": 1245,
+  "replaced": 981,
+  "original_retained": 264,
+  "negative_unchanged": 2535,
+  "successful_assets": 328,
+  "source_and_training_inputs_unchanged": true,
+  "all_file_hashes_verified": true,
+  "all_images_verified": true,
+  "labels_verified": true,
+  "yolo_datasets_verified": [
+    "original_combined.yaml",
+    "synthetic_combined.yaml"
+  ],
+  "input_hw": [
+    544,
+    960
+  ],
+  "generator_commit": "ef7690c",
+  "manual_visual_review": "pending",
+  "model_evaluation_performed": false
+}

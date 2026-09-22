@@ -1,0 +1,7 @@
+{
+  "stage": "complete",
+  "frames": 1421,
+  "raw_cache_sha256": "90cb31857405a963e6ee26b41a6800388a515e391c9ff6faad5a2588e937b63c",
+  "baseline_reproduced": true,
+  "selected_policy_verified_by_real_forward": true
+}

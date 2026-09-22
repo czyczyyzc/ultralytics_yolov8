@@ -1,0 +1,18 @@
+{
+  "legacy_threshold": 0.075,
+  "p2_threshold": 0.03,
+  "model_sha256": "6aec79be8e1562d5cbab4f7b1427d156edbd4fff8dba3095302b17b85aac6472",
+  "input_hw": [
+    544,
+    960
+  ],
+  "nms_iou": 0.45,
+  "max_det": 100,
+  "application": "Before cross-branch NMS; P2 raw head 0, legacy raw heads 1/2/3",
+  "area_filter": false,
+  "scope": "FP32 validation candidate; not RKNN INT8 or a deployment default",
+  "baseline_reproduced": true,
+  "selected_policy_verified_by_real_forward": true,
+  "validation_sha256": "1257014083d92661a9e07944e2b2bd7c8c56e1cb341ea4a9890990f6d579b2fb",
+  "test_evaluated": false
+}

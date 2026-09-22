@@ -1,0 +1,31 @@
+{
+  "model": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_online328_20260922/training_addon/p2/weights/best.pt",
+  "model_sha256": "6aec79be8e1562d5cbab4f7b1427d156edbd4fff8dba3095302b17b85aac6472",
+  "data": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_online_replacement_40videos_assets328_20260922/train_online_gray_monitor.yaml",
+  "val_sha256": "1257014083d92661a9e07944e2b2bd7c8c56e1cb341ea4a9890990f6d579b2fb",
+  "val_frames": 1485,
+  "reference_p3": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_online328_20260922/training_p3/p3/weights/best.pt",
+  "reference_p3_sha256": "c4b6d9a34d669694f49ee46fd22c26a6a67766b7955828b6f01d3827222fa94b",
+  "python_executable": "/mnt/chenziye/codes/ultralytics_yolov8/.venv/bin/python",
+  "python_version": "3.10.12",
+  "torch_version": "2.5.1+cu121",
+  "torchvision_version": "0.20.1+cu121",
+  "git_commit": "eb6078c886712e6e11c94fbda022e0312ee77b78",
+  "input_hw": [
+    544,
+    960
+  ],
+  "baseline_threshold": 0.03,
+  "thresholds": [
+    0.01,
+    0.02,
+    0.03,
+    0.05,
+    0.075,
+    0.1,
+    0.15,
+    0.25
+  ],
+  "test_evaluated": false,
+  "output_contract": "No deployment model or configuration is modified"
+}

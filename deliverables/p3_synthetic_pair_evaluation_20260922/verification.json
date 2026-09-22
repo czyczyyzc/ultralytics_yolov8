@@ -1,0 +1,71 @@
+{
+  "complete": true,
+  "models": 5,
+  "ap_groups_checked": 50,
+  "pooled_counts_verified_at_thresholds": [
+    0.01,
+    0.03,
+    0.05
+  ],
+  "original_metrics_exactly_reproduced": true,
+  "unchanged_frame_count_differences": 0,
+  "unchanged_group_metrics_exactly_equal": true,
+  "paired_successful_frames": 981,
+  "paired_original_4to8px_frames": 711,
+  "inference_groups": {
+    "all": [
+      3780,
+      1245
+    ],
+    "replaced": [
+      981,
+      981
+    ],
+    "replaced_original_4to8px": [
+      711,
+      711
+    ],
+    "original_retained": [
+      264,
+      264
+    ],
+    "negative_unchanged": [
+      2535,
+      0
+    ]
+  },
+  "transitions_at_conf003": {
+    "old28_p3": {
+      "both_hit": 500,
+      "both_missed": 299,
+      "gained": 51,
+      "lost": 131
+    },
+    "gray40_assets53_prob50_p3": {
+      "both_hit": 552,
+      "both_missed": 273,
+      "gained": 68,
+      "lost": 88
+    },
+    "gray40_assets328_prob50_p3": {
+      "both_hit": 570,
+      "both_missed": 268,
+      "gained": 58,
+      "lost": 85
+    },
+    "gray40_assets328_prob15_p3": {
+      "both_hit": 574,
+      "both_missed": 267,
+      "gained": 55,
+      "lost": 85
+    },
+    "gray40_prob00_p3": {
+      "both_hit": 506,
+      "both_missed": 276,
+      "gained": 49,
+      "lost": 150
+    }
+  },
+  "offline_nms_time_cutoff_disabled": true,
+  "nms_warning_count": 0
+}

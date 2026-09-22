@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +51,13 @@ def assert_probability_only(reference, candidate):
             raise ValueError("Replacement policy changed beyond probability")
     if a != b:
         raise ValueError("Data, validation or sampling changed beyond replacement probability")
+
+
+def assert_split_isolation(train, val):
+    heldout_parts = {"video00004", "holdout_video00004"}
+    if (not train or not val or set(train) & set(val)
+            or any(heldout_parts & {p.lower() for p in Path(s).parts} for s in train + val)):
+        raise ValueError("Train/validation/test leakage or empty split")
 
 
 def write_json(path, value):
@@ -95,6 +104,12 @@ def main():
         if (reference["input_hw"] != [544, 960] or reference["batch"] != 64
                 or reference["seed"] != 20260915 or reference["epochs"] != 15):
             raise ValueError("Reference differs from the controlled training protocol")
+        import torch
+        with (a.reference_run / "logs/training.log").open() as log:
+            header = log.read(8192)
+        expected = re.search(r"Python-([\d.]+) torch-([^\s]+)", header)
+        if not expected or (platform.python_version(), torch.__version__) != expected.groups():
+            raise ValueError("Use the same Python/PyTorch environment as the completed reference run")
         source = yaml.safe_load(Path(reference["data_yaml"]).read_text())
         candidate = probability_config(source, a.probability)
         assert_probability_only(source, candidate)
@@ -109,8 +124,7 @@ def main():
             raise ValueError("Holdout video in replacement cache")
         train = Path(source["train"]).read_text().splitlines()
         val = Path(source["val"]).read_text().splitlines()
-        if set(train) & set(val) or any("Video00004" in p for p in train + val):
-            raise ValueError("Train/validation/test leakage")
+        assert_split_isolation(train, val)
         hashes = {key: sha256(source[key]) for key in ("train", "val")}
         hashes["negative_pool"] = sha256(source["label_sampling"]["negative_pool"])
         hashes["initial_p3"] = sha256(reference["initial_p3"])
@@ -122,6 +136,8 @@ def main():
         protocol = dict(reference_run=str(a.reference_run), probability=a.probability,
                         device=a.device, epochs_per_stage=15, asset_count=len(index["asset_ids"]),
                         source_hashes=hashes, input_hw=[544, 960], batch=64, seed=20260915,
+                        python_executable=sys.executable, python_version=platform.python_version(),
+                        torch_version=torch.__version__,
                         selection="Unchanged reference gray fitness; validation-only branch calibration afterwards",
                         test_video_evaluated=False, independent_test_claim=False,
                         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())

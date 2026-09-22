@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from scripts.anti_uav.run_gray_probability_ablation import assert_probability_only, probability_config
+from scripts.anti_uav.run_gray_probability_ablation import assert_probability_only, assert_split_isolation, probability_config
 
 
 def config():
@@ -42,3 +42,20 @@ def test_changed_cache_rejected():
     result["online_replacement"]["cache"] = "other"
     with pytest.raises(ValueError, match="beyond probability"):
         assert_probability_only(source, result)
+
+
+def test_split_guard_does_not_misclassify_holdout_protocol_directory():
+    assert_split_isolation(["/data/strict_holdout_Video00004/images/Video00005/1.jpg"],
+                           ["/data/gray_val/Video00009/1.jpg"])
+
+
+@pytest.mark.parametrize("train,val", [
+    (["/data/Video00004/1.jpg"], ["/data/gray_val/1.jpg"]),
+    (["/data/video00004/1.jpg"], ["/data/gray_val/1.jpg"]),
+    (["/data/holdout_Video00004/images/1.jpg"], ["/data/gray_val/1.jpg"]),
+    (["same"], ["same"]),
+    ([], ["validation"]),
+])
+def test_split_guard_rejects_actual_holdout_and_overlap(train, val):
+    with pytest.raises(ValueError):
+        assert_split_isolation(train, val)

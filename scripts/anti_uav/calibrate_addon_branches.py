@@ -7,6 +7,7 @@ import gzip
 import json
 import os
 from pathlib import Path
+import platform
 import sys
 
 import numpy as np
@@ -211,6 +212,8 @@ def main():
     metadata = dict(model=str(a.model.resolve()), model_sha256=sha256(a.model),
                     data=str(a.data.resolve()), val_sha256=sha256(val_file), val_frames=len(images),
                     reference_p3=str(a.reference_p3.resolve()), reference_p3_sha256=sha256(a.reference_p3),
+                    python_executable=sys.executable, python_version=platform.python_version(),
+                    torch_version=torch.__version__, torchvision_version=torchvision.__version__,
                     input_hw=[544, 960], baseline_threshold=.03, thresholds=a.thresholds,
                     test_evaluated=False, output_contract="No deployment model or configuration is modified")
     write_json(a.output / "protocol.json", metadata)

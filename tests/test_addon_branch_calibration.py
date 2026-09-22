@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from scripts.anti_uav.calibrate_addon_branches import (
-    add_counts, branch_nms, matches_at_half, metrics, select_recall_safe,
+    add_counts, branch_nms, gate_branch_scores, matches_at_half, metrics, select_recall_safe,
 )
 
 
@@ -60,3 +60,25 @@ def test_matching_matches_repository_validator():
         torch.zeros(len(det)), torch.zeros(len(gt)), box_iou(gt, det))
     expected = np.flatnonzero(reference[:, 0].numpy())
     assert sorted(matches_at_half(gt, det)[:, 1]) == expected.tolist()
+
+
+def test_live_gate_preserves_coordinates_and_accepted_scores():
+    pred = torch.arange(25, dtype=torch.float32).reshape(1, 5, 5)
+    pred[:, 4] = torch.tensor([.02, .04, .04, .08, .9])
+    before = pred.clone()
+    result = gate_branch_scores(pred, 2, .075, .03)
+    torch.testing.assert_close(pred, before)
+    torch.testing.assert_close(result[:, :4], pred[:, :4])
+    torch.testing.assert_close(result[:, 4], torch.tensor([[0., .04, 0., .08, .9]]))
+
+
+def test_live_gate_and_cached_nms_agree():
+    from ultralytics.utils import ops
+    pred = torch.tensor([[[5., 5, 30, 50, 60, 70, 80], [5, 5, 30, 50, 60, 70, 80],
+                          [10, 10, 4, 4, 4, 4, 4], [10, 10, 4, 4, 4, 4, 4],
+                          [.05, .04, .5, .01, .02, .04, .8]]])
+    raw = torch.cat((ops.xywh2xyxy(pred[0, :4].T), pred[0, 4, :, None],
+                     torch.tensor([[1.], [0.], [0.], [0.], [0.], [0.], [0.]])), dim=1)
+    cached = branch_nms(raw, .03, .06)
+    live = ops.non_max_suppression(gate_branch_scores(pred, 1, .03, .06), .001, .45, max_det=100)[0]
+    torch.testing.assert_close(cached[:, :5], live[:, :5])

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import subprocess
 import sys
 
 import numpy as np
@@ -46,6 +47,31 @@ def branch_nms(raw, legacy_threshold, p2_threshold, iou=.45, max_det=100):
         selected = selected[selected[:, 4].argsort(descending=True)[:30000]]
     keep = torchvision.ops.nms(selected[:, :4], selected[:, 4], iou)[:max_det]
     return selected[keep].clone()
+
+
+def gate_branch_scores(prediction, p2_count, legacy_threshold, p2_threshold):
+    """Gate pre-NMS candidates without changing coordinates or accepted scores."""
+    if prediction.shape[1] != 5 or not 0 < p2_count < prediction.shape[2]:
+        raise ValueError("Invalid single-class P2/legacy head layout")
+    output = prediction.clone()
+    thresholds = output.new_full((output.shape[2],), legacy_threshold)
+    thresholds[:p2_count] = p2_threshold
+    output[:, 4] *= (output[:, 4] >= thresholds).to(output.dtype)
+    return output
+
+
+class BranchPolicyValidator(FixedShapeGrayValidator):
+    def __init__(self, *args, policy, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.policy = policy
+
+    def postprocess(self, preds):
+        prediction, levels = preds
+        if len(levels) != 4:
+            raise ValueError("Require the four-scale add-on detector")
+        prediction = gate_branch_scores(prediction, levels[0].shape[2] * levels[0].shape[3],
+                                        self.policy["legacy_threshold"], self.policy["p2_threshold"])
+        return super().postprocess((prediction, levels))
 
 
 def native_boxes(record, detections):
@@ -214,6 +240,7 @@ def main():
                     reference_p3=str(a.reference_p3.resolve()), reference_p3_sha256=sha256(a.reference_p3),
                     python_executable=sys.executable, python_version=platform.python_version(),
                     torch_version=torch.__version__, torchvision_version=torchvision.__version__,
+                    git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                     input_hw=[544, 960], baseline_threshold=.03, thresholds=a.thresholds,
                     test_evaluated=False, output_contract="No deployment model or configuration is modified")
     write_json(a.output / "protocol.json", metadata)
@@ -234,6 +261,30 @@ def main():
     for key, metric in (("tp", "TP"), ("fp", "FP"), ("fn", "FN"), ("frames", "FRAMES")):
         if report["baseline"][key] != result.gray_selection[f"native/c0.03/{metric}"]:
             raise ValueError(f"Cached replay metric differs from original validator: {key}")
+    selected = report["selected_recall_safe"]
+    policy = {k: selected[k] for k in ("legacy_threshold", "p2_threshold")}
+    def policy_factory(**kwargs):
+        return BranchPolicyValidator(policy=policy, **kwargs)
+    verified = YOLO(str(a.model)).val(data=str(a.data), validator=policy_factory, imgsz=[544, 960],
+        rect=False, device=a.device, batch=32, workers=4, conf=.001, iou=.45, max_det=100,
+        half=False, plots=False, verbose=False, project=str(a.output), name="selected_policy_forward")
+    for key, metric in (("tp", "TP"), ("fp", "FP"), ("fn", "FN"), ("frames", "FRAMES")):
+        if selected[key] != verified.gray_selection[f"native/c0.03/{metric}"]:
+            raise ValueError(f"Selected policy real forward differs from cached replay: {key}")
+    for key, value in verified.gray_selection.items():
+        if key.startswith("native/c0.03/") and key.endswith("/GT") and value:
+            bucket = key.split("/")[2]
+            expected = selected[bucket + "_tp"] / value
+            if abs(verified.gray_selection[key[:-2] + "R"] - expected) > 1e-12:
+                raise ValueError(f"Selected policy scale recall differs: {bucket}")
+    write_json(a.output / "selected_policy_forward.json", clean({
+        k: v for k, v in verified.gray_selection.items() if k.startswith("native/c0.03/")}))
+    write_json(a.output / "candidate_policy.json", dict(
+        **policy, model_sha256=metadata["model_sha256"], input_hw=[544, 960], nms_iou=.45, max_det=100,
+        application="Before cross-branch NMS; P2 raw head 0, legacy raw heads 1/2/3",
+        area_filter=False, scope="FP32 validation candidate; not RKNN INT8 or a deployment default",
+        baseline_reproduced=True, selected_policy_verified_by_real_forward=True,
+        validation_sha256=metadata["val_sha256"], test_evaluated=False))
     lines = ["# Add-on branch calibration", "", report["scope"], "",
              "Thresholds are selected on Video00009 validation only. No independent-test improvement is claimed.", "",
              "| Policy | P3 threshold | P2 threshold | P | R | FP | FN | 4-8px R |",
@@ -244,7 +295,8 @@ def main():
                      f"{r['recall']:.2%} | {r['fp']} | {r['fn']} | {r['tiny_recall']:.2%} |")
     (a.output / "REPORT.md").write_text("\n".join(lines) + "\n")
     write_json(a.output / "status.json", dict(stage="complete", frames=len(records),
-                                              raw_cache_sha256=sha256(cache), baseline_reproduced=True))
+                                              raw_cache_sha256=sha256(cache), baseline_reproduced=True,
+                                              selected_policy_verified_by_real_forward=True))
     print(json.dumps({k: report[k] for k in ("baseline", "selected_recall_safe", "diagnostics")}), flush=True)
 
 

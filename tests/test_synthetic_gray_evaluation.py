@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from scripts.anti_uav.evaluate_synthetic_gray_pair import FrameValidator, frame_entry, groups_for, pool_frames, serializable
+from scripts.anti_uav.evaluate_synthetic_gray_pair import FrameValidator, frame_entry, groups_for, pool_frames, resolve_models, serializable
 from ultralytics.utils import ops
 
 
@@ -48,3 +48,14 @@ def test_subset_counts_include_false_positives_without_reusing_full_denominator(
     assert subset['native/c0.03/FN']==1
     with pytest.raises(ValueError):
         pool_frames(rows,'missing')
+
+
+def test_addon_weights_resolve_to_matching_training_run(tmp_path):
+    p3 = tmp_path / 'training_p3/p3/weights/best.pt'
+    addon = tmp_path / 'training_addon/p2/weights/best.pt'
+    addon.parent.mkdir(parents=True)
+    addon.write_bytes(b'addon checkpoint')
+    models = resolve_models({'test_p3': {'path': str(p3), 'sha256': 'original'}}, 'addon_p2')
+    assert list(models) == ['test_addon_p2']
+    assert models['test_addon_p2']['path'] == str(addon)
+    assert models['test_addon_p2']['sha256'] != 'original'

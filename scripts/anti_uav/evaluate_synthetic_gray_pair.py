@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Matched original/synthetic evaluation of the five frozen standalone P3 models."""
+"""Matched original/synthetic evaluation of frozen P3 or add-on P2 models."""
 import argparse
 from collections import Counter
 from functools import partial
@@ -156,8 +156,24 @@ def verify_dataset(root, reference):
     return rows, protected
 
 
-def write_report(root, results):
-    lines = ["# Frozen standalone P3: synthetic appearance evaluation", "",
+def resolve_models(reference_models, head):
+    if head == "p3":
+        return reference_models
+    models = {}
+    for name, weight in reference_models.items():
+        suffix = "/training_p3/p3/weights/best.pt"
+        if not weight["path"].endswith(suffix):
+            raise ValueError(f"Unexpected P3 checkpoint layout: {weight['path']}")
+        path = weight["path"][:-len(suffix)] + "/training_addon/p2/weights/best.pt"
+        if not Path(path).is_file():
+            raise FileNotFoundError(path)
+        models[name.replace("_p3", "") + "_addon_p2"] = dict(path=path, sha256=sha256(Path(path)))
+    return models
+
+
+def write_report(root, results, head):
+    label = "Frozen P3 + Add-on P2" if head == "addon_p2" else "Frozen standalone P3"
+    lines = [f"# {label}: synthetic appearance evaluation", "",
         "960x544 FP32; conf .03 for counts, matching IoU .5, NMS .45, max_det 100; AP floor .001.",
         "Five fixed best.pt files; no training, checkpoint selection, threshold tuning, tracker or RKNN.",
         "Full sets: 3780 frames / 1245 GT. Replaced pairs: 981 positive frames only.",
@@ -184,6 +200,7 @@ def main():
     p.add_argument("--reference", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--device", type=int, default=0)
+    p.add_argument("--head", choices=("p3", "addon_p2"), default="p3")
     a = p.parse_args()
     root, dataset, reference = a.output.resolve(), a.dataset.resolve(), a.reference.resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -206,12 +223,13 @@ def main():
         rows, protected = verify_dataset(dataset, reference)
         ref = json.loads((reference/"protocol.json").read_text())
         previous = json.loads((reference/"results.json").read_text())
-        weights = {n: ref["models"][n] for n in MODELS}
+        weights = resolve_models({n: ref["models"][n] for n in MODELS}, a.head)
         for item in weights.values():
             if sha256(Path(item["path"])) != item["sha256"]:
                 raise ValueError("Reference checkpoint changed")
             protected[item["path"]] = item["sha256"]
         write_json(root/"protocol.json", dict(dataset=str(dataset), reference=str(reference), models=weights,
+            head=a.head, expected_detection_scales=4 if a.head == "addon_p2" else 3,
             input_hw=[544,960], dtype="FP32", nms_iou=.45, matching_iou=.5, conf_floor=.001,
             thresholds=[.01,.03,.05], max_det=100, batch=32, groups=list(GROUPS),
             nms_wall_clock_truncation=False,
@@ -228,8 +246,8 @@ def main():
                     status("evaluation", model=name, variant=variant, video=video)
                     metadata = {str(dataset/r[key]): r for r in rows if r["video"] == video}
                     model = YOLO(weight["path"])
-                    if len(model.model.model[-1].stride) != 3:
-                        raise ValueError("Only standalone P3 checkpoints are allowed")
+                    if len(model.model.model[-1].stride) != (4 if a.head == "addon_p2" else 3):
+                        raise ValueError(f"Unexpected detection scales in {weight['path']}")
                     metrics = model.val(data=str(dataset/f"{variant}_{video}.yaml"),
                         validator=partial(FrameValidator, frame_metadata=metadata), imgsz=[544,960], rect=False,
                         device=str(a.device), batch=32, workers=4, conf=.001, iou=.45, max_det=100,
@@ -257,10 +275,11 @@ def main():
             if changes:
                 write_json(root/f"{name}_invalid_controls.json", changes)
                 raise AssertionError("Unchanged frames have different counts; investigate before reporting accuracy")
-            old = previous[name]["splits"]["pooled_native"]
-            current = result["variants"]["original"]["combined"]["all"]
-            result["control_check"]["reference_original_differences"] = {
-                k: dict(previous=old[k], current=v) for k,v in current.items() if old[k] != v}
+            if a.head == "p3":
+                old = previous[name]["splits"]["pooled_native"]
+                current = result["variants"]["original"]["combined"]["all"]
+                result["control_check"]["reference_original_differences"] = {
+                    k: dict(previous=old[k], current=v) for k,v in current.items() if old[k] != v}
             results[name] = result
             write_json(root/f"{name}.json", clean(result))
             write_json(root/"results.json", clean(results))
@@ -268,7 +287,7 @@ def main():
         for path, digest in protected.items():
             if sha256(Path(path)) != digest:
                 raise ValueError(f"Protected input mutated during evaluation: {path}")
-        write_report(root, results)
+        write_report(root, results, a.head)
         status("complete", models=len(results), report=str(root/"REPORT.md"))
     except BaseException as error:
         status("failed", error=repr(error))

@@ -35,6 +35,12 @@ int au_detector_rga_supported() {
 #endif
 }
 const char* au_detector_error() { return api_error.c_str(); }
+int au_detector_input_width(void* handle) {
+    return handle ? static_cast<NativeYoloV8*>(handle)->input_width() : 0;
+}
+int au_detector_input_height(void* handle) {
+    return handle ? static_cast<NativeYoloV8*>(handle)->input_height() : 0;
+}
 void* au_detector_create(const char* model, const char* core, int threads) {
     try {
         cv::setNumThreads(threads);

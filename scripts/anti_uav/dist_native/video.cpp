@@ -236,6 +236,13 @@ int run(const Args& args) {
     for(int i=0;i<args.workers;++i) masks[i]=args.core_masks[i].c_str();
     auto loading=Clock::now();
     if(create(args.model.c_str(),masks,args.workers,1,handles)) throw std::runtime_error(det_error());
+    const int input_width=det.get<int(*)(void*)>("au_detector_input_width")(handles[0]);
+    const int input_height=det.get<int(*)(void*)>("au_detector_input_height")(handles[0]);
+    if(input_width<=0 || input_height<=0) throw std::runtime_error("Invalid RKNN input dimensions");
+    const float resize_ratio=std::min(float(input_width)/source_w,float(input_height)/source_h);
+    const int content_width=std::max(1,int(std::round(source_w*resize_ratio)));
+    const int content_height=std::max(1,int(std::round(source_h*resize_ratio)));
+    const bool fused_half=args.preprocess=="fused" && source_w==2*content_width && source_h==2*content_height;
     std::vector<std::unique_ptr<void,decltype(destroy)>> owned;
     for(int i=0;i<args.workers;++i) owned.emplace_back(handles[i],destroy);
     double load_ms=ms(loading);
@@ -465,7 +472,9 @@ int run(const Args& args) {
         <<",\"software_decode_threading\":"<<quote(args.decode_threading);
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));
     out<<",\"args\":{\"conf\":"<<args.conf<<",\"iou\":"<<args.iou<<",\"actual_conf_float32\":"<<float(args.conf)<<",\"actual_iou_float32\":"<<float(args.iou)<<",\"workers\":"<<args.workers<<",\"inflight\":"<<args.inflight<<",\"warmup\":"<<args.warmup<<",\"detector_only\":"<<(args.detector_only?"true":"false")<<",\"pyramid_cache\":"<<(args.pyramid_cache?"true":"false")<<",\"cpus\":"<<quote(args.cpus)<<",\"video\":"<<quote(args.video)<<",\"model\":"<<quote(args.model)<<",\"save_observations\":"<<(args.save?"true":"false")<<'}';
-    out<<",\"input_wh\":[960,544],\"source_wh\":["<<source_w<<','<<source_h<<"],\"source_fps\":"<<fps<<",\"npu_core_masks\":[";
+    out<<",\"input_wh\":["<<input_width<<','<<input_height<<"],\"preprocess_effective\":"
+       <<quote(fused_half?"fused_half":args.preprocess=="fused"?"opencv_fallback":args.preprocess)
+       <<",\"source_wh\":["<<source_w<<','<<source_h<<"],\"source_fps\":"<<fps<<",\"npu_core_masks\":[";
     for(int i=0;i<args.workers;++i) {if(i) out<<',';out<<quote(masks[i]);}out<<"],\"npu_worker_frame_counts\":[";
     for(int i=0;i<args.workers;++i) {if(i) out<<',';out<<assigned[i];}out<<']';
     out<<",\"detector_count\":"<<detections<<",\"displayed_tracks\":"<<tracks<<",\"rejected_degenerate_boxes\":"<<bad<<",\"stages_ms\":{";

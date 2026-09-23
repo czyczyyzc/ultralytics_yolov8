@@ -18,6 +18,11 @@ template <typename T> T* make_detector(const char* model, const char* core, bool
         return new T(model, core, defer_io);
     }
 }
+void validate_input_shape(const NativeYoloV8& detector) {
+    if (detector.input_width() <= 0 || detector.input_height() <= 0 ||
+        detector.input_width() % 32 != 0 || detector.input_height() % 32 != 0)
+        throw std::runtime_error("Detector input must have positive dimensions divisible by 32");
+}
 }
 
 extern "C" {
@@ -34,8 +39,7 @@ void* au_detector_create(const char* model, const char* core, int threads) {
     try {
         cv::setNumThreads(threads);
         std::unique_ptr<NativeYoloV8> detector(make_detector<NativeYoloV8>(model, core));
-        if (detector->input_width() != 960 || detector->input_height() != 544)
-            throw std::runtime_error("This deployment requires 960x544 input");
+        validate_input_shape(*detector);
         detector->set_padding_value(114);
         return detector.release();
     } catch (const std::exception& e) {
@@ -57,8 +61,7 @@ int au_detector_create_pool(const char* model, const char** cores, int count,
         // Duplicate model/weights before binding separate per-worker I/O buffers.
         for (int i = 0; i < count; ++i) {
             pool[i]->initialize_deferred_io(cores[i]);
-            if (pool[i]->input_width() != 960 || pool[i]->input_height() != 544)
-                throw std::runtime_error("This deployment requires 960x544 input");
+            validate_input_shape(*pool[i]);
             pool[i]->set_padding_value(114);
         }
         for (int i = 0; i < count; ++i) handles[i] = pool[i].release();

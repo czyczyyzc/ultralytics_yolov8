@@ -1,0 +1,29 @@
+{
+  "source_list": "/mnt/chenziye/codes/ultralytics_yolov8/deliverables/anti_uav_rk3588s_frozen_p3_addon_p2_final_20260904/metadata/calibration/dataset_no_Video00004.txt",
+  "source_sha256": "c1cc20e6f8aabc570d2b16ed7676a1a2ef297d91d21ab22322d4fa70befecbce",
+  "count": 384,
+  "source_hw": [
+    544,
+    960
+  ],
+  "source_crop": [
+    2,
+    2,
+    0,
+    0
+  ],
+  "content_hw": [
+    432,
+    768
+  ],
+  "input_hw": [
+    448,
+    768
+  ],
+  "padding_top_bottom": [
+    8,
+    8
+  ],
+  "interpolation": "INTER_LINEAR",
+  "format": "PNG"
+}

@@ -1,0 +1,171 @@
+{
+  "source_weights": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_online328_addon_camera_768x448_20260923/best.pt",
+  "onnx": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_online328_addon_camera_768x448_20260923/detector.onnx",
+  "imgsz": [
+    448,
+    768
+  ],
+  "format": "rknn_yolov8_rkopt",
+  "layout": "branch-major NCHW bbox/class/score_sum outputs; DFL and NMS run in runtime postprocess",
+  "output_shapes": [
+    [
+      1,
+      64,
+      112,
+      192
+    ],
+    [
+      1,
+      1,
+      112,
+      192
+    ],
+    [
+      1,
+      1,
+      112,
+      192
+    ],
+    [
+      1,
+      64,
+      56,
+      96
+    ],
+    [
+      1,
+      1,
+      56,
+      96
+    ],
+    [
+      1,
+      1,
+      56,
+      96
+    ],
+    [
+      1,
+      64,
+      28,
+      48
+    ],
+    [
+      1,
+      1,
+      28,
+      48
+    ],
+    [
+      1,
+      1,
+      28,
+      48
+    ],
+    [
+      1,
+      64,
+      14,
+      24
+    ],
+    [
+      1,
+      1,
+      14,
+      24
+    ],
+    [
+      1,
+      1,
+      14,
+      24
+    ]
+  ],
+  "validation": {
+    "output_count": 12,
+    "branch_count": 4,
+    "pair_per_branch": 3,
+    "branches": [
+      {
+        "bbox": [
+          1,
+          64,
+          112,
+          192
+        ],
+        "class": [
+          1,
+          1,
+          112,
+          192
+        ],
+        "score_sum": [
+          1,
+          1,
+          112,
+          192
+        ]
+      },
+      {
+        "bbox": [
+          1,
+          64,
+          56,
+          96
+        ],
+        "class": [
+          1,
+          1,
+          56,
+          96
+        ],
+        "score_sum": [
+          1,
+          1,
+          56,
+          96
+        ]
+      },
+      {
+        "bbox": [
+          1,
+          64,
+          28,
+          48
+        ],
+        "class": [
+          1,
+          1,
+          28,
+          48
+        ],
+        "score_sum": [
+          1,
+          1,
+          28,
+          48
+        ]
+      },
+      {
+        "bbox": [
+          1,
+          64,
+          14,
+          24
+        ],
+        "class": [
+          1,
+          1,
+          14,
+          24
+        ],
+        "score_sum": [
+          1,
+          1,
+          14,
+          24
+        ]
+      }
+    ]
+  }
+}

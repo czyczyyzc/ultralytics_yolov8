@@ -13,8 +13,16 @@ as the previously used Dist tracker with GMC camera-motion compensation.
   evaluation-only paired synthetic set substituted. All other frames use
   the original video; the synthetic set itself contains only 1,421 selected
   frames and is **not** a continuous synthetic clip.
+- `Video00009_synthetic_565_selected_FP32_Dist_GMC_10fps.mp4`: only the 565
+  successfully replaced frames, selected from the already-rendered synthetic
+  video in original frame-index order. This is a 56.5-second, 10 FPS viewing
+  montage, not a continuous 10 FPS capture. Original frame indices remain
+  visible in the video overlays. Detector, GMC, and tracker were **not** rerun
+  for this cut; its boxes and IDs are inherited from the complete 14,201-frame
+  causal run. SHA256:
+  `17ab2a4e528da96ba5f36ccdd6f1ce83042f27720cf2997cac59a9252537035d`.
 
-Both videos are H.264, 1600x784, 100 FPS playback, 142.01 seconds. The 100 FPS
+The two full-length videos are H.264, 1600x784, 100 FPS playback, 142.01 seconds. The 100 FPS
 is source playback rate, **not** detector or tracking throughput. Each stream
 was tracked independently, without carrying the original stream's IDs into
 the synthetic stream. Only confirmed, currently observed detection boxes are

@@ -55,6 +55,8 @@ def expansion_sampling(source, config, base, added_positive, added_negatives, fr
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--source-yaml", default="train_hardneg_gray_monitor.yaml",
+                   help="Training YAML inside --source; defaults to the native schedule")
     p.add_argument("--snapshot", type=Path, required=True)
     p.add_argument("--video-root", type=Path, required=True)
     p.add_argument("--old-root", type=Path, required=True)
@@ -66,7 +68,9 @@ def main():
     if a.output.exists() or min(a.positive_stride, a.negative_stride) < 1 or not 0 < a.negative_fraction < 1:
         raise ValueError("Use a fresh output and positive sample strides")
     cv2.setNumThreads(1)
-    config = yaml.safe_load((a.source / "train_hardneg_gray_monitor.yaml").read_text())
+    source_yaml = a.source / a.source_yaml
+    config = yaml.safe_load(source_yaml.read_text())
+    source_train_sha256 = sha256_file(Path(config["train"]))
     source = json.loads((a.source / "manifest.json").read_text())
     if config.get("online_scale") or source["zoom_training_samples"] or source["online_additional_slots"]:
         raise ValueError("Baseline must use native data only")
@@ -122,7 +126,7 @@ def main():
     (a.output / "train_hardneg_gray_monitor.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     negative = source["negative"] + negative_count
     manifest = dict(source, schema="native_approved_expansion.v1", source_dataset=str(a.source),
-                    source_train_sha256=sha256_file(Path(yaml.safe_load((a.source / "train_hardneg_gray_monitor.yaml").read_text())["train"])),
+                    source_train_sha256=source_train_sha256,
                     snapshot_sha256=sha256_file(a.snapshot),
                     appended_videos=source.get("appended_videos", []) + records,
                     latest_appended_videos=records,

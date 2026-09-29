@@ -58,7 +58,8 @@ def main() -> None:
     snapshot_path.write_text(json.dumps(dict(new_rows=[row]), indent=2) + "\n")
     subprocess.run([
         sys.executable, str(ROOT / "scripts/anti_uav/append_approved_gray_native.py"),
-        "--source", str(a.source_native), "--snapshot", str(snapshot_path),
+        "--source", str(a.source_online), "--source-yaml", "train_online_gray_monitor.yaml",
+        "--snapshot", str(snapshot_path),
         "--video-root", str(a.video_root), "--old-root", str(a.old_root),
         "--output", str(a.output), "--positive-stride", "1", "--negative-stride", "1",
         "--negative-fraction", "0.15",
@@ -70,9 +71,15 @@ def main() -> None:
     (a.output / "train_online_gray_monitor.yaml").write_text(
         yaml.safe_dump(config, sort_keys=False))
     result = json.loads((a.output / "manifest.json").read_text())
-    result.update(cross_expansion=dict(
+    old_schedule = Path(old_config["train"]).read_text().splitlines()
+    new_schedule = Path(config["train"]).read_text().splitlines()
+    if new_schedule[:len(old_schedule)] != old_schedule:
+        raise ValueError("40-video training prefix changed")
+    result.update(schema="approved_cross_expansion.v1", cross_expansion=dict(
         already_present_cross_video_sha256=cross_sha256,
         newly_added_video_sha256=row["sha256"],
+        baseline_training_slots=len(old_schedule),
+        baseline_prefix_exactly_preserved=True,
         baseline_online_cache=config["online_replacement"]["cache"],
         new_video_online_replacement=False,
         note="All reviewed new frames are added once. Existing 40-video cache remains active; "

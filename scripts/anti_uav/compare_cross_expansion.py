@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare 40- and 41-video P3/P2 detectors on unchanged gray evaluation data."""
+"""Compare expanded P3/P2 detectors on unchanged gray evaluation data."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import argparse
 import json
 from pathlib import Path
 import sys
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -26,6 +28,14 @@ def main() -> None:
     p.add_argument("--device", default="1")
     a = p.parse_args()
     a.output.mkdir(parents=True, exist_ok=False)
+    baseline_protocol = json.loads((a.baseline_run / "protocol.json").read_text())
+    baseline_manifest = json.loads((Path(baseline_protocol["dataset"]) / "manifest.json").read_text())
+    data = yaml.safe_load(a.data_yaml.read_text())
+    expanded_manifest = json.loads((Path(data["path"]) / "manifest.json").read_text())
+    baseline_videos = len(baseline_manifest["train_video_hashes"])
+    expanded_videos = len(expanded_manifest["train_video_hashes"])
+    if expanded_videos <= baseline_videos:
+        raise ValueError("Expanded run must contain more training videos than the baseline")
     models = {
         "old_p3": a.baseline_run / "training_p3/p3/weights/best.pt",
         "old_p2p3": a.baseline_run / "training_addon/p2/weights/best.pt",
@@ -51,10 +61,11 @@ def main() -> None:
                 json.dumps(record, indent=2, allow_nan=False) + "\n")
     (a.output / "results.json").write_text(
         json.dumps(results, indent=2, allow_nan=False) + "\n")
-    lines = ["# Reviewed Cross-Target Video Expansion", "",
+    lines = ["# Reviewed Approved-Video Expansion", "",
              "FP32 detection at 960x544; no RKNN or tracking.",
-             "The 40-video training schedule is preserved and one reviewed video is added.",
-             "The _x video was already in the 40-video baseline. Neither cross video is an independent cross-target test.",
+             f"The {baseline_videos}-video training schedule is preserved and "
+             f"{expanded_videos-baseline_videos} reviewed videos are added ({expanded_videos} total).",
+             "Training videos, including _x and from-13m, are not independent test sets.",
              "Video00009 selects checkpoints; Video00004 is test-only.", "",
              "| Split | Model | Conf | Precision | Recall | FP | mAP50 | 4-8px recall |",
              "| --- | --- | ---: | ---: | ---: | ---: | ---: |"]

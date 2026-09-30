@@ -9,10 +9,10 @@
 | 版本 | P3 检测器 | Frozen-P3 + Add-on P2 检测器 | 交付状态 |
 | --- | --- | --- | --- |
 | 28 视频，已在 RK3588S 实测 | 已有 960×544 INT8 RKNN | 已有 960×544 INT8 RKNN | 可直接复现板端 C++/Dist/GMC 流水线；下文速度只属于此版 |
-| 40 视频 + 328 张候选贴图在线增强 | `.pt` 可用 | `.pt` 可用 | 在当前独立测试中优于 44 视频版；**尚无本次确认过的 INT8 RKNN/板端速度** |
-| 最新 44 视频：保留旧 40 视频的在线贴图增强，追加 4 个原图视频 | `.pt` 可用 | `.pt` 可用 | 已训练并完成 FP32 对比，但独立测试误检明显增加；**不建议直接替换线上模型** |
+| 40 视频 + 328 张候选贴图在线增强 | `.pt` 与 INT8 RKNN 均已导出 | `.pt` 与 INT8 RKNN 均已导出 | 在当前独立 FP32 测试中优于 44 视频版；**新 RKNN 尚未完成板端精度/速度验收** |
+| 最新 44 视频：保留旧 40 视频的在线贴图增强，追加 4 个原图视频 | `.pt` 与 INT8 RKNN 均已导出 | `.pt` 与 INT8 RKNN 均已导出 | FP32 独立测试误检明显增加；**仅供实验，不建议直接替换线上模型** |
 
-建议：需要马上在板上运行时，使用已验证的 28 视频 RKNN；准备下一次精度升级时，先从 40 视频 `best.pt` 导出并验证，不要因为 44 视频时间更新就自动切换。P3 速度更高；P2+P3 更照顾 4–8 px 目标，但可能带来更多误检。没有在同一评测中得到的 28 与 40/44 精度，不能直接排成一张排名表。
+建议：需要马上在板上运行时，使用已验证的 28 视频 RKNN；准备下一次精度升级时，先验收已导出的 40 视频 RKNN，不要因为 44 视频时间更新就自动切换。P3 速度更高；P2+P3 更照顾 4–8 px 目标，但可能带来更多误检。没有在同一评测中得到的 28 与 40/44 精度，不能直接排成一张排名表。
 
 ## 2. 模型文件与版本
 
@@ -29,7 +29,22 @@
 | 44 视频 | P3 `.pt` | `/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_direct_online328_20260929/training_p3/p3/weights/best.pt` | `761ba22431d2062a9fde1cfda08c5e394e2a6f34b60b9328b50ae9860e0b4471` |
 | 44 视频 | P2+P3 `.pt` | `/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_direct_online328_20260929/training_addon/p2/weights/best.pt` | `8f125903f223810c611bb97f5de3a51c062dab6c4cb3f67420d3d92a3100c1dd` |
 
-P3 指 P3/P4/P5 三个尺度（stride 8/16/32）；P2+P3 指在冻结的 P3 主干/检测分支之外新增 P2 路径，实际有 P2/P3/P4/P5 四个尺度（stride 4/8/16/32）。两者不是通过运行时开关启停同一个 RKNN 图：要省掉 P2 的计算，必须使用独立导出的 P3 RKNN。40/44 视频两组目前只有上表 `.pt`，**没有经本交接确认的对应 RKNN 文件，也没有对应的板端 FPS**。
+P3 指 P3/P4/P5 三个尺度（stride 8/16/32）；P2+P3 指在冻结的 P3 主干/检测分支之外新增 P2 路径，实际有 P2/P3/P4/P5 四个尺度（stride 4/8/16/32）。两者不是通过运行时开关启停同一个 RKNN 图：要省掉 P2 的计算，必须使用独立导出的 P3 RKNN。
+
+40/44 视频的四份新 RKNN 已于 2026-09-30 用 Toolkit2 2.3.2、目标 `rk3588`、384 张灰度校准图生成。服务器公共前缀为：
+
+```text
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved_rknn_exports_20260930/
+```
+
+| 版本/结构 | 前缀下相对模型路径 | RKNN SHA256 | ONNX 输出 |
+| --- | --- | --- | ---: |
+| 40 视频 P3 | `40_p3/detector_960x544_int8.rknn` | `b8d4517946b745d0bdc60cde45c0955b58111e31442521be96ab38e03f378fe0` | 9 |
+| 40 视频 P2+P3 | `40_p2p3/detector_960x544_int8.rknn` | `5851dd1d85f511a35500461680142a01189d4f5a3043aeeed9a2e8bf3f63486c` | 12 |
+| 44 视频 P3 | `44_p3/detector_960x544_int8.rknn` | `011373d915c7b05c8cf793be21da87ffdb7bdda840bcbb7fdc3233eaa20d200c` | 9 |
+| 44 视频 P2+P3 | `44_p2p3/detector_960x544_int8.rknn` | `95c4cf02d73ec9b6056f96545c2d3bd4aa195cb084607711f3840912956133e5` | 12 |
+
+本地副本在 `deliverables/anti_uav_approved40_44_rknn_20260930/<版本_结构>/`，并附 `.rkopt.json`。四份文件均完成量化编译且 Toolkit2 可解析加载；**尚未在 RK3588S 板上执行推理，不能给出它们的 INT8 精度或 FPS**。编译器提示权重离群值可能影响量化精度，部署前须按第 7 节验收。
 
 ## 3. 检测精度：40 与 44 视频同条件对比
 
@@ -104,14 +119,14 @@ bash scripts/anti_uav/dist_native/run_camera_fast_start_on_board.sh \
 
 板端已验证基线为 Ubuntu 22.04 / 厂商内核 5.10.198 / RKNN Runtime 与导出 Toolkit 2.3.2 / NPU driver 0.9.8。新板先确认内核、NPU、相机驱动和 OpenCV/RKNN 动态库匹配；勿覆盖内核或关闭温控来复刻 FPS。详细编译、依赖迁移、首帧与排错说明见 `deliverables/expanded28_p3_camera_20260921/DEPLOYMENT_HANDOVER_ZH.md`。
 
-## 7. 把 40/44 视频 `.pt` 变成新交付物
+## 7. 新 RKNN 的复现导出与待做验收
 
-此节是**待执行的导出与验收步骤**，不是已完成的 INT8 性能结论。先选择上表一组 `.pt`，不要在训练目录原位覆盖。以下在 47 服务器仓库执行，示例为 40 视频 P3；P2+P3 或 44 视频时替换 `PT` 和独立 `OUT`：
+四份新 RKNN 已生成；以下命令用于**重新导出或更换校准集时复现**，不是再次部署所必需。尚未完成的是 INT8 精度和板端验收。不要在训练目录或已有导出目录原位覆盖。以下在 47 服务器仓库执行，示例为 40 视频 P3；P2+P3 或 44 视频时替换 `PT` 和独立 `OUT`：
 
 ```bash
 cd /mnt/chenziye/codes/ultralytics_yolov8
 PT=/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved40_online328_20260922/training_p3/p3/weights/best.pt
-OUT=/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/export40_p3_960x544_int8
+OUT=/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/export40_p3_rebuild_$(date +%Y%m%d_%H%M%S)
 CAL=deliverables/anti_uav_rk3588s_frozen_p3_addon_p2_final_20260904/metadata/calibration/dataset_no_Video00004.txt
 mkdir -p "$OUT"
 CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=4 .venv/bin/python \
@@ -124,7 +139,7 @@ CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=4 .venv/bin/python \
 sha256sum "$PT" "$OUT/detector_960x544_int8.rknn"
 ```
 
-`--imgsz` 采用 **H,W=544,960**；导出后确认 P3 为 9 个输出、P2+P3 为 12 个输出。该 384 图校准清单未包含 Video00004/Video00009，但源于较早的数据分布；它可作起点，不能替代新版本的量化后精度检查。新模型应分别进行 FP32/INT8 同帧框与分数对照、Video00004/Video00009 低阈值 Precision/Recall/FP/4–8 px Recall 回归、RK3588S 目标场景实拍、至少 12,000 帧速度/温度/丢帧测试。通过后为 P3/P2+P3 分别建立独立部署目录，保存模型 SHA、C++ 构建提交、运行库版本和测试报告；不要直接覆盖已验证的 28 视频模型或把上节 28 视频 FPS 标成新模型 FPS。
+`--imgsz` 采用 **H,W=544,960**；导出后确认 P3 为 9 个输出、P2+P3 为 12 个输出。该 384 图校准清单未包含 Video00004/Video00009，但源于较早的数据分布；它可作起点，不能替代新版本的量化后精度检查。Toolkit2 在本次服务器上不支持从已导出的 `.rknn` 直接启动主机模拟推理，不能把成功 `load_rknn()` 视为板端验证。新模型应分别进行 FP32/INT8 同帧框与分数对照、Video00004/Video00009 低阈值 Precision/Recall/FP/4–8 px Recall 回归、RK3588S 目标场景实拍、至少 12,000 帧速度/温度/丢帧测试。通过后为 P3/P2+P3 分别建立独立部署目录，保存模型 SHA、C++ 构建提交、运行库版本和测试报告；不要直接覆盖已验证的 28 视频模型或把上节 28 视频 FPS 标成新模型 FPS。
 
 ## 8. 交接验收清单
 

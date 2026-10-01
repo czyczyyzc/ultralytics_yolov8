@@ -23,6 +23,7 @@ from scripts.anti_uav.rknn_simulator_video_clip import decode_boxes
 from scripts.anti_uav.run_native_pool_comparison import HOLDOUT, clean
 from ultralytics import YOLO
 from ultralytics.utils import SETTINGS
+from ultralytics.utils.metrics import ap_per_class
 
 SPLITS = {
     "Video00004_test": HOLDOUT,
@@ -102,14 +103,107 @@ def report(output, result):
     (output / "REPORT.md").write_text("\n".join(lines) + "\n")
 
 
+def merge_shards(output, shards):
+    """Verify disjoint full coverage, then recompute AP from prediction-level arrays."""
+    output.mkdir(parents=True, exist_ok=False)
+    records = [json.loads((path / "results.json").read_text()) for path in shards]
+    reference = records[0]["protocol"]
+    shard_count = reference["shards"]
+    if len(records) != shard_count or {r["protocol"]["shard_index"] for r in records} != set(range(shard_count)):
+        raise ValueError("Missing or duplicate shards")
+    for path, record in zip(shards, records):
+        if json.loads((path / "status.json").read_text())["stage"] != "complete":
+            raise ValueError(f"Incomplete shard: {path}")
+        p = record["protocol"]
+        for key in ("artifacts", "target", "toolkit_version", "input_hw", "padding", "thresholds", "shards"):
+            if p[key] != reference[key]:
+                raise ValueError(f"Shard protocol differs: {key}")
+        if p["smoke_limit_per_split"]:
+            raise ValueError("Do not merge smoke subsets as full evaluation")
+    result = dict(protocol=dict(reference), backends={b: {} for b in BACKENDS},
+        raw_export_max_error={k: max(r["raw_export_max_error"][k] for r in records)
+                              for k in records[0]["raw_export_max_error"]})
+    result["protocol"].update(shard_index=None, merged_shards=[str(p) for p in shards],
+        rebuilt_matches_delivered=all(r["protocol"]["rebuilt_matches_delivered"] for r in records),
+        rebuilt_shard_hashes=[r["protocol"]["rebuilt_sha256"] for r in records])
+    all_entries = {b: [] for b in BACKENDS}
+    for split in SPLITS:
+        manifest = reference["datasets"][split]
+        original = [s.strip() for s in Path(manifest["source_list"]).read_text().splitlines()
+                    if s.strip() and "/zoom_val/" not in s]
+        evaluated = [s for path in shards for s in (path / f"{split}.txt").read_text().splitlines()]
+        if len(evaluated) != len(set(evaluated)) or set(evaluated) != set(original):
+            raise ValueError(f"Missing or duplicate frames in merged split: {split}")
+        result["protocol"]["datasets"][split] = dict(manifest, evaluated_frames=len(evaluated))
+        (output / f"{split}.txt").write_text("\n".join(original) + "\n")
+        result["protocol"]["datasets"][split]["evaluated_list_sha256"] = sha256(output / f"{split}.txt")
+        for backend in BACKENDS:
+            entries = []
+            pred_frames, target_frames = [], []
+            for path, record in zip(shards, records):
+                metrics = record["backends"][backend][split]
+                scales = {}
+                for conf in (.01, .03, .05):
+                    prefix = f"native/c{conf:.2f}/"
+                    for key, gt in metrics.items():
+                        if key.startswith(prefix) and key.endswith("/GT"):
+                            size = key[len(prefix):-3]
+                            recall = metrics[prefix + size + "/R"]
+                            matched = round(gt * recall) if gt else 0
+                            if gt and abs(gt * recall - matched) > 1e-6:
+                                raise ValueError("Invalid integer scale counts")
+                            scales[(conf, size)] = dict(gt=gt, tp=matched)
+                with np.load(path / f"{split}_{backend}_pr.npz") as archive:
+                    arrays = {k: archive[k] for k in ("tp", "conf", "pred_cls", "target_cls")}
+                    pred_frames.append(archive["prediction_frame_index"])
+                    target_frames.append(archive["target_frame_index"])
+                entries.append(dict(metrics=metrics, arrays=arrays, scales=scales))
+            metrics, arrays = pool_native(entries)
+            # Restore canonical frame order before ranking tied scores (frequent in INT8).
+            pred_order = np.argsort(np.concatenate(pred_frames), kind="stable")
+            target_order = np.argsort(np.concatenate(target_frames), kind="stable")
+            for key in ("tp", "conf", "pred_cls"):
+                arrays[key] = arrays[key][pred_order]
+            arrays["target_cls"] = arrays["target_cls"][target_order]
+            ap = ap_per_class(**arrays, plot=False)[5]
+            metrics["native/mAP50"], metrics["native/mAP50-95"] = float(ap[:, 0].mean()), float(ap.mean())
+            if (metrics["native/c0.03/FRAMES"], metrics["native/c0.03/TP"]+metrics["native/c0.03/FN"]) != EXPECTED[split]:
+                raise ValueError("Merged frames/GT coverage changed")
+            result["backends"][backend][split] = clean(metrics)
+            scales = {key: dict(gt=sum(e["scales"].get(key, {}).get("gt", 0) for e in entries),
+                                tp=sum(e["scales"].get(key, {}).get("tp", 0) for e in entries))
+                      for key in set().union(*(e["scales"] for e in entries))}
+            all_entries[backend].append(dict(metrics=metrics, arrays=arrays, scales=scales))
+            np.savez_compressed(output / f"{split}_{backend}_pr.npz", **arrays)
+    for backend in BACKENDS:
+        metrics, arrays = pool_native(all_entries[backend])
+        result["backends"][backend]["pooled_native"] = clean(metrics)
+        np.savez_compressed(output / f"pooled_{backend}_pr.npz", **arrays)
+    write_json(output / "protocol.json", result["protocol"])
+    write_json(output / "results.json", result)
+    report(output, result)
+    write_json(output / "status.json", dict(stage="complete", merged_shards=len(shards)))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("weights", "onnx", "rknn", "calibration", "output"):
-        parser.add_argument(f"--{name}", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--merge-shards", type=Path, nargs="+")
+    for name in ("weights", "onnx", "rknn", "calibration"):
+        parser.add_argument(f"--{name}", type=Path)
     parser.add_argument("--target", choices=("rk3576", "rk3588"), default="rk3576")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--limit-per-split", type=int, default=0, help="Smoke only; 0 evaluates all native frames")
+    parser.add_argument("--shards", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=0)
     args = parser.parse_args()
+    if args.merge_shards:
+        merge_shards(args.output, args.merge_shards)
+        return
+    if not all(getattr(args, name) for name in ("weights", "onnx", "rknn", "calibration")):
+        parser.error("Evaluation requires --weights/--onnx/--rknn/--calibration")
+    if args.shards < 1 or not 0 <= args.shard_index < args.shards:
+        parser.error("Invalid shard index/count")
     args.output.mkdir(parents=True, exist_ok=False)
 
     def status(stage, **extra):
@@ -142,20 +236,23 @@ def main():
             thresholds=[.01, .03, .05], matching_iou=.5, calibration_frames=len(calibration),
             scope="detector-only host quantization simulator", pooled_is_independent_test=False,
             smoke_limit_per_split=args.limit_per_split,
+            shards=args.shards, shard_index=args.shard_index,
             git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
             artifacts={name: dict(path=str(getattr(args, name)), sha256=sha256(getattr(args, name)))
                        for name in ("weights", "onnx", "rknn", "calibration")}, datasets={})
-        manifests = {}
+        manifests, frame_indices = {}, {}
         for split, config_path in SPLITS.items():
             config = yaml.safe_load(config_path.read_text())
             listing = Path(config["val"])
             native = [s.strip() for s in listing.read_text().splitlines() if s.strip() and "/zoom_val/" not in s]
             if len(native) != EXPECTED[split][0] or len(set(native)) != len(native):
                 raise ValueError(f"Unexpected native coverage: {split}")
+            frame_indices[split] = {path: i for i, path in enumerate(sorted(native))}
             if args.limit_per_split:
                 # Spread smoke frames across the whole clip, including positives and negatives.
                 native = [native[i] for i in np.linspace(0, len(native)-1,
                     min(len(native), args.limit_per_split), dtype=int)]
+            native = native[args.shard_index::args.shards]
             listing_out = args.output / f"{split}.txt"
             listing_out.write_text("\n".join(native) + "\n")
             manifests[split] = listing_out
@@ -194,6 +291,8 @@ def main():
                           for backend in BACKENDS}
             reference = validators["pt_fp32"]
             loader = reference.get_dataloader(str(listing), 1)
+            pred_frames = {b: [] for b in BACKENDS}
+            target_frames = []
             if len(loader.dataset) != protocol["datasets"][split]["evaluated_frames"]:
                 raise ValueError("Missing/corrupt image: loader coverage differs from manifest")
             for index, batch in enumerate(loader):
@@ -211,20 +310,26 @@ def main():
                 result["raw_export_max_error"]["class_score"] = max(
                     result["raw_export_max_error"]["class_score"], float(error[:, 4:].max()))
                 quantized = raw_prediction(runtime.inference(inputs=[rgb], data_format=["nhwc"]))
+                frame_index = frame_indices[split][batch["im_file"][0]]
+                target_frames.append(np.full(len(batch["cls"]), frame_index, dtype=np.int32))
                 for backend, raw in zip(BACKENDS, (pt_raw, ort_raw, quantized)):
-                    validators[backend].update_metrics(validators[backend].postprocess(raw), batch)
+                    processed = validators[backend].postprocess(raw)
+                    pred_frames[backend].append(np.full(len(processed[0]), frame_index, dtype=np.int32))
+                    validators[backend].update_metrics(processed, batch)
                 if index == 0 or (index+1) % 100 == 0:
                     status("evaluation", split=split, frames=index+1, total=len(loader.dataset),
                            elapsed_seconds=round(time.monotonic()-started, 2))
             for backend, validator in validators.items():
                 metrics = {k: v for k, v in clean(validator.get_stats()).items() if k.startswith("native/")}
                 coverage = metrics["native/c0.03/FRAMES"], metrics["native/c0.03/TP"]+metrics["native/c0.03/FN"]
-                if not args.limit_per_split and coverage != EXPECTED[split]:
+                if args.shards == 1 and not args.limit_per_split and coverage != EXPECTED[split]:
                     raise ValueError(f"Frames/GT changed for {split}: {coverage}")
                 result["backends"][backend][split] = metrics
                 entries[backend].append(dict(metrics=metrics, arrays=validator.metrics.native_pr_arrays,
                     scales=validator.metrics.native_scale_counts))
-                np.savez_compressed(args.output / f"{split}_{backend}_pr.npz", **validator.metrics.native_pr_arrays)
+                np.savez_compressed(args.output / f"{split}_{backend}_pr.npz", **validator.metrics.native_pr_arrays,
+                    prediction_frame_index=np.concatenate(pred_frames[backend]),
+                    target_frame_index=np.concatenate(target_frames))
             write_json(args.output / "results.json", result)
         for backend in BACKENDS:
             metrics, arrays = pool_native(entries[backend])

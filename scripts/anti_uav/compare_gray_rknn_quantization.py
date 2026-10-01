@@ -100,7 +100,7 @@ def report(output, result):
                     f"{m[q+'TP']} | {m[q+'FP']} | {m[q+'FN']} | {m['native/mAP50']:.2%} | "
                     f"{m['native/mAP50-95']:.2%} | {f'{tiny:.2%}' if tiny is not None else 'N/A'} |")
         lines.append("")
-    (output / "REPORT.md").write_text("\n".join(lines) + "\n")
+    (output / "REPORT.md").write_text("\n".join(lines).rstrip() + "\n")
 
 
 def merge_shards(output, shards):

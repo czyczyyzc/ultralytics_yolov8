@@ -50,4 +50,3 @@ If hashes differ, this measures a rebuild with identical inputs/config, not the 
 | pt_fp32 | 0.05 | 32.43% | 81.93% | 1020 | 2125 | 225 | 69.19% | 36.92% | 86.83% |
 | onnx_fp32 | 0.05 | 32.43% | 81.93% | 1020 | 2125 | 225 | 69.19% | 36.92% | 86.83% |
 | rknn_int8_simulator | 0.05 | 32.34% | 77.43% | 964 | 2017 | 281 | 64.44% | 28.02% | 81.81% |
-

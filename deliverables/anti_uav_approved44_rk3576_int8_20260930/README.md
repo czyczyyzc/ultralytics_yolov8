@@ -23,7 +23,9 @@
 
 四尺度/三尺度的目标无关 ONNX 来自 `runs/anti_uav/approved_rknn_exports_20260930/44_p2p3` 与 `44_p3`，沿用不含 Video00004/Video00009 的 384 图校准清单。编译日志在各服务器模型目录的 `build.log`。二者编译成功、模型内部 `target_platform` 均为 `rk3576`，Toolkit2 `load_rknn()` 均返回 0；本地与服务器 SHA256 相同。
 
-**未完成的验收**：当前板端地址未连通，尚未在 RK3576 上执行 `rknn_init`/推理，也没有这两份 INT8 的精度或 FPS 实测。编译器报告量化离群值警告。44 视频权重此前在 FP32 的 Video00004 测试中误检上升，不应仅因模型现在可加载就替换生产模型。部署前请用相同灰度测试集比较 FP32/INT8 的 Recall、FP 和小目标召回，并跑完整 Dist/GMC 流水线。
+**精度对照更新（2026-10-01）**：已完成同配置重编的 RK3576 INT8 主机模拟，与 PT/ONNX FP32 在 Video00004 + Video00009 共 3,780 帧上配对评测。`conf=0.03` 下，P3 Recall 为 62.33%→59.52%、mAP50 为 55.40%→55.11%、mAP50–95 为 30.94%→23.15%；P2+P3 Recall 为 82.49%→78.15%、mAP50 为 69.19%→64.44%、mAP50–95 为 36.92%→28.02%。详见 [完整精度对照](../anti_uav_approved44_quantization_comparison_20261001/COMPARISON_ZH.md)。
+
+**未完成的验收**：当前尚未在 RK3576 上执行交付文件的 `rknn_init`/推理，也没有板端精度或 FPS 实测。模拟器重编文件 SHA 与本交付模型不同，且评测 padding=114，不能替代交付二进制及实际预处理的验收。编译器报告量化离群值警告。44 视频权重此前在 FP32 的 Video00004 测试中误检上升，不应仅因模型可解析加载就替换生产模型；部署前还需验证交付 RKNN 精度并跑完整 Dist/GMC 流水线。
 
 板端切换时必须同时检查 NPU 并行参数：此前 RK3576 的原生视频程序使用两个 worker 与 `--core-mask 0_1`；当前 `dist_native` 若移植到 RK3576，应改为 `--workers 2 --inflight 2 --npu-masks 0,1`，而非照搬 RK3588S 的三个 worker/`0,1,2`。两种程序的参数名不同；这份导出**尚未验证 Dist/GMC 在 RK3576 上的运行**。`librknnrt`/NPU 驱动版本也应与 Toolkit2 2.3.2 生成的模型相容。
 

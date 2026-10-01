@@ -1,0 +1,97 @@
+{
+  "target": "rk3576",
+  "toolkit_version": "2.3.2",
+  "input_hw": [
+    544,
+    960
+  ],
+  "padding": 114,
+  "conf_floor": 0.001,
+  "nms_iou": 0.45,
+  "max_det": 100,
+  "thresholds": [
+    0.01,
+    0.03,
+    0.05
+  ],
+  "matching_iou": 0.5,
+  "calibration_frames": 384,
+  "scope": "detector-only host quantization simulator",
+  "pooled_is_independent_test": false,
+  "smoke_limit_per_split": 0,
+  "shards": 16,
+  "shard_index": null,
+  "git_commit": "fe3d64441ba913faaa5d5246e2b516215eb2d51c",
+  "artifacts": {
+    "weights": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_direct_online328_20260929/training_p3/p3/weights/best.pt",
+      "sha256": "761ba22431d2062a9fde1cfda08c5e394e2a6f34b60b9328b50ae9860e0b4471"
+    },
+    "onnx": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved_rknn_exports_20260930/44_p3/detector.onnx",
+      "sha256": "f10e6ce162c84330be08ee82cc5c86bc55f328288ddf3f54975645ac6bb0de66"
+    },
+    "rknn": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved_rknn_exports_rk3576_20260930/44_p3/detector_960x544_rk3576_int8.rknn",
+      "sha256": "12b98639fe20bf2015c26faac97f34adf6028b3672fc935a0ba436fa316abc76"
+    },
+    "calibration": {
+      "path": "/mnt/chenziye/codes/ultralytics_yolov8/deliverables/anti_uav_rk3588s_frozen_p3_addon_p2_final_20260904/metadata/calibration/dataset_no_Video00004.txt",
+      "sha256": "c1cc20e6f8aabc570d2b16ed7676a1a2ef297d91d21ab22322d4fa70befecbce"
+    }
+  },
+  "datasets": {
+    "Video00004_test": {
+      "config": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_yolo_lovo_positive_mixed_v1_20260828/folds/holdout_Video00004/holdout_all.yaml",
+      "source_list": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_yolo_lovo_positive_mixed_v1_20260828/folds/holdout_Video00004/holdout_all_frames.txt",
+      "source_list_sha256": "df50c0d3f6dc98a437e77bcd42a2f5254a780d63773e4a593b4d9d5373c4c2f3",
+      "evaluated_frames": 2359,
+      "evaluated_list_sha256": "df50c0d3f6dc98a437e77bcd42a2f5254a780d63773e4a593b4d9d5373c4c2f3"
+    },
+    "Video00009_selection_subset": {
+      "config": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_online_44videos_direct_20260929/train_online_gray_monitor.yaml",
+      "source_list": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_online_44videos_direct_20260929/val_monitor.txt",
+      "source_list_sha256": "1257014083d92661a9e07944e2b2bd7c8c56e1cb341ea4a9890990f6d579b2fb",
+      "evaluated_frames": 1421,
+      "evaluated_list_sha256": "754cc1fde32cb2cbeea556e7394123e59cba195a373e4c3c5375bee206216854"
+    }
+  },
+  "rebuilt_sha256": "4f4582f91f569a7f92491cbbff7db7d3b58f3ca2351020daf5ff0ef9862d7cd9",
+  "rebuilt_matches_delivered": false,
+  "merged_shards": [
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/00",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/01",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/02",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/03",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/04",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/05",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/06",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/07",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/08",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/09",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/10",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/11",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/12",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/13",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/14",
+    "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved44_quantization_eval_rk3576_20261001/p3_shards/15"
+  ],
+  "rebuilt_shard_hashes": [
+    "4f4582f91f569a7f92491cbbff7db7d3b58f3ca2351020daf5ff0ef9862d7cd9",
+    "4c6197f24e56dddff47316c3005399c4d0e65079afaeddb045a32c83ada3853b",
+    "d157d8c6757ae87154339c1eea6474a5f01203517173c6f9f5961504652aad06",
+    "f2cdc6d3b0cdb255bc6076a7f02bb20aa579c4ef72829c9d19e634f6732eec9f",
+    "8401a681d4af2529e8ded72708dec9c73e1ae63e72b22e4acde408246b08a0ec",
+    "d525c8314afcd0fac3487fde425cc2e4ccd7156bb0c1ab8173363339add2643c",
+    "53910ffaf92a073628376eba098b69cf99a8d0e7d5547ed3e62b22ab9deb3be3",
+    "1b46532f25130097d85f7f7da66f2f988d34594dac7094b57817fdb16067416b",
+    "9d12c463c6859a2df2ef1cd01f6c7dfe5c57a4fb885506b4d4677ea670723815",
+    "3d3e4e8f3ec85da260e0535f8c6d1dda65ece7c31373bad98d982d57f92a7aa7",
+    "071b687a8de0c1be4257df57493215e6fcbfa4429f8d8a8902af02159f3b7a6d",
+    "bf6a54d8f5dda3463b8e0b74eaaf27f8061db585e6176ab18c90ea8539ee1dcb",
+    "6fbf3c1b34db00412661b259acd8088c0ffd9826d7440ded034436c7ef67c2e1",
+    "defb2452e4f79b6b70369cac5bbc86abd9da326bfa7a3c09154fb9c6b21c11f7",
+    "cb56fc44bee7b308354fa7e9db1732f82d6e37eb1633265e733da60bb2e8c106",
+    "47b7474fc0f6281051f0c80185bd2d7cf9d9bd5fd3b40b4bb389673325befb7d"
+  ]
+}

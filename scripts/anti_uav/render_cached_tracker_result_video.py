@@ -122,6 +122,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--output-name", default="Video00009_Dist_public_GMC_conf003_full.mp4")
     parser.add_argument("--label", default="Dist public-code + GMC")
+    parser.add_argument("--model-label", default="Frozen-P3 + Add-on P2")
     parser.add_argument("--max-frames", type=int, help="Optional smoke-test prefix, not a full video")
     args = parser.parse_args()
     if args.output.exists():
@@ -171,7 +172,7 @@ def main():
                  visualization="1px corners, no crosshair/GT; resize clean source before overlays; adaptive crops",
                  note="Playback FPS is source timing, not board inference throughput.")
     dump(args.output / "protocol.json", stats)
-    title = (f"Frozen-P3 + Add-on P2 | {args.label} | "
+    title = (f"{args.model_label} | {args.label} | "
              f"input {detector['input_hw'][1]}x{detector['input_hw'][0]} | conf {detector['conf']:.2f}")
     frames_written = outputs = frames_with_output = 0
     ids, started = set(), time.monotonic()

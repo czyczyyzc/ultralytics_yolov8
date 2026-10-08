@@ -12,10 +12,11 @@ legacy tracker ABI, and detector confidence/NMS are unchanged.
 - IoU receives more weight for large boxes; tiny boxes receive more motion-distance weight. Association gates constrain relative changes, not absolute box area. Large detections are not discarded.
 - Kalman propagation uses source time deltas. Acceleration noise has a pixel-independent floor and adapts to observed residuals. Recent real observations update velocity with localization-uncertainty weighting; both pending and confirmed tracks are predicted. Uncertain GMC also propagates into observation-history variance, avoiding false velocity updates when a failed camera estimate later recovers.
 - GMC still estimates the same warps. The added quality score is `min(1, inliers/24) * inlier_ratio` for accepted fits, otherwise zero. Failed identity transforms and confidently estimated stationary transforms are therefore distinguishable. Invalid GMC increases positional uncertainty instead of asserting zero camera motion.
-- Camera uncertainty adapts to recent accepted warp speed, with a 0.25-second decay; the search radius also incorporates Kalman position uncertainty, while retaining the 240-pixel cap. It is not a globally widened nearest-neighbor rescue.
+- Camera uncertainty adapts to recent accepted warp speed and to residual motion from already-confirmed continuations. The search radius incorporates Kalman position uncertainty and recent observed target extent. The configured 240-pixel radius remains the floor for the bounded cap; large/clipped targets may use up to twice their recent diagonal, while small stationary distractors do not inherit that relaxation.
 - Confirmed tracks are associated before tentative tracks, under the same gates and ambiguity checks. Large/clipped targets use recent GMC-warped observed extents for overlap/size agreement, not lagging predicted box geometry.
 - The balanced preset requires 3 matched observations in the last 4 processed frames, plus average observed confidence at least the birth threshold. Confirmed tracks survive short gaps internally; outputs always reference current detector observations. No predicted box display or ID remapping is used.
-- Every current detector observation is retained in a separate identity-status output, including weak, pending and ambiguous observations. These are not counted as confirmed tracks. Unconfirmed observations expose a null ID, not a fabricated persistent identity.
+- Every current detector observation is retained in a separate identity-status output, including weak, pending and ambiguous observations. These are not counted as confirmed tracks. The optional 16-value profile assigns a candidate ID from the first eligible observation and preserves it on promotion; this ID is explicitly tentative. Observations with unresolved assignment or overlapping-new-candidate ambiguity expose a null ID instead of a fabricated identity.
+- A new tentative box strongly nested in an already-established current target is retained but marked ambiguous. Two previously confirmed targets are never merged by this rule.
 - Ambiguous row/column assignments are rejected, including new births for those ambiguous observations. Expiry is in seconds, not a fixed number of processed frames.
 
 ## Build and Native Inference
@@ -51,6 +52,14 @@ are OFFLINE verification/rendering only. A quality-capable GMC library is
 required; an old library missing `gmc_quality` intentionally fails rather than
 silently pretending motion quality is known.
 
+The executable also supports `--gmc-mode unavailable` for a native no-GMC
+control. It skips loading the GMC library and skips the GMC worker, supplies an
+identity transform, and retains the configured unknown-camera uncertainty.
+Use this for controlled experiments, not as the default deployment: labelled
+Video00009 regression testing showed worse continuous identity stability without
+GMC. Production guidance is quality-gated GMC with uncertainty fallback on
+failed frames.
+
 Replacing the shared library alone does NOT select the new algorithm: the
 library retains the legacy Dist symbols. Use the rebuilt executable and the
 explicit `--tracking motion` flag.
@@ -62,8 +71,9 @@ capture time. The camera's driver timestamp is not a verified exposure time.
 
 ## Configuration ABI
 
+The legacy ABI remains the identical ordered 14-value configuration used by
 `motion_defaults(fps)` in `motion_tracker.hpp` and `DEFAULTS` in
-`motion_native_runtime.py` use this identical ordered 14-value configuration:
+`motion_native_runtime.py`:
 
 | Position | Meaning | Default |
 | ---: | --- | ---: |
@@ -82,6 +92,13 @@ capture time. The camera's driver timestamp is not a verified exposure time.
 | 12 | confirmation window, processed frames | 4 |
 | 13 | ambiguous-cost margin | 0.03 |
 
+The optional causal-candidate profile accepts two appended values:
+
+| Position | Meaning | Default |
+| ---: | --- | ---: |
+| 14 | candidate allocation threshold | 0.03 |
+| 15 | emit tentative candidate IDs | 1 |
+
 The radius also includes a three-sigma localization allowance and a
 `sqrt(nis_gate * largest_position_innovation_variance)` allowance. Units refer to
 original-frame coordinates, not network input pixels; defaults were evaluated
@@ -89,7 +106,7 @@ on 1920x1080 sources and need calibration for substantially different optics,
 resolution, motion or detector error. Width/height observation noise uses 5%
 of the corresponding detection dimension with a floor.
 
-Native overrides use `--motion-params` followed by 14 comma-separated values;
+Native overrides use `--motion-params` followed by 14 or 16 comma-separated values;
 nominal FPS must equal the source FPS. Summaries save the actual ordered values.
 For example, the faster-ID 2-of-3 profile at 30 FPS is:
 
@@ -97,11 +114,11 @@ For example, the faster-ID 2-of-3 profile at 30 FPS is:
 --motion-params 0.03,0.01,0.10,1,30,1.5,180,1500,3000,240,16,2,3,0.03
 ```
 
-The balanced preset needs at least three detections before emitting a new ID,
-so earliest identity confirmation is the third observation. This delay is
-separate from first detector-result latency. The measured box is emitted from
-the first observation with `id: null`. Do not bypass confirmation or count
-pending detections as confirmed tracking to inflate results.
+The balanced preset needs at least three detections before confirming a new ID.
+With the 16-value candidate profile, the measured box may carry a tentative ID
+from the first observation and keeps the same ID after confirmation. This does
+not turn first-frame output into confirmed tracking. Ambiguous observations
+remain ID-less.
 
 ## Consumer Output Contract
 
@@ -115,7 +132,7 @@ read-only. Capacity must cover all detections; an undersized buffer returns
 | Status | JSON value | Identity | Meaning |
 | ---: | --- | --- | --- |
 | 0 | `unassigned` | null | No plausible association/birth evidence |
-| 1 | `pending` | null | Tentative track awaiting confirmation |
+| 1 | `pending` | null or positive candidate ID | Tentative track awaiting confirmation |
 | 2 | `confirmed` | positive ID | Confirmed identity matched this current detection |
 | 3 | `ambiguous` | null | Multiple plausible associations; no forced identity |
 | 4 | `below_low` | null | Detection retained but excluded from track association |
@@ -126,8 +143,9 @@ frame. Its `box` and `score` are the original current detector measurement;
 `predicted` is always false. `displayed_tracks` remains confirmed-only for
 backward-compatible evaluation. Visualization/platform integrations that must
 not swallow detector boxes must consume `observations`, NOT only
-`displayed_tracks`. Draw unconfirmed observations as `PENDING`/`UNCERTAIN`,
-without an ID. This is explicit observation retention, not post-hoc ID repair.
+`displayed_tracks`. Draw candidate observations as `ID n?` and unresolved
+observations as `DET`/`UNCERTAIN`. This is explicit observation retention, not
+post-hoc ID repair. Never present a candidate ID as confirmed.
 
 Video/camera inference, observation-status generation, GMC and association all
 remain C++. The Python adapter mirrors this native contract for offline audit.
@@ -162,13 +180,13 @@ Detector provenance is still verified against `--baseline-dir`; GMC equality is
 deliberately not required in disabled mode. Do not combine disabled mode with
 `--cached-gmc`. This flag is not currently a native board executable option.
 
-`--gmc-mode unavailable` is a second OFFLINE control: identity warp and quality
-zero, while retaining configured unknown-camera uncertainty. It isolates removal
-of the GMC estimate from removal of the uncertainty allowance. On 000002 this
-control keeps the primary target's ID throughout 13-14 seconds; the pure image
-model without that allowance does not. Thus that segment does NOT establish that
-GMC itself is necessary. `compare_motion_gmc_ablation.py --include-unavailable`
-audits all 12 detector/policy/motion-mode combinations.
+`--gmc-mode unavailable` supplies identity warp and quality zero while retaining
+configured unknown-camera uncertainty. It isolates removal of the GMC estimate
+from removal of the uncertainty allowance. The Python replay supports this
+control, and the native executable skips all GMC loading/computation in this
+mode. On 000002 it preserves the primary ID through the former 15.8-second
+failure, but on labelled Video00009 it causes substantially more within-segment
+ID changes. A single clip therefore does not justify globally removing GMC.
 
 The immediate-ID experiment uses `birth=.03`, `confirmation_hits=1`, and
 `confirmation_window=1`. It assigns a new ID on the first eligible detection,
@@ -179,31 +197,29 @@ detector inputs, verifies balanced + GMC reproduces the previous regression,
 and reports top-score observation diagnostics separately from formal GT metrics.
 See `deliverables/clip_000002_gmc_id_ablation_20261008/RESULTS_ZH.md`.
 
-2026-10-08 verification: 31 tests passed on macOS and the 47 server; original
-Dist IDs/observation indices were exactly reproduced across 1800 frames per
-model; the native quality ABI was checked on textured stationary and featureless
-images. Linux native pipeline/GMC C++17 syntax compilation passed. These are
-NOT RK board FPS, live-camera accuracy, or full RKNN pipeline acceptance tests.
+2026-10-08 verification: 54 tests passed on macOS; 54 tests plus 4 subtests
+passed on the 47 server. Linux native pipeline C++17 syntax compilation passed.
+These are NOT RK board FPS, live-camera accuracy, or full RKNN pipeline
+acceptance tests.
 
 ## Results and Limits
 
-See `deliverables/motion_continuity_20261008/RESULTS_ZH.md` and its audit JSON.
-The 000002 failure segment is repaired without detector changes or fabricated
-boxes: P3 and P2+P3 have confirmed ID 1 throughout frames 390-430.
-Video00009's single-target continuous-GT ID-change diagnostic is 6 (original
-Dist), 2 (previous motion preset), and 0 (this version). These are fixed-cache
-regressions, not formal MOT IDSW. Three changes after GT-negative gaps remain;
-the algorithm does not claim identity recovery across disappearance.
+See `deliverables/clip_000002_causal_global_20261008/RESULTS_ZH.md`. The former
+000002 failure at frames 473-475 is repaired without detector changes or
+fabricated boxes: both P3 and P2+P3 keep the main target at confirmed ID 1.
+All 547 P3 and 666 P2+P3 detector observations are retained. P2+P3's nested
+partial duplicate at frame 474 is retained as `UNCERTAIN`, while the complete
+target remains ID 1. There are no adjacent single-confirmed-target ID changes
+in either 1800-frame replay.
 
-All 9109 detector observations on Video00009 are retained. There are 8382
-confirmed track observations and 727 observations without a confirmed identity;
-18 reviewed frames have a GT-matching detector observation but no confirmed
-track. Do not equate zero dropped measured boxes with perfect identity coverage.
-Confirmed-only TP/FP is 5284/3097 versus original Dist 5286/2987; continuity is
-better, but confirmed FP is 110 higher and recall is not improved. Do not
-automatically replace the production tracker. New hyperparameters were
-developed using these videos, so the results are not independent generalization
-evidence. Identity diagnostics are not formal MOT IDSW/IDF1/HOTA.
+On labelled Video00009, quality-gated GMC has zero continuous-GT ID changes;
+the no-GMC control has 17 when tentative IDs are included and one on
+confirmed-only output. With quality-gated GMC, confirmed-only TP/FP/FN is
+5296/3087/2686 (precision 63.18%, recall 66.35%). All measured observations
+remain detector-equivalent at TP/FP/FN 5302/3806/2680. These are fixed-cache
+diagnostics, not formal MOT IDSW/IDF1/HOTA, and the 000002 clip has no complete
+identity GT. The algorithm does not claim identity recovery after expiry or
+long disappearance.
 
 Use `render_cached_tracker_result_video.py --show-observations` to visualize the
 new contract. Omit that flag to inspect confirmed-only tracking. Use

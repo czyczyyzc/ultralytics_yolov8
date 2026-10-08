@@ -313,6 +313,7 @@ struct Tracker {
         associate(dets,time,used_targets,used_dets,false,false);
         for(size_t j=0;j<dets.size();++j) if(!used_dets[j] && dets[j].score>=float(config.v[2])) {
             targets.emplace_back(dets[j],frame,next_id++,time,config);++counts[3];
+            if(targets.back().confirmed) ++counts[4];
         }
         for(const auto& t:targets) if(t.frame==frame)
             observations[t.index]={t.confirmed?t.id:0,t.index,int(t.confirmed?

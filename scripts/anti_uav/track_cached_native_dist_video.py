@@ -24,6 +24,18 @@ from scripts.anti_uav.render_cached_tracker_result_video import validate_records
 from scripts.anti_uav.render_pt_detector_video import dump, probe, sha256
 
 
+def motion_config_for_replay(fps, custom, gmc_mode):
+    from scripts.anti_uav.motion_native_runtime import DEFAULTS
+    config = dict(DEFAULTS, nominal_fps=float(fps)) if custom is None else dict(custom)
+    if set(config)!=set(DEFAULTS):
+        raise ValueError("Motion configuration must contain exactly the documented keys")
+    if gmc_mode=="disabled":
+        # Model the combined image-coordinate velocity, not an unknown failed compensation.
+        # No camera-variance term is injected into the observation velocity fit in this mode.
+        config["unknown_gmc_speed_px_s"] = 0.
+    return config
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
@@ -34,11 +46,15 @@ def main():
     parser.add_argument("--baseline-dir", type=Path, help="Verify GMC and detections against a frozen baseline")
     parser.add_argument("--motion-config", type=Path)
     parser.add_argument("--cached-gmc", action="store_true", help="Offline ablation only; requires quality-aware baseline cache")
+    parser.add_argument("--gmc-mode", choices=("estimate", "disabled"), default="estimate",
+        help="Disabled: image-coordinate motion model, no warp or camera-uncertainty term")
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
     if args.cached_gmc and not args.baseline_dir:
         parser.error("--cached-gmc requires --baseline-dir")
+    if args.cached_gmc and args.gmc_mode=="disabled":
+        parser.error("--cached-gmc cannot be used with disabled GMC")
     detector = json.loads((args.detector_dir / "summary.json").read_text())
     cache = args.detector_dir / "predictions.jsonl"
     source = probe(args.source)
@@ -70,7 +86,8 @@ def main():
     config = dict(CONFIG)
     if args.tracker_kind == "motion":
         custom = json.loads(args.motion_config.read_text()) if args.motion_config else None
-        tracker = NativeMotion(args.tracker_library, fps=fps, config=custom)
+        tracker = NativeMotion(args.tracker_library, fps=fps,
+            config=motion_config_for_replay(fps, custom, args.gmc_mode))
         config = tracker.config
     else:
         tracker = NativeDist(args.tracker_library, fps=fps, config=config)
@@ -85,7 +102,9 @@ def main():
     if args.cached_gmc:
         provenance["gmc_cache_sha256"] = sha256(args.baseline_dir / "tracks.jsonl")
     protocol = dict(config=config, provenance=provenance, detector_cache_sha256=sha256(cache),
-        gmc="EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)",
+        gmc=("EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)" if args.gmc_mode=="estimate"
+            else "Disabled; identity transform; image-coordinate motion; no camera uncertainty"),
+        gmc_mode=args.gmc_mode,
         tracker_implementation=("native C++ motion-aware-v1; NOT public Dist/OC-SORT parity" if
             args.tracker_kind == "motion" else "native C++ Dist; no ReID or score fusion"),
         ground_truth_used=False, inference_rerun=False, predicted_boxes_shown=False,
@@ -95,7 +114,7 @@ def main():
             if args.tracker_kind=="motion" else "legacy confirmed-only"),
         scope="Offline server visualization; not board throughput or labelled tracking accuracy")
     dump(args.output / "protocol.json", protocol)
-    cap = None if args.cached_gmc else cv2.VideoCapture(str(args.source))
+    cap = None if args.cached_gmc or args.gmc_mode=="disabled" else cv2.VideoCapture(str(args.source))
     if cap is not None and not cap.isOpened():
         raise ValueError("Cannot open source video")
     gmc = EfficientGMC(320, 128, 5, True)
@@ -106,7 +125,10 @@ def main():
         with (args.output / "tracks.jsonl").open("x") as stream:
             for index, row in enumerate(records):
                 boxes = np.asarray(row["boxes_xyxy_score"], dtype=np.float32).reshape(-1, 5)
-                if args.cached_gmc:
+                if args.gmc_mode=="disabled":
+                    warp = np.eye(2, 3, dtype=np.float64)
+                    quality, gmc_meta = 0., dict(estimated=False, support=0, inlier_ratio=0., disabled=True)
+                elif args.cached_gmc:
                     warp = np.asarray(baseline[index]["warp"], dtype=np.float64)
                     quality = baseline[index]["gmc_quality"]
                     gmc_meta = baseline[index]["gmc_meta"]
@@ -119,7 +141,7 @@ def main():
                 if baseline is not None:
                     ref = baseline[index]
                     if (ref["frame_index"] != index or ref["boxes_xyxy_score"] != row["boxes_xyxy_score"]
-                            or not np.array_equal(warp, np.asarray(ref["warp"]))):
+                            or (args.gmc_mode=="estimate" and not np.array_equal(warp, np.asarray(ref["warp"])) )):
                         raise ValueError(f"Baseline inputs/GMC changed at {index}")
                 association_started = time.perf_counter()
                 outputs = (tracker.update(boxes, warp, quality, index/fps) if
@@ -147,6 +169,7 @@ def main():
         if args.cached_gmc and sha256(args.baseline_dir / "tracks.jsonl") != provenance["gmc_cache_sha256"]:
             raise ValueError("GMC cache changed during tracking")
         summary = dict(protocol, gmc_counts=original["gmc_counts"] if args.cached_gmc else gmc.counts,
+            gmc_disabled_frames=count if args.gmc_mode=="disabled" else 0,
             displayed_tracks=sum(len(t["displayed_tracks"]) for t in tracks),
             frames_with_track=sum(bool(t["displayed_tracks"]) for t in tracks),
             visible_ids=len(identities), maximum_visible_id=max(identities, default=0),

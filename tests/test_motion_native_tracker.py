@@ -343,3 +343,43 @@ def test_all_observation_coverage_is_not_confirmed_tracking_accuracy():
     measured = labelled(rows, {0: [detections[0][:4]]}, {0})
     assert measured["detector_tp_without_confirmed_track_count"]==1
     assert measured["confirmed_only_metrics"]["recall"]==0
+
+
+def test_immediate_confirmation_can_assign_low_score_birth_an_id(library):
+    config = dict(DEFAULTS, birth=.03, confirmation_hits=1, confirmation_window=1)
+    tracker = NativeMotion(library, config=config)
+    try:
+        detections = boxes(100, score=.03)+boxes(900, score=.04)
+        output = tracker.update(detections, IDENTITY, 1., 0.)
+        assert {t["id"] for t in output}=={1, 2}
+        assert tracker.stats()["confirmations"]==2
+        validate_observations(detections, tracker.observations(), output, 0)
+        assert tracker.update(boxes(110, score=.03), IDENTITY, 1., 1/30)[0]["id"]==1
+    finally:
+        tracker.close()
+
+
+def test_disabled_gmc_models_image_motion_without_camera_variance(library):
+    from scripts.anti_uav.track_cached_native_dist_video import motion_config_for_replay
+    config = motion_config_for_replay(30., None, "disabled")
+    assert config["unknown_gmc_speed_px_s"]==0.
+    assert motion_config_for_replay(30., None, "estimate")["unknown_gmc_speed_px_s"]==1500.
+    tracker = NativeMotion(library, config=config)
+    try:
+        for i in range(15):
+            output = tracker.update(boxes(100+10*i), IDENTITY, 0., i/30)
+            if i>=2:
+                assert len(output)==1 and output[0]["id"]==1
+    finally:
+        tracker.close()
+
+
+def test_immediate_id_does_not_make_a_single_frame_false_detection_reliable(library):
+    config = dict(DEFAULTS, birth=.03, confirmation_hits=1, confirmation_window=1)
+    tracker = NativeMotion(library, config=config)
+    try:
+        assert tracker.update(boxes(100, score=.04), IDENTITY, 1., 0)[0]["id"]==1
+        assert tracker.stats()["confirmations"]==1
+        assert not tracker.update([], IDENTITY, 1., 1/30)
+    finally:
+        tracker.close()

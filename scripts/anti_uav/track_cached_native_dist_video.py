@@ -91,6 +91,8 @@ def main():
         ground_truth_used=False, inference_rerun=False, predicted_boxes_shown=False,
         id_remapping=False, frame_stride=1, fps=fps, frames=count,
         cached_gmc=args.cached_gmc,
+        observation_output_contract=("all current detections; null ID until confirmed; no predictions/remapping"
+            if args.tracker_kind=="motion" else "legacy confirmed-only"),
         scope="Offline server visualization; not board throughput or labelled tracking accuracy")
     dump(args.output / "protocol.json", protocol)
     cap = None if args.cached_gmc else cv2.VideoCapture(str(args.source))
@@ -127,6 +129,8 @@ def main():
                 record = dict(frame_index=index, time_seconds=index/fps, raw_tracks=shown,
                     displayed_tracks=shown, boxes_xyxy_score=row["boxes_xyxy_score"], warp=warp.tolist(),
                     gmc_quality=quality, gmc_meta=gmc_meta)
+                if args.tracker_kind=="motion":
+                    record["observations"] = tracker.observations()
                 stream.write(json.dumps(record) + "\n")
                 tracks.append(record)
                 identities.update(t["id"] for t in shown)
@@ -153,6 +157,9 @@ def main():
             seconds=round(time.monotonic()-started, 2))
         if args.tracker_kind == "motion":
             summary["motion_stats"] = tracker.stats()
+            summary["observation_boxes"] = sum(len(t["observations"]) for t in tracks)
+            summary["unconfirmed_observations"] = sum(not o["confirmed"] for t in tracks for o in t["observations"])
+            summary["frames_with_observations"] = sum(bool(t["observations"]) for t in tracks)
         dump(args.output / "summary.json", summary)
         dump(args.output / "status.json", dict(stage="complete", frames=count))
         print(json.dumps(summary), flush=True)

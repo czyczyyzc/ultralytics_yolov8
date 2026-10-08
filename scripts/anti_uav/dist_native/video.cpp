@@ -266,6 +266,7 @@ int run(const Args& args) {
     std::unique_ptr<void,Deleter> tracker(nullptr,+[](void*){}),flow(nullptr,+[](void*){});
     int(*track_update)(void*,const float*,int,const double*,int*,int)=nullptr;
     int(*motion_update)(void*,const float*,int,const double*,double,double,int*,int)=nullptr;
+    int(*motion_observations)(void*,int*,int)=nullptr;
     int(*flow_apply)(void*,unsigned char*,int,int,size_t,int,double*)=nullptr;
     void(*flow_stats)(void*,uint64_t*,double*)=nullptr;
     void(*flow_quality)(void*,double*)=nullptr;
@@ -289,6 +290,7 @@ int run(const Args& args) {
             tracker={create_motion(motion_config.data(),motion_config.size()),track_lib->get<Deleter>("motion_destroy")};
             track_error=track_lib->get<const char*(*)()>("motion_error");
             motion_update=track_lib->get<decltype(motion_update)>("motion_update");
+            motion_observations=track_lib->get<decltype(motion_observations)>("motion_observations");
             flow_quality=flow_lib->get<decltype(flow_quality)>("gmc_quality");
         } else {
             auto create_track=track_lib->get<void*(*)(double,double,double,double,double,int)>("dist_create");
@@ -403,7 +405,7 @@ int run(const Args& args) {
     cv::Mat first_image;
     std::vector<std::string> samples;
     std::string first_result;
-    int detections=0,tracks=0,bad=0;
+    int detections=0,tracks=0,bad=0;uint64_t observation_boxes=0,unconfirmed_observations=0;
     for(int index=0;index<total;++index) {
         JobPtr job;
         {std::unique_lock<std::mutex> lock(work.mutex);work.cv.wait(lock,[&]{return work.failure || !work.ordered.empty() || work.done;});
@@ -414,6 +416,7 @@ int run(const Args& args) {
          if(work.failure) std::rethrow_exception(work.failure);}
         if(job->index!=index) throw std::runtime_error("Out-of-order result");
         auto association_start=Clock::now();std::array<int,200> pairs{};int ntracks=0;
+        std::array<int,300> observed{};int nobserved=0;
         if(tracker) {
             if(motion_update) {
                 if(camera && !job->capture.valid) throw std::runtime_error("Motion tracking requires valid driver timestamps");
@@ -421,6 +424,17 @@ int run(const Args& args) {
                 ntracks=motion_update(tracker.get(),job->boxes.data(),job->n,job->warp.data(),job->gmc_quality,timestamp,pairs.data(),100);
             } else ntracks=track_update(tracker.get(),job->boxes.data(),job->n,job->warp.data(),pairs.data(),100);
             if(ntracks<0) throw std::runtime_error(track_error());
+            if(motion_observations) {
+                nobserved=motion_observations(tracker.get(),observed.data(),100);
+                if(nobserved<0) throw std::runtime_error(track_error());
+                if(nobserved!=job->n) throw std::runtime_error("Native tracker dropped a detector observation");
+                for(int i=0;i<nobserved;++i) {
+                    const int id=observed[3*i],di=observed[3*i+1],status=observed[3*i+2];
+                    if(di!=i || status<0 || status>4 || id<0 || ((id>0)!=(status==2)))
+                        throw std::runtime_error("Invalid native observation status/identity");
+                    ++observation_boxes;if(status!=2) ++unconfirmed_observations;
+                }
+            }
         }
         double association_ms=ms(association_start),latency=ms(job->begin);
         double output_ms=monotonic_ms();
@@ -473,7 +487,21 @@ int run(const Args& args) {
             out<<"],\"warp\":";
             if(flow) {out<<'[';for(int r=0;r<2;++r) {if(r) out<<',';out<<'[';for(int c=0;c<3;++c) {if(c) out<<',';out<<job->warp[3*r+c];}out<<']';}out<<']';}
             else out<<"null";
-            if(motion_update) out<<",\"gmc_quality\":"<<job->gmc_quality<<",\"source_timestamp_seconds\":"<<(camera?job->capture.frame_ms/1000.:index/fps);
+            if(motion_update) {
+                out<<",\"gmc_quality\":"<<job->gmc_quality<<",\"source_timestamp_seconds\":"<<(camera?job->capture.frame_ms/1000.:index/fps);
+                out<<",\"observations\":[";
+                const char* statuses[]={"unassigned","pending","confirmed","ambiguous","below_low"};
+                for(int i=0;i<nobserved;++i) {
+                    const int id=observed[3*i],di=observed[3*i+1],status=observed[3*i+2];
+                    float* b=job->boxes.data()+5*di;
+                    if(i) out<<',';out<<"{\"id\":";
+                    if(id) out<<id;else out<<"null";
+                    out<<",\"detection_index\":"<<di<<",\"status\":"<<quote(statuses[status]);
+                    out<<",\"confirmed\":"<<(status==2?"true":"false")<<",\"predicted\":false,\"score\":"<<b[4]<<",\"box\":[";
+                    for(int k=0;k<4;++k) {if(k) out<<',';out<<b[k];}out<<"]}";
+                }
+                out<<']';
+            }
             out<<"}\n";
         }
         detections+=job->n;tracks+=ntracks;bad+=job->bad;
@@ -506,6 +534,8 @@ int run(const Args& args) {
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));
     out<<",\"tracking_algorithm\":"<<quote(args.tracking);
     if(motion_update) {
+        out<<",\"observation_output_contract\":\"all current detector boxes; null ID until confirmed; no predictions/remapping\"";
+        out<<",\"observation_boxes\":"<<observation_boxes<<",\"unconfirmed_observations\":"<<unconfirmed_observations;
         out<<",\"motion_config_ordered\":[";
         for(size_t i=0;i<motion_config.size();++i) {if(i) out<<',';out<<motion_config[i];}out<<']';
     }

@@ -8,6 +8,7 @@ import pytest
 
 from scripts.anti_uav.efficient_gmc import EfficientGMC
 from scripts.anti_uav.motion_native_runtime import DEFAULTS, NativeMotion
+from scripts.anti_uav.render_cached_tracker_result_video import panel, validate_observations
 
 ROOT = Path(__file__).resolve().parents[1]
 IDENTITY = np.eye(2, 3)
@@ -238,3 +239,77 @@ def test_fast_camera_motion_then_gmc_loss_preserves_identity(library):
         assert tracker.stats()["allocated_ids"]==1
     finally:
         tracker.close()
+
+
+def test_every_detection_survives_without_inventing_an_identity(library):
+    tracker = NativeMotion(library)
+    try:
+        detections = boxes(100)+boxes(900, score=.04)+boxes(1500, score=.005)
+        for i in range(6):
+            confirmed = tracker.update(detections, IDENTITY, 1., i/30)
+            observed = tracker.observations()
+            validate_observations(detections, observed, confirmed, i)
+            assert len(observed)==3
+            assert observed[1]["id"] is None and observed[1]["status"]=="unassigned"
+            assert observed[2]["id"] is None and observed[2]["status"]=="below_low"
+            assert observed[0]["id"]==(1 if i>=2 else None)
+            assert observed[0]["status"]==("confirmed" if i>=2 else "pending")
+        assert not tracker.update([], IDENTITY, 1., .2)
+        assert tracker.observations()==[]
+    finally:
+        tracker.close()
+
+
+def test_ambiguity_preserves_box_but_does_not_fake_id(library):
+    tracker = fast_tracker(library)
+    try:
+        pair = boxes(100)+boxes(108)
+        tracker.update(pair, IDENTITY, 0., 0)
+        tracker.update(pair, IDENTITY, 0., .03)
+        detections = boxes(104)
+        confirmed = tracker.update(detections, IDENTITY, 0., .06)
+        observed = tracker.observations()
+        validate_observations(detections, observed, confirmed, 2)
+        assert not confirmed
+        assert observed[0]["id"] is None and observed[0]["status"]=="ambiguous"
+        assert tracker.stats()["allocated_ids"]==2
+    finally:
+        tracker.close()
+
+
+def test_observation_validation_rejects_missing_boxes_and_fake_ids():
+    detection = boxes(100)[0]
+    valid = dict(id=None, detection_index=0, status="pending", confirmed=False,
+        predicted=False, box=detection[:4], score=detection[4])
+    validate_observations([detection], [valid], [], 0)
+    with pytest.raises(ValueError, match="Missing"):
+        validate_observations([detection], [], [], 0)
+    for change in (dict(id=1), dict(box=[100, 100, 105, 105]), dict(predicted=True),
+                   dict(detection_index=1), dict(status="confirmed", confirmed=True, id=1)):
+        with pytest.raises(ValueError):
+            validate_observations([detection], [dict(valid, **change)], [], 0)
+
+
+def test_observation_renderer_keeps_clean_source_and_pending_box():
+    frame = np.full((1080, 1920, 3), 120, np.uint8)
+    original = frame.copy()
+    detected = [dict(id=None, box=[100, 100, 110, 110], score=.03, status="pending")]
+    result = panel(frame, detected, 0, 100, 30., "Observed detections; pending ID")
+    assert result.shape==(784, 1600, 3)
+    np.testing.assert_array_equal(frame, original)
+
+
+def test_observation_capacity_error_and_closed_handle(library):
+    tracker = NativeMotion(library)
+    try:
+        tracker.update(boxes(100)+boxes(900), IDENTITY, 0., 0)
+        output = np.empty((1, 3), np.int32)
+        assert tracker.lib.motion_observations(tracker.handle, output.ctypes.data, 1)==-1
+        assert b"capacity" in tracker.lib.motion_error()
+        assert len(tracker.observations())==2
+    finally:
+        tracker.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        tracker.update(boxes(100), IDENTITY, 0., .03)
+    with pytest.raises(RuntimeError, match="closed"):
+        tracker.observations()

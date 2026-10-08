@@ -7,6 +7,10 @@
 #include <limits>
 #include <numeric>
 #include <cstdint>
+#ifdef MOTION_TRACE
+#include <cstdlib>
+#include <iostream>
+#endif
 
 namespace motion {
 struct Observation { double time; std::array<double,4> box; double camera_variance=0; };
@@ -207,6 +211,7 @@ struct Tracker {
     double previous_time=-1;
     int frame=0,next_id=1;
     std::array<uint64_t,8> counts{};
+    std::vector<std::array<int,3>> observations;
     explicit Tracker(const double* data,int n):config(data,n) {}
     void associate(const std::vector<Detection>& dets,double time,std::vector<bool>& used_targets,
                    std::vector<bool>& used_dets,bool low,bool confirmed) {
@@ -220,19 +225,33 @@ struct Tracker {
         std::vector<std::vector<double>> cost(rows.size(),std::vector<double>(cols.size(),100.));
         for(size_t i=0;i<rows.size();++i) for(size_t j=0;j<cols.size();++j)
             cost[i][j]=targets[rows[i]].cost(dets[cols[j]],time,frame,config);
+#ifdef MOTION_TRACE
+        const char* begin=std::getenv("MOTION_TRACE_BEGIN"),*end=std::getenv("MOTION_TRACE_END");
+        if(begin && end && frame-1>=std::atoi(begin) && frame-1<=std::atoi(end)) {
+            for(size_t i=0;i<rows.size();++i) {
+                const auto& t=targets[rows[i]];
+                std::cerr<<"frame="<<frame-1<<" id="<<t.id<<" confirmed="<<t.confirmed<<" mean=";
+                for(int k=0;k<8;++k) std::cerr<<t.mean(k,0)<<',';
+                std::cerr<<" costs=";
+                for(size_t j=0;j<cols.size();++j) std::cerr<<dets[cols[j]].index<<':'<<cost[i][j]<<',';
+                std::cerr<<'\n';
+            }
+        }
+#endif
         // Ambiguous observations remain unassigned; do not manufacture stable identities.
         for(size_t j=0;j<cols.size();++j) {
             double first=100,second=100;
             for(size_t i=0;i<rows.size();++i) {double c=cost[i][j];if(c<first) {second=first;first=c;} else second=std::min(second,c);}
             if(first<limit && second<limit && second-first<config.v[13]) {
                 for(auto& row:cost) row[j]=100.;used_dets[cols[j]]=true;++counts[5];
+                observations[dets[cols[j]].index][2]=int(MotionObservationStatus::Ambiguous);
             }
         }
         for(auto& row:cost) {
             auto sorted=row;std::sort(sorted.begin(),sorted.end());
             if(sorted.size()>1 && sorted[1]<limit && sorted[1]-sorted[0]<config.v[13]) {
                 for(size_t j=0;j<cols.size();++j) if(row[j]<limit && row[j]-sorted[0]<config.v[13])
-                    used_dets[cols[j]]=true;
+                    {used_dets[cols[j]]=true;observations[dets[cols[j]].index][2]=int(MotionObservationStatus::Ambiguous);}
                 std::fill(row.begin(),row.end(),100.);++counts[5];
             }
         }
@@ -267,6 +286,9 @@ struct Tracker {
             if(!(b[2]>b[0] && b[3]>b[1] && b[4]>=0 && b[4]<=1)) throw std::runtime_error("Invalid motion box/score");
         }
         ++frame;++counts[0];
+        observations.resize(n);
+        for(int i=0;i<n;++i) observations[i]={0,i,int(boxes[5*i+4]>float(config.v[1])?
+            MotionObservationStatus::Unassigned:MotionObservationStatus::BelowLow)};
         double dt=previous_time<0?1/config.v[4]:time-previous_time;previous_time=time;
         targets.erase(std::remove_if(targets.begin(),targets.end(),[&](const Target& t) {
             bool expired=time-t.last_time>config.v[3] || (!t.confirmed && t.age>int(config.v[12]) &&
@@ -285,6 +307,9 @@ struct Tracker {
         for(size_t j=0;j<dets.size();++j) if(!used_dets[j] && dets[j].score>=float(config.v[2])) {
             targets.emplace_back(dets[j],frame,next_id++,time,config);++counts[3];
         }
+        for(const auto& t:targets) if(t.frame==frame)
+            observations[t.index]={t.confirmed?t.id:0,t.index,int(t.confirmed?
+                MotionObservationStatus::Confirmed:MotionObservationStatus::Pending)};
         counts[7]=targets.size();
     }
 };
@@ -305,6 +330,15 @@ int motion_update(void* p,const float* boxes,int n,const double* warp,double qua
             pairs[2*count]=track.id;pairs[2*count+1]=track.index;++count;
         }
         return count;
+    } catch(const std::exception& e) {motion::error=e.what();return -1;}
+}
+int motion_observations(void* p,int* triples,int capacity) {
+    try {
+        if(!p || !triples || capacity<0) throw std::runtime_error("Invalid observation ABI input");
+        const auto& rows=static_cast<motion::Tracker*>(p)->observations;
+        if(rows.size()>size_t(capacity)) throw std::runtime_error("Observation output capacity exceeded");
+        for(size_t i=0;i<rows.size();++i) std::copy(rows[i].begin(),rows[i].end(),triples+3*i);
+        return rows.size();
     } catch(const std::exception& e) {motion::error=e.what();return -1;}
 }
 void motion_stats(void* p,uint64_t* counts) {

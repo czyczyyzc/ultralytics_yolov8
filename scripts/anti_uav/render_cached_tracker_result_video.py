@@ -51,6 +51,38 @@ def validate_records(detections, tracks, count, fps):
                 raise ValueError(f"Tracker output is not the associated detection at {index}")
             identities.add(identity)
             observations.add(observation)
+        if "observations" in row:
+            validate_observations(det["boxes_xyxy_score"], row["observations"], row["displayed_tracks"], index)
+
+
+def validate_observations(boxes, observations, confirmed, index):
+    if len(observations)!=len(boxes):
+        raise ValueError(f"Missing detector observation at {index}")
+    expected_ids = {t["detection_index"]: t["id"] for t in confirmed}
+    for di, (box, obs) in enumerate(zip(boxes, observations)):
+        status, identity = obs["status"], obs["id"]
+        if (obs["detection_index"]!=di or status not in
+                {"unassigned", "pending", "confirmed", "ambiguous", "below_low"}
+                or obs["predicted"] is not False or obs["confirmed"] is not (status=="confirmed")):
+            raise ValueError(f"Invalid observation status/index at {index}")
+        if status=="confirmed":
+            if type(identity) is not int or identity<=0 or expected_ids.get(di)!=identity:
+                raise ValueError(f"Observation does not match confirmed identity at {index}")
+        elif identity is not None or di in expected_ids:
+            raise ValueError(f"Unconfirmed observation exposes an identity at {index}")
+        actual = np.asarray([*obs["box"], obs["score"]], dtype=float)
+        if actual.shape!=(5,) or not np.isfinite(actual).all() or not np.allclose(actual, box, rtol=0, atol=1e-5):
+            raise ValueError(f"Observation altered detector geometry/score at {index}")
+
+
+def observation_label(track):
+    if track["id"] is not None:
+        return f"ID {track['id']}"
+    return "UNCERTAIN" if track.get("status")=="ambiguous" else "PENDING"
+
+
+def observation_color(track):
+    return (255, 210, 40) if track["id"] is not None else (30, 190, 255)
 
 
 def crop_bounds(box, width, height):
@@ -66,19 +98,20 @@ def crop_bounds(box, width, height):
 def panel(frame, tracks, index, count, fps, title):
     height, width = frame.shape[:2]
     canvas = np.full((784, 1600, 3), (25, 29, 35), np.uint8)
-    color = (255, 210, 40)
     main = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_AREA)
-    shown = sorted(tracks, key=lambda t: (-t["score"], t["id"]))
+    shown = sorted(tracks, key=lambda t: (-t["score"], t["id"] or 0))
     for track in shown:
+        color = observation_color(track)
         box = np.asarray(track["box"]) * [1280/width, 720/height, 1280/width, 720/height]
         corner(main, box, color)
         xy = (int(np.clip(box[0], 1, 1180)), int(np.clip(box[1]-7, 16, 713)))
-        cv2.putText(main, f"ID {track['id']}", xy, cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(main, observation_label(track), xy, cv2.FONT_HERSHEY_SIMPLEX,
                     .45, color, 1, cv2.LINE_AA)
     canvas[64:, :1280] = main
     cv2.putText(canvas, title, (16, 25), cv2.FONT_HERSHEY_SIMPLEX,
                 .61, (240, 240, 240), 1, cv2.LINE_AA)
-    status = (f"frame {index+1}/{count} | {index/fps:.2f}s | confirmed {len(shown)}"
+    identified = sum(t["id"] is not None for t in shown)
+    status = (f"frame {index+1}/{count} | {index/fps:.2f}s | boxes {len(shown)} | IDs {identified} | pending {len(shown)-identified}"
               f" | NO GT | original speed {fps:g} FPS")
     cv2.putText(canvas, status, (16, 52), cv2.FONT_HERSHEY_SIMPLEX,
                 .53, (210, 215, 220), 1, cv2.LINE_AA)
@@ -87,7 +120,7 @@ def panel(frame, tracks, index, count, fps, title):
     for rank in range(2):
         y = 125 + rank*285
         if rank >= len(shown):
-            cv2.putText(canvas, "NO CONFIRMED TRACK", (1290, y+105),
+            cv2.putText(canvas, "NO OUTPUT BOX", (1290, y+105),
                         cv2.FONT_HERSHEY_SIMPLEX, .5, (130, 135, 140), 1, cv2.LINE_AA)
             continue
         track = shown[rank]
@@ -103,10 +136,10 @@ def panel(frame, tracks, index, count, fps, title):
             box = ((np.asarray(other["box"]) - [left, top, left, top])
                    * [rw/cw, rh/ch, rw/cw, rh/ch] + [dx, dy, dx, dy])
             if box[2] >= 0 and box[0] < 320 and box[3] >= 0 and box[1] < 200:
-                corner(crop, box, color)
+                corner(crop, box, observation_color(other))
         canvas[y:y+200, 1280:] = crop
-        cv2.putText(canvas, f"ID {track['id']} | score {track['score']:.3f} | {scale:.1f}x",
-                    (1290, y+225), cv2.FONT_HERSHEY_SIMPLEX, .46, color, 1, cv2.LINE_AA)
+        cv2.putText(canvas, f"{observation_label(track)} | {track['score']:.3f} | {scale:.1f}x",
+                    (1290, y+225), cv2.FONT_HERSHEY_SIMPLEX, .46, observation_color(track), 1, cv2.LINE_AA)
     for y, text in ((713, "Crops follow top scores."), (737, "Original IDs; no remapping."),
                     (761, "1px corners; no crosshair.")):
         cv2.putText(canvas, text, (1290, y), cv2.FONT_HERSHEY_SIMPLEX,
@@ -123,6 +156,7 @@ def main():
     parser.add_argument("--output-name", default="Video00009_Dist_public_GMC_conf003_full.mp4")
     parser.add_argument("--label", default="Dist public-code + GMC")
     parser.add_argument("--model-label", default="Frozen-P3 + Add-on P2")
+    parser.add_argument("--show-observations", action="store_true", help="Keep all measured detections; label uncertain/pending without an ID")
     parser.add_argument("--max-frames", type=int, help="Optional smoke-test prefix, not a full video")
     args = parser.parse_args()
     if args.output.exists():
@@ -148,6 +182,8 @@ def main():
         raise ValueError("Layout requires a constant-frame-rate 16:9 source")
     detections, tracks = load_records(detector_path), load_records(tracks_path)
     validate_records(detections, tracks, count, fps)
+    if args.show_observations and any("observations" not in r for r in tracks):
+        raise ValueError("All-observation visualization requires a native observation-status cache")
     limit = min(count, args.max_frames) if args.max_frames else count
     args.output.mkdir(parents=True)
     cv2.setNumThreads(2)
@@ -166,8 +202,9 @@ def main():
                  input_hw=detector["input_hw"], precision=detector["precision"],
                  tracker_config=tracker["config"], tracker_provenance=tracker["provenance"],
                  tracker_label=args.label, full_source_video=limit == count, frame_stride=1,
-                 ground_truth_used=False, predicted_or_pending_boxes_shown=False,
-                 inference_rerun=False, box_mode="associated_detection", id_remapping=False,
+                 ground_truth_used=False, predicted_or_pending_boxes_shown=args.show_observations,
+                 predicted_boxes_shown=False, pending_boxes_shown=args.show_observations,
+                 inference_rerun=False, box_mode="all_measured_observations" if args.show_observations else "associated_detection", id_remapping=False,
                  audio_included=False, output_fps=fps, video=str(destination.resolve()), command=command,
                  visualization="1px corners, no crosshair/GT; resize clean source before overlays; adaptive crops",
                  note="Playback FPS is source timing, not board inference throughput.")
@@ -183,7 +220,7 @@ def main():
                 ok, frame = cap.read()
                 if not ok:
                     raise RuntimeError(f"Source ended at {index}, expected {limit}")
-                shown = tracks[index]["displayed_tracks"]
+                shown = tracks[index]["observations" if args.show_observations else "displayed_tracks"]
                 rendered = panel(frame, shown, index, limit, fps, title)
                 encoder.stdin.write(rendered.tobytes())
                 if index in {0, 970, 8999, 11954, limit-1}:
@@ -192,7 +229,7 @@ def main():
                 frames_written += 1
                 outputs += len(shown)
                 frames_with_output += bool(shown)
-                ids.update(t["id"] for t in shown)
+                ids.update(t["id"] for t in shown if t["id"] is not None)
                 if frames_written % 512 == 0 or frames_written == limit:
                     progress = dict(stage="rendering", frames=frames_written, total=limit,
                                     seconds=round(time.monotonic()-started, 2))

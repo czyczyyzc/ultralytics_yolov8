@@ -8,6 +8,7 @@ DEFAULTS = dict(high=.03, low=.01, birth=.10, expiry_seconds=1., nominal_fps=30.
     localization_floor_px=1.5, acceleration_std_px_s2=180., unknown_gmc_speed_px_s=1500.,
     max_innovation_speed_px_s=3000., max_radius_px=240., nis_gate=16.,
     confirmation_hits=3, confirmation_window=4, ambiguity_margin=.03)
+OBSERVATION_STATUSES = ("unassigned", "pending", "confirmed", "ambiguous", "below_low")
 
 
 class NativeMotion:
@@ -27,12 +28,23 @@ class NativeMotion:
                                           ct.c_double, ct.c_double, ct.c_void_p, ct.c_int]
         self.lib.motion_update.restype = ct.c_int
         self.lib.motion_stats.argtypes = [ct.c_void_p, ct.c_void_p]
+        self.lib.motion_observations.argtypes = [ct.c_void_p, ct.c_void_p, ct.c_int]
+        self.lib.motion_observations.restype = ct.c_int
         self.handle = self.lib.motion_create(values.ctypes.data, len(values))
         if not self.handle:
             raise RuntimeError(self.lib.motion_error().decode())
         self.pairs = np.empty((100, 2), np.int32)
+        self._observations = []
+
+    def observations(self):
+        """Current measured boxes, including explicit identity-pending/ambiguous states."""
+        if not self.handle:
+            raise RuntimeError("Motion tracker is closed")
+        return [dict(row, box=list(row["box"])) for row in self._observations]
 
     def update(self, boxes, warp, quality, timestamp):
+        if not self.handle:
+            raise RuntimeError("Motion tracker is closed")
         boxes = np.ascontiguousarray(boxes, dtype=np.float32).reshape(-1, 5)
         warp = np.ascontiguousarray(warp, dtype=np.float64).reshape(2, 3)
         if len(boxes)>len(self.pairs):
@@ -41,6 +53,22 @@ class NativeMotion:
                                   quality, timestamp, self.pairs.ctypes.data, len(self.pairs))
         if n<0:
             raise RuntimeError(self.lib.motion_error().decode())
+        triples = np.empty((max(1, len(boxes)), 3), np.int32)
+        count = self.lib.motion_observations(self.handle, triples.ctypes.data, len(triples))
+        if count != len(boxes):
+            raise RuntimeError("Native observation contract does not cover all detections")
+        observations = []
+        for identity, index, status in triples[:count]:
+            index, status, identity = int(index), int(status), int(identity)
+            if index != len(observations) or not 0<=status<len(OBSERVATION_STATUSES):
+                raise RuntimeError("Invalid native observation index/status")
+            if (identity>0) != (status==2) or identity<0:
+                raise RuntimeError("Unconfirmed native observation exposes an ID")
+            box = boxes[index]
+            observations.append(dict(id=identity or None, detection_index=index,
+                status=OBSERVATION_STATUSES[status], confirmed=status==2, predicted=False,
+                box=box[:4].tolist(), score=float(box[4])))
+        self._observations = observations
         shown = []
         for identity, index in self.pairs[:n]:
             index = int(index)

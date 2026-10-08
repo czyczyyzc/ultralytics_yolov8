@@ -383,3 +383,21 @@ def test_immediate_id_does_not_make_a_single_frame_false_detection_reliable(libr
         assert not tracker.update([], IDENTITY, 1., 1/30)
     finally:
         tracker.close()
+
+
+def test_top_observation_diagnostic_detects_id_change_across_pending_gap():
+    from scripts.anti_uav.compare_motion_gmc_ablation import top_observation_ids
+    rows = [dict(boxes_xyxy_score=boxes(100), observations=[dict(detection_index=0, id=identity)])
+            for identity in (1, None, 2)]
+    result = top_observation_ids(rows, range(3))
+    assert result["id_changes_between_identified_observations"]==1
+    assert result["adjacent_frame_id_changes"]==0
+    assert result["top_detection_without_id"]==1
+
+
+def test_top_observation_diagnostic_rejects_unsorted_detection_scores():
+    from scripts.anti_uav.compare_motion_gmc_ablation import top_observation_ids
+    rows = [dict(boxes_xyxy_score=boxes(100,score=.1)+boxes(900,score=.9),
+                 observations=[dict(detection_index=0,id=1),dict(detection_index=1,id=2)])]
+    with pytest.raises(ValueError,match="score-sorted"):
+        top_observation_ids(rows, [0])

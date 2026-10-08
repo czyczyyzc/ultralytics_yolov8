@@ -3,6 +3,7 @@
 #include "motion_tracker.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>

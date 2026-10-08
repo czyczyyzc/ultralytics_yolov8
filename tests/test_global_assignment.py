@@ -62,3 +62,22 @@ def test_alternative_check_budget_is_bounded(solver):
     assert counts[4]==8
     assert matches[:8]==list(range(0,16,2)) and matches[8]==-1
     assert ambiguous[-2:]==[1,1] and counts[7]>0
+
+
+def test_native_benchmark_builds_and_measures_only_association(tmp_path):
+    import json
+    from scripts.anti_uav.motion_native_runtime import DEFAULTS
+    cxx=shutil.which("c++") or shutil.which("g++")
+    if not cxx:
+        pytest.skip("C++17 compiler required")
+    src=ROOT/"scripts/anti_uav/dist_native";exe=tmp_path/"benchmark"
+    subprocess.run([cxx,"-std=c++17","-O2","-ffp-contract=off",str(src/"motion_benchmark.cpp"),
+        str(src/"motion_tracker.cpp"),str(src/"third_party/lap/lapjv.cpp"),"-o",str(exe)],check=True)
+    config=tmp_path/"config.txt";config.write_text("14\n"+" ".join(str(v) for v in DEFAULTS.values())+"\n")
+    frames=tmp_path/"frames.txt"
+    frames.write_text("3\n"+"".join(f"{i/30} 1 1 0 0 0 1 0 1 100 100 104 104 .9\n" for i in range(3)))
+    result=json.loads(subprocess.check_output([str(exe),str(config),str(frames),"2"],text=True))
+    assert result["samples"]==6 and result["emitted_boxes_all_repeats"]==6
+    assert result["confirmed_boxes_all_repeats"]==2
+    assert "exposure" in result["scope"]
+    assert 0<=result["milliseconds"]["p95"]<=result["milliseconds"]["max"]

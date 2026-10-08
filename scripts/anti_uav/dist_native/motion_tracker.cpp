@@ -9,7 +9,7 @@
 #include <cstdint>
 
 namespace motion {
-struct Observation { double time; std::array<double,4> box; };
+struct Observation { double time; std::array<double,4> box; double camera_variance=0; };
 struct Config {
     std::array<double,14> v;
     explicit Config(const double* data,int n) {
@@ -54,6 +54,7 @@ struct Target {
         double camera_dy=h[3]*mean(0,0)+(h[4]-1)*mean(1,0)+h[5];
         camera_speed_bound*=std::exp(-dt/.25);
         if(quality>=.15) camera_speed_bound=std::max(camera_speed_bound,std::hypot(camera_dx,camera_dy)/dt);
+        camera_sigma=(1-quality)*std::max(c.v[7],camera_speed_bound)*dt;
         // Warp observations as well as the state, so measured velocity is camera compensated.
         M8 j;
         for(int i=0;i<8;i+=4) {
@@ -64,6 +65,7 @@ struct Target {
         mean=mul(j,mean);mean(0,0)+=h[2];mean(1,0)+=h[5];
         covariance=mul(mul(j,covariance),transpose(j));
         for(auto& obs:history) {
+            obs.camera_variance+=camera_sigma*camera_sigma;
             double x=obs.box[0],y=obs.box[1],w=obs.box[2],height=obs.box[3];
             obs.box={h[0]*x+h[1]*y+h[2],h[3]*x+h[4]*y+h[5],
                      std::abs(h[0])*w+std::abs(h[1])*height,
@@ -80,7 +82,6 @@ struct Target {
             covariance(axis+4,axis)+=q*dt*dt*dt/2;
             covariance(axis+4,axis+4)+=q*dt*dt;
         }
-        camera_sigma=(1-quality)*std::max(c.v[7],camera_speed_bound)*dt;
         for(int i=0;i<2;++i) covariance(i,i)+=camera_sigma*camera_sigma+c.v[5]*c.v[5]*dt*c.v[4];
         mean(2,0)=std::max(.01,mean(2,0));mean(3,0)=std::max(.01,mean(3,0));
         hits.push_back(0);if(hits.size()>size_t(c.v[12])) hits.pop_front();++age;
@@ -167,7 +168,9 @@ struct Target {
             double vx=(d.measurement[0]-history.back().box[0])/dt;
             double vy=(d.measurement[1]-history.back().box[1])/dt;
             double observed_a=std::min(60000.,std::hypot(vx-mean(4,0),vy-mean(5,0))/dt);
-            accel=.8*accel+.2*observed_a;
+            double localization=.5*(variance[0]+variance[1]);
+            double reliability=localization/(localization+history.back().camera_variance);
+            accel=.8*accel+.2*observed_a*reliability;
         }
         history.push_back({time,{d.measurement[0],d.measurement[1],d.measurement[2],d.measurement[3]}});
         while(history.size()>3) history.pop_front();
@@ -179,8 +182,10 @@ struct Target {
             for(auto& o:history) {double t=o.time-mt;den+=t*t;nx+=t*(o.box[0]-mx);ny+=t*(o.box[1]-my);}
             if(den>1e-12) {
                 const double slopes[]={nx/den,ny/den};
+                double camera_variance=0;
+                for(auto& o:history) camera_variance=std::max(camera_variance,o.camera_variance);
                 for(int axis=0;axis<2;++axis) {
-                    double observed_variance=variance[axis]/den;
+                    double observed_variance=(variance[axis]+camera_variance)/den;
                     double prior_variance=covariance(4+axis,4+axis);
                     double weight=std::min(.75,prior_variance/(prior_variance+observed_variance));
                     mean(4+axis,0)=(1-weight)*mean(4+axis,0)+weight*slopes[axis];

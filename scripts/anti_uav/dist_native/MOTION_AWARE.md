@@ -212,7 +212,8 @@ partial duplicate at frame 474 is retained as `UNCERTAIN`, while the complete
 target remains ID 1. There are no adjacent single-confirmed-target ID changes
 in either 1800-frame replay.
 
-On labelled Video00009, quality-gated GMC has zero continuous-GT ID changes;
+On labelled Video00009 using the existing old-28 P2+P3 fixed detector cache,
+quality-gated GMC has zero continuous-GT ID changes;
 the no-GMC control has 17 when tentative IDs are included and one on
 confirmed-only output. With quality-gated GMC, confirmed-only TP/FP/FN is
 5296/3087/2686 (precision 63.18%, recall 66.35%). All measured observations

@@ -15,7 +15,9 @@
 
 ## GMC 对照
 
-在有单目标 GT 的 Video00009 上复测同一关联代码：
+在有单目标 GT 的 Video00009 上复测同一关联代码。该回归沿用现有
+old-28 P2+P3 detector 固定缓存，只用于隔离比较 tracker/GMC，不代表
+44-video detector 的检测精度：
 
 | 模式 | 连续 GT 段 ID 变化（含 tentative） | 确认输出 TP / FP / FN | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: |

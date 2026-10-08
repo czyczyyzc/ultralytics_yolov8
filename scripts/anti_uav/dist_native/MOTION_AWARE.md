@@ -153,6 +153,32 @@ python scripts/anti_uav/track_cached_native_dist_video.py \
 it is NOT a native live-inference backend. Optional `--motion-config` uses the
 complete named configuration JSON and must have the correct source FPS.
 
+`--gmc-mode disabled` is an OFFLINE image-coordinate ablation: it does not
+decode/estimate background motion, supplies an identity warp and quality zero,
+and sets `unknown_gmc_speed_px_s=0`. The tracker then learns total image motion
+without adding the uncertainty of a failed compensation to every velocity
+observation. This is different from an enabled GMC temporarily failing.
+Detector provenance is still verified against `--baseline-dir`; GMC equality is
+deliberately not required in disabled mode. Do not combine disabled mode with
+`--cached-gmc`. This flag is not currently a native board executable option.
+
+`--gmc-mode unavailable` is a second OFFLINE control: identity warp and quality
+zero, while retaining configured unknown-camera uncertainty. It isolates removal
+of the GMC estimate from removal of the uncertainty allowance. On 000002 this
+control keeps the primary target's ID throughout 13-14 seconds; the pure image
+model without that allowance does not. Thus that segment does NOT establish that
+GMC itself is necessary. `compare_motion_gmc_ablation.py --include-unavailable`
+audits all 12 detector/policy/motion-mode combinations.
+
+The immediate-ID experiment uses `birth=.03`, `confirmation_hits=1`, and
+`confirmation_window=1`. It assigns a new ID on the first eligible detection,
+not a reliable identity certified by extra evidence. Ambiguous associations
+still return null ID. The default balanced profile is NOT changed.
+`compare_motion_gmc_ablation.py` audits both modes/policies against identical
+detector inputs, verifies balanced + GMC reproduces the previous regression,
+and reports top-score observation diagnostics separately from formal GT metrics.
+See `deliverables/clip_000002_gmc_id_ablation_20261008/RESULTS_ZH.md`.
+
 2026-10-08 verification: 31 tests passed on macOS and the 47 server; original
 Dist IDs/observation indices were exactly reproduced across 1800 frames per
 model; the native quality ABI was checked on textured stationary and featureless

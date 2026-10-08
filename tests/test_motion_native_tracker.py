@@ -29,9 +29,14 @@ def boxes(x, y=100, size=4, score=.9):
     return [[x, y, x+size, y+size, score]]
 
 
+def fast_tracker(library, fps=30.):
+    return NativeMotion(library, fps, dict(DEFAULTS, nominal_fps=fps,
+        confirmation_hits=2, confirmation_window=3))
+
+
 @pytest.mark.parametrize("fps,step", [(30., 12.), (100., 8.)])
 def test_small_nonoverlap_motion_and_maneuver_keep_id(library, fps, step):
-    tracker = NativeMotion(library, fps)
+    tracker = fast_tracker(library, fps)
     try:
         for i in range(30):
             jump = 40 if fps==30 else 15
@@ -50,7 +55,7 @@ def test_small_nonoverlap_motion_and_maneuver_keep_id(library, fps, step):
 
 
 def test_short_gap_has_no_predicted_output_then_recovers_id(library):
-    tracker = NativeMotion(library)
+    tracker = fast_tracker(library)
     try:
         assert not tracker.update(boxes(100), IDENTITY, 0., 0)
         assert tracker.update(boxes(110), IDENTITY, 0., 1/30)[0]["id"]==1
@@ -72,7 +77,7 @@ def test_single_frame_false_positive_is_never_confirmed(library):
 
 
 def test_expiry_does_not_force_old_identity(library):
-    tracker = NativeMotion(library)
+    tracker = fast_tracker(library)
     try:
         tracker.update(boxes(100), IDENTITY, 0., 0)
         assert tracker.update(boxes(100), IDENTITY, 0., .03)[0]["id"]==1
@@ -83,7 +88,7 @@ def test_expiry_does_not_force_old_identity(library):
 
 
 def test_camera_warp_compensates_pending_and_confirmed_tracks(library):
-    tracker = NativeMotion(library)
+    tracker = fast_tracker(library)
     warp = np.array([[1., 0., 8.], [0., 1., -3.]])
     try:
         for i in range(15):
@@ -95,7 +100,7 @@ def test_camera_warp_compensates_pending_and_confirmed_tracks(library):
 
 
 def test_ambiguous_observation_is_not_forced_or_reborn(library):
-    tracker = NativeMotion(library)
+    tracker = fast_tracker(library)
     try:
         pair = boxes(100)+boxes(108)
         tracker.update(pair, IDENTITY, 0., 0)
@@ -108,7 +113,7 @@ def test_ambiguous_observation_is_not_forced_or_reborn(library):
 
 
 def test_far_distractor_cannot_take_existing_identity(library):
-    tracker = NativeMotion(library)
+    tracker = fast_tracker(library)
     try:
         tracker.update(boxes(100), IDENTITY, 0., 0)
         assert tracker.update(boxes(110), IDENTITY, 0., .03)[0]["id"]==1
@@ -131,7 +136,7 @@ def test_maneuver_beyond_configured_search_gate_is_not_forced(library):
 
 
 def test_all_absolute_box_sizes_are_supported(library):
-    tracker = NativeMotion(library)
+    tracker = fast_tracker(library)
     large = [[10, 10, 1810, 1010, .9]]
     try:
         assert not tracker.update(large, IDENTITY, 0., 0)
@@ -142,7 +147,7 @@ def test_all_absolute_box_sizes_are_supported(library):
 
 
 def test_large_target_localization_jitter_does_not_break_identity(library):
-    tracker = NativeMotion(library, 100.)
+    tracker = fast_tracker(library, 100.)
     try:
         for i in range(40):
             x=600+2*i+(25 if i%2 else -25)
@@ -197,7 +202,7 @@ def test_weak_observations_need_cumulative_confidence_evidence(library):
 
 
 def test_float32_threshold_boundaries_are_consistent(library):
-    tracker = NativeMotion(library, config=dict(DEFAULTS, birth=.03))
+    tracker = NativeMotion(library, config=dict(DEFAULTS, birth=.03, confirmation_hits=2, confirmation_window=3))
     try:
         assert not tracker.update(boxes(100, score=.03), IDENTITY, 1., 0)
         assert tracker.update(boxes(100, score=.03), IDENTITY, 1., .03)[0]["id"]==1
@@ -205,3 +210,16 @@ def test_float32_threshold_boundaries_are_consistent(library):
         tracker.close()
     with pytest.raises(RuntimeError, match="closed"):
         tracker.stats()
+
+
+def test_balanced_default_requires_three_observations_in_four_frames(library):
+    tracker = NativeMotion(library)
+    try:
+        assert not tracker.update(boxes(100), IDENTITY, 0., 0)
+        assert not tracker.update([], IDENTITY, 0., .03)
+        assert not tracker.update(boxes(100), IDENTITY, 0., .06)
+        assert tracker.update(boxes(100), IDENTITY, 0., .09)[0]["id"]==1
+    finally:
+        tracker.close()
+    with pytest.raises(ValueError, match="source FPS"):
+        NativeMotion(library, 100., dict(DEFAULTS))

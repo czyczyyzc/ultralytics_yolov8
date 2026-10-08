@@ -7,7 +7,7 @@ import numpy as np
 DEFAULTS = dict(high=.03, low=.01, birth=.10, expiry_seconds=1., nominal_fps=30.,
     localization_floor_px=1.5, acceleration_std_px_s2=180., unknown_gmc_speed_px_s=1500.,
     max_innovation_speed_px_s=3000., max_radius_px=240., nis_gate=16.,
-    confirmation_hits=2, confirmation_window=3, ambiguity_margin=.03)
+    confirmation_hits=3, confirmation_window=4, ambiguity_margin=.03)
 
 
 class NativeMotion:
@@ -15,6 +15,8 @@ class NativeMotion:
         self.config = dict(DEFAULTS, nominal_fps=float(fps)) if config is None else dict(config)
         if set(self.config) != set(DEFAULTS):
             raise ValueError("Motion configuration must contain exactly the documented keys")
+        if abs(float(self.config["nominal_fps"])-float(fps))>1e-6:
+            raise ValueError("Motion nominal FPS must match source FPS")
         values = np.ascontiguousarray([self.config[k] for k in DEFAULTS], dtype=np.float64)
         self.lib = ct.CDLL(str(Path(library).resolve()))
         self.lib.motion_create.argtypes = [ct.c_void_p, ct.c_int]

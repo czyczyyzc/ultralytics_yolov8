@@ -98,7 +98,7 @@ std::string stats(std::vector<double> values) {
     return out.str();
 }
 struct Args {
-    std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv",tracking="dist";
+    std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv",tracking="dist",motion_params;
     int workers=3,inflight=9,frames=0,warmup=100,decode_threads=1;
     std::string decode_threading="slice";
     std::string camera_policy="latest",camera_format,camera_start="lazy",camera_dispatch="direct";
@@ -121,6 +121,7 @@ Args parse(int argc,char** argv) {
         else if(key=="--detector-library") a.detector=value;
         else if(key=="--tracker-library") a.tracker=value;
         else if(key=="--tracking") a.tracking=value;
+        else if(key=="--motion-params") a.motion_params=value;
         else if(key=="--gmc-library") a.gmc=value;
         else if(key=="--video") a.video=value;
         else if(key=="--output") a.output=value;
@@ -157,6 +158,7 @@ Args parse(int argc,char** argv) {
     if((a.decoder!="opencv" && a.decoder!="rkmpp" && a.decoder!="ffmpeg" && a.decoder!="v4l2") ||
        (a.preprocess!="opencv" && a.preprocess!="rga" && a.preprocess!="fused")) throw std::runtime_error("Invalid image backend");
     if(a.tracking!="dist" && a.tracking!="motion") throw std::runtime_error("Invalid tracking algorithm");
+    if(!a.motion_params.empty() && a.tracking!="motion") throw std::runtime_error("Motion parameters require --tracking motion");
     if(a.npu_warmup<0 || a.npu_warmup>100 || (a.decoder=="v4l2" &&
        (a.camera_format!="raw8-gray" || a.frames<=a.warmup || !std::isfinite(a.camera_fps) ||
         a.camera_fps<=0 || (a.camera_policy!="latest" && a.camera_policy!="fifo" && a.camera_policy!="fresh"))))
@@ -269,12 +271,22 @@ int run(const Args& args) {
     void(*flow_quality)(void*,double*)=nullptr;
     const char*(*track_error)()=nullptr;
     const char*(*flow_error)()=nullptr;
+    auto motion_config=motion_defaults(fps);
     if(!args.detector_only) {
         track_lib=std::make_unique<Library>(args.tracker);flow_lib=std::make_unique<Library>(args.gmc);
         if(args.tracking=="motion") {
-            auto config=motion_defaults(fps);
+            if(!args.motion_params.empty()) {
+                std::stringstream values(args.motion_params);std::string value;size_t n=0;
+                while(std::getline(values,value,',')) {
+                    if(n>=motion_config.size()) throw std::runtime_error("Too many motion parameters");
+                    size_t consumed=0;motion_config[n++]=std::stod(value,&consumed);
+                    if(consumed!=value.size()) throw std::runtime_error("Invalid motion parameter");
+                }
+                if(n!=motion_config.size() || args.motion_params.back()==',' || std::abs(motion_config[4]-fps)>1e-6)
+                    throw std::runtime_error("Motion parameters require 14 values and source nominal FPS");
+            }
             auto create_motion=track_lib->get<void*(*)(const double*,int)>("motion_create");
-            tracker={create_motion(config.data(),config.size()),track_lib->get<Deleter>("motion_destroy")};
+            tracker={create_motion(motion_config.data(),motion_config.size()),track_lib->get<Deleter>("motion_destroy")};
             track_error=track_lib->get<const char*(*)()>("motion_error");
             motion_update=track_lib->get<decltype(motion_update)>("motion_update");
             flow_quality=flow_lib->get<decltype(flow_quality)>("gmc_quality");
@@ -493,6 +505,10 @@ int run(const Args& args) {
         <<",\"software_decode_threading\":"<<quote(args.decode_threading);
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));
     out<<",\"tracking_algorithm\":"<<quote(args.tracking);
+    if(motion_update) {
+        out<<",\"motion_config_ordered\":[";
+        for(size_t i=0;i<motion_config.size();++i) {if(i) out<<',';out<<motion_config[i];}out<<']';
+    }
     out<<",\"args\":{\"conf\":"<<args.conf<<",\"iou\":"<<args.iou<<",\"actual_conf_float32\":"<<float(args.conf)<<",\"actual_iou_float32\":"<<float(args.iou)<<",\"workers\":"<<args.workers<<",\"inflight\":"<<args.inflight<<",\"warmup\":"<<args.warmup<<",\"detector_only\":"<<(args.detector_only?"true":"false")<<",\"pyramid_cache\":"<<(args.pyramid_cache?"true":"false")<<",\"cpus\":"<<quote(args.cpus)<<",\"video\":"<<quote(args.video)<<",\"model\":"<<quote(args.model)<<",\"save_observations\":"<<(args.save?"true":"false")<<'}';
     out<<",\"input_wh\":["<<input_width<<','<<input_height<<"],\"preprocess_effective\":"
        <<quote(fused_half?"fused_half":args.preprocess=="fused"?"opencv_fallback":args.preprocess)

@@ -209,12 +209,13 @@ struct Tracker {
     std::array<uint64_t,8> counts{};
     explicit Tracker(const double* data,int n):config(data,n) {}
     void associate(const std::vector<Detection>& dets,double time,std::vector<bool>& used_targets,
-                   std::vector<bool>& used_dets,bool low) {
+                   std::vector<bool>& used_dets,bool low,bool confirmed) {
         constexpr double limit=.70;
         std::vector<int> rows,cols;
         for(size_t j=0;j<dets.size();++j)
             if(!used_dets[j] && (low?dets[j].score<float(config.v[0]):dets[j].score>=float(config.v[0]))) cols.push_back(j);
-        for(size_t i=0;i<targets.size();++i) if(!used_targets[i] && (!low || targets[i].confirmed)) rows.push_back(i);
+        for(size_t i=0;i<targets.size();++i)
+            if(!used_targets[i] && targets[i].confirmed==confirmed) rows.push_back(i);
         if(rows.empty() || cols.empty()) return;
         std::vector<std::vector<double>> cost(rows.size(),std::vector<double>(cols.size(),100.));
         for(size_t i=0;i<rows.size();++i) for(size_t j=0;j<cols.size();++j)
@@ -276,8 +277,11 @@ struct Tracker {
         std::vector<Detection> dets;
         for(int i=0;i<n;++i) if(boxes[5*i+4]>float(config.v[1])) dets.emplace_back(boxes+5*i,i);
         std::vector<bool> used_targets(targets.size()),used_dets(dets.size());
-        associate(dets,time,used_targets,used_dets,false);
-        associate(dets,time,used_targets,used_dets,true);
+        // Confirmed identities get first refusal under the SAME gates and ambiguity checks.
+        // A tentative duplicate must not steal an established target's observation.
+        associate(dets,time,used_targets,used_dets,false,true);
+        associate(dets,time,used_targets,used_dets,true,true);
+        associate(dets,time,used_targets,used_dets,false,false);
         for(size_t j=0;j<dets.size();++j) if(!used_dets[j] && dets[j].score>=float(config.v[2])) {
             targets.emplace_back(dets[j],frame,next_id++,time,config);++counts[3];
         }

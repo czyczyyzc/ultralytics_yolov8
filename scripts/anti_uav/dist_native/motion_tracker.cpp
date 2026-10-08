@@ -35,7 +35,7 @@ struct Target {
         id(tid),index(d.index),frame(fid),last_time(time) {
         for(int i=0;i<4;++i) mean(i,0)=d.measurement[i];
         for(int i=0;i<8;++i) {
-            double sigma=i<2?std::max(c.v[5],.03*d.measurement[2+i]):
+            double sigma=i<2?std::max(c.v[5],.05*d.measurement[2+i]):
                 i<4?std::max(1.,.05*d.measurement[i]):i<6?1200.:20.;
             covariance(i,i)=sigma*sigma;
         }
@@ -81,7 +81,7 @@ struct Target {
     }
     double cost(const Detection& d,double time,int fid,const Config& c) const {
         double dx=d.measurement[0]-mean(0,0),dy=d.measurement[1]-mean(1,0);
-        double sx=std::max(c.v[5],.03*d.measurement[2]),sy=std::max(c.v[5],.03*d.measurement[3]);
+        double sx=std::max(c.v[5],.05*d.measurement[2]),sy=std::max(c.v[5],.05*d.measurement[3]);
         double a=covariance(0,0)+sx*sx,b=covariance(0,1),e=covariance(1,1)+sy*sy;
         double determinant=a*e-b*b;
         if(!(determinant>0)) return 100.;
@@ -123,7 +123,7 @@ struct Target {
         Matrix<4,4> s,l;
         std::array<double,4> variance{};
         for(int i=0;i<4;++i) {
-            double sigma=std::max(i<2?c.v[5]:1.,.03*d.measurement[2+i%2]);variance[i]=sigma*sigma;
+            double sigma=std::max(i<2?c.v[5]:1.,.05*d.measurement[2+i%2]);variance[i]=sigma*sigma;
             for(int k=0;k<4;++k) s(i,k)=covariance(i,k);
             s(i,i)+=variance[i];
         }

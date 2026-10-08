@@ -89,7 +89,7 @@ def test_camera_warp_compensates_pending_and_confirmed_tracks(library):
         for i in range(15):
             output = tracker.update(boxes(100+8*i, 100-3*i), warp if i else IDENTITY, 1., i/30)
             if i:
-                assert len(output)==1 and output[0]["id"]==1
+                assert len(output)==1 and output[0]["id"]==1, (i, output)
     finally:
         tracker.close()
 

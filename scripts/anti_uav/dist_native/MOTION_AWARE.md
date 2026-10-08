@@ -1,4 +1,4 @@
-# Experimental Motion-Aware Balanced Tracker
+# Motion-Aware Tracker and Lossless Observation Output
 
 This is an independent algorithm built from the native Dist matrix/LAP primitives.
 It is NOT behavior-equivalent public Dist, full OC-SORT, or a complete IMM filter.
@@ -10,9 +10,12 @@ legacy tracker ABI, and detector confidence/NMS are unchanged.
 - Primary association combines uncertainty-normalized center innovations, covariance-volume penalties, size agreement, motion direction and IoU. Zero IoU is allowed within bounded motion/shape gates; there is no post-failure nearest-neighbor rescue.
 - Smooth-motion and bounded-maneuver hypotheses are scored together in the primary cost. The scores and GMC reliability are engineering scores, not calibrated posterior probabilities.
 - IoU receives more weight for large boxes; tiny boxes receive more motion-distance weight. Association gates constrain relative changes, not absolute box area. Large detections are not discarded.
-- Kalman propagation uses source time deltas. Acceleration noise has a pixel-independent floor and adapts to observed residuals. Recent real observations update velocity with localization-uncertainty weighting; both pending and confirmed tracks are predicted.
+- Kalman propagation uses source time deltas. Acceleration noise has a pixel-independent floor and adapts to observed residuals. Recent real observations update velocity with localization-uncertainty weighting; both pending and confirmed tracks are predicted. Uncertain GMC also propagates into observation-history variance, avoiding false velocity updates when a failed camera estimate later recovers.
 - GMC still estimates the same warps. The added quality score is `min(1, inliers/24) * inlier_ratio` for accepted fits, otherwise zero. Failed identity transforms and confidently estimated stationary transforms are therefore distinguishable. Invalid GMC increases positional uncertainty instead of asserting zero camera motion.
-- The balanced preset requires 3 matched observations in the last 4 processed frames, plus average observed confidence at least the birth threshold. Confirmed tracks survive short gaps internally; outputs always reference current detector observations. No predicted/pending box display or ID remapping is used.
+- Camera uncertainty adapts to recent accepted warp speed, with a 0.25-second decay; the search radius also incorporates Kalman position uncertainty, while retaining the 240-pixel cap. It is not a globally widened nearest-neighbor rescue.
+- Confirmed tracks are associated before tentative tracks, under the same gates and ambiguity checks. Large/clipped targets use recent GMC-warped observed extents for overlap/size agreement, not lagging predicted box geometry.
+- The balanced preset requires 3 matched observations in the last 4 processed frames, plus average observed confidence at least the birth threshold. Confirmed tracks survive short gaps internally; outputs always reference current detector observations. No predicted box display or ID remapping is used.
+- Every current detector observation is retained in a separate identity-status output, including weak, pending and ambiguous observations. These are not counted as confirmed tracks. Unconfirmed observations expose a null ID, not a fabricated persistent identity.
 - Ambiguous row/column assignments are rejected, including new births for those ambiguous observations. Expiry is in seconds, not a fixed number of processed frames.
 
 ## Build and Native Inference
@@ -79,7 +82,8 @@ capture time. The camera's driver timestamp is not a verified exposure time.
 | 12 | confirmation window, processed frames | 4 |
 | 13 | ambiguous-cost margin | 0.03 |
 
-The radius also includes a three-sigma localization allowance. Units refer to
+The radius also includes a three-sigma localization allowance and a
+`sqrt(nis_gate * largest_position_innovation_variance)` allowance. Units refer to
 original-frame coordinates, not network input pixels; defaults were evaluated
 on 1920x1080 sources and need calibration for substantially different optics,
 resolution, motion or detector error. Width/height observation noise uses 5%
@@ -95,8 +99,41 @@ For example, the faster-ID 2-of-3 profile at 30 FPS is:
 
 The balanced preset needs at least three detections before emitting a new ID,
 so earliest identity confirmation is the third observation. This delay is
-separate from first detector-result latency. Do not bypass confirmation to
-make a visualization appear more complete.
+separate from first detector-result latency. The measured box is emitted from
+the first observation with `id: null`. Do not bypass confirmation or count
+pending detections as confirmed tracking to inflate results.
+
+## Consumer Output Contract
+
+`motion_update` retains its confirmed-only `[id, detection_index]` ABI. After
+each successful update, call `motion_observations(handle, triples, capacity)`;
+it returns one ordered `[id_or_zero, detection_index, status]` per input
+detection, even for inputs below the tracker's low threshold. The call is
+read-only. Capacity must cover all detections; an undersized buffer returns
+`-1`, rather than silently truncating outputs.
+
+| Status | JSON value | Identity | Meaning |
+| ---: | --- | --- | --- |
+| 0 | `unassigned` | null | No plausible association/birth evidence |
+| 1 | `pending` | null | Tentative track awaiting confirmation |
+| 2 | `confirmed` | positive ID | Confirmed identity matched this current detection |
+| 3 | `ambiguous` | null | Multiple plausible associations; no forced identity |
+| 4 | `below_low` | null | Detection retained but excluded from track association |
+
+The native executable always computes this contract for `--tracking motion`.
+`--save-observations` writes the complete `observations` array into each JSONL
+frame. Its `box` and `score` are the original current detector measurement;
+`predicted` is always false. `displayed_tracks` remains confirmed-only for
+backward-compatible evaluation. Visualization/platform integrations that must
+not swallow detector boxes must consume `observations`, NOT only
+`displayed_tracks`. Draw unconfirmed observations as `PENDING`/`UNCERTAIN`,
+without an ID. This is explicit observation retention, not post-hoc ID repair.
+
+Video/camera inference, observation-status generation, GMC and association all
+remain C++. The Python adapter mirrors this native contract for offline audit.
+Internal Kalman predictions can bridge gaps, but no box is emitted on a frame
+with no detector measurement. Long occlusion/expiry can lead to a new ID; no
+appearance ReID is claimed.
 
 ## Offline Verification
 
@@ -116,7 +153,7 @@ python scripts/anti_uav/track_cached_native_dist_video.py \
 it is NOT a native live-inference backend. Optional `--motion-config` uses the
 complete named configuration JSON and must have the correct source FPS.
 
-2026-10-08 verification: 23 tests passed on macOS and the 47 server; original
+2026-10-08 verification: 31 tests passed on macOS and the 47 server; original
 Dist IDs/observation indices were exactly reproduced across 1800 frames per
 model; the native quality ABI was checked on textured stationary and featureless
 images. Linux native pipeline/GMC C++17 syntax compilation passed. These are
@@ -124,12 +161,31 @@ NOT RK board FPS, live-camera accuracy, or full RKNN pipeline acceptance tests.
 
 ## Results and Limits
 
-See `deliverables/motion_aware_tracker_20261008/RESULTS_ZH.md` and its raw JSON.
+See `deliverables/motion_continuity_20261008/RESULTS_ZH.md` and its audit JSON.
 The 000002 failure segment is repaired without detector changes or fabricated
-boxes. Video00009 validation identity continuity improves, but FP increases;
-do not automatically replace the production tracker. New hyperparameters were
+boxes: P3 and P2+P3 have confirmed ID 1 throughout frames 390-430.
+Video00009's single-target continuous-GT ID-change diagnostic is 6 (original
+Dist), 2 (previous motion preset), and 0 (this version). These are fixed-cache
+regressions, not formal MOT IDSW. Three changes after GT-negative gaps remain;
+the algorithm does not claim identity recovery across disappearance.
+
+All 9109 detector observations on Video00009 are retained. There are 8382
+confirmed track observations and 727 observations without a confirmed identity;
+18 reviewed frames have a GT-matching detector observation but no confirmed
+track. Do not equate zero dropped measured boxes with perfect identity coverage.
+Confirmed-only TP/FP is 5284/3097 versus original Dist 5286/2987; continuity is
+better, but confirmed FP is 110 higher and recall is not improved. Do not
+automatically replace the production tracker. New hyperparameters were
 developed using these videos, so the results are not independent generalization
 evidence. Identity diagnostics are not formal MOT IDSW/IDF1/HOTA.
+
+Use `render_cached_tracker_result_video.py --show-observations` to visualize the
+new contract. Omit that flag to inspect confirmed-only tracking. Use
+`audit_motion_observations.py` with detector/tracker/baseline directories and an
+optional approved manifest to report measured-box coverage and confirmed-only
+metrics separately. The audit verifies matching detector/GMC inputs and cache
+hashes. `MOTION_TRACE` is an optional compile-time diagnostic; its frame range is
+set with `MOTION_TRACE_BEGIN`/`MOTION_TRACE_END`. Normal builds contain no trace.
 
 All runtime C++/libraries must be rebuilt for the board architecture. The 47
 server's shared libraries are x86_64 and must not be copied to an arm64 board.

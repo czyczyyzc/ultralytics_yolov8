@@ -12,6 +12,7 @@ lib=(-L"$PREFIX/usr/lib/aarch64-linux-gnu" -Wl,-rpath,"$PREFIX/usr/lib/aarch64-l
 cv=(-lopencv_core -lopencv_imgproc -lopencv_imgcodecs -lopencv_videoio)
 flags=(-std=c++17 -O3 -DNDEBUG -ffp-contract=off)
 g++ "${flags[@]}" -fPIC -shared "$HERE/tracker.cpp" "$HERE/third_party/lap/lapjv.cpp" -o "$OUT/libdist_tracker.so"
+g++ "${flags[@]}" -fPIC -shared "$HERE/motion_tracker.cpp" "$HERE/third_party/lap/lapjv.cpp" -o "$OUT/libmotion_tracker.so"
 g++ "${flags[@]}" -fPIC -shared "${inc[@]}" "$HERE/gmc.cpp" -o "$OUT/libdist_gmc.so" \
     "${lib[@]}" -lopencv_core -lopencv_imgproc -lopencv_video -lopencv_calib3d
 g++ "${flags[@]}" -march=armv8-a+simd -fPIC -shared "${inc[@]}" -I"$RKNN_INCLUDE" \

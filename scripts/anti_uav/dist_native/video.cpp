@@ -30,6 +30,7 @@
 #include "video_source.hpp"
 #include "camera_source.hpp"
 #include "latest_frame_slot.hpp"
+#include "motion_tracker.hpp"
 namespace fs=std::filesystem;
 using Clock=std::chrono::steady_clock;
 static const auto ENTRY=Clock::now();
@@ -97,7 +98,7 @@ std::string stats(std::vector<double> values) {
     return out.str();
 }
 struct Args {
-    std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv";
+    std::string model,detector,gmc,tracker,video,output,cpus="4,5,6,7",decoder="opencv",preprocess="opencv",tracking="dist";
     int workers=3,inflight=9,frames=0,warmup=100,decode_threads=1;
     std::string decode_threading="slice";
     std::string camera_policy="latest",camera_format,camera_start="lazy",camera_dispatch="direct";
@@ -119,6 +120,7 @@ Args parse(int argc,char** argv) {
         if(key=="--model") a.model=value;
         else if(key=="--detector-library") a.detector=value;
         else if(key=="--tracker-library") a.tracker=value;
+        else if(key=="--tracking") a.tracking=value;
         else if(key=="--gmc-library") a.gmc=value;
         else if(key=="--video") a.video=value;
         else if(key=="--output") a.output=value;
@@ -154,6 +156,7 @@ Args parse(int argc,char** argv) {
        !std::isfinite(a.iou) || a.iou<0 || a.iou>1) throw std::runtime_error("Invalid arguments");
     if((a.decoder!="opencv" && a.decoder!="rkmpp" && a.decoder!="ffmpeg" && a.decoder!="v4l2") ||
        (a.preprocess!="opencv" && a.preprocess!="rga" && a.preprocess!="fused")) throw std::runtime_error("Invalid image backend");
+    if(a.tracking!="dist" && a.tracking!="motion") throw std::runtime_error("Invalid tracking algorithm");
     if(a.npu_warmup<0 || a.npu_warmup>100 || (a.decoder=="v4l2" &&
        (a.camera_format!="raw8-gray" || a.frames<=a.warmup || !std::isfinite(a.camera_fps) ||
         a.camera_fps<=0 || (a.camera_policy!="latest" && a.camera_policy!="fifo" && a.camera_policy!="fresh"))))
@@ -174,7 +177,7 @@ struct Job {
     int index,n=0,bad=0;
     cv::Mat frame;
     Clock::time_point begin;
-    double decode=0,gmc=0;
+    double decode=0,gmc=0,gmc_quality=0;
     double ready_ms=0,dispatch_ms=0,worker_start_ms=0,detected_ms=0;
     CaptureStamp capture;
     std::array<double,3> native{};
@@ -260,17 +263,28 @@ int run(const Args& args) {
     using Deleter=void(*)(void*);
     std::unique_ptr<void,Deleter> tracker(nullptr,+[](void*){}),flow(nullptr,+[](void*){});
     int(*track_update)(void*,const float*,int,const double*,int*,int)=nullptr;
+    int(*motion_update)(void*,const float*,int,const double*,double,double,int*,int)=nullptr;
     int(*flow_apply)(void*,unsigned char*,int,int,size_t,int,double*)=nullptr;
     void(*flow_stats)(void*,uint64_t*,double*)=nullptr;
+    void(*flow_quality)(void*,double*)=nullptr;
     const char*(*track_error)()=nullptr;
     const char*(*flow_error)()=nullptr;
     if(!args.detector_only) {
         track_lib=std::make_unique<Library>(args.tracker);flow_lib=std::make_unique<Library>(args.gmc);
-        auto create_track=track_lib->get<void*(*)(double,double,double,double,double,int)>("dist_create");
-        tracker={create_track(fps,.03,.01,.10,.8,30),track_lib->get<Deleter>("dist_destroy")};
-        track_error=track_lib->get<const char*(*)()>("dist_error");
+        if(args.tracking=="motion") {
+            auto config=motion_defaults(fps);
+            auto create_motion=track_lib->get<void*(*)(const double*,int)>("motion_create");
+            tracker={create_motion(config.data(),config.size()),track_lib->get<Deleter>("motion_destroy")};
+            track_error=track_lib->get<const char*(*)()>("motion_error");
+            motion_update=track_lib->get<decltype(motion_update)>("motion_update");
+            flow_quality=flow_lib->get<decltype(flow_quality)>("gmc_quality");
+        } else {
+            auto create_track=track_lib->get<void*(*)(double,double,double,double,double,int)>("dist_create");
+            tracker={create_track(fps,.03,.01,.10,.8,30),track_lib->get<Deleter>("dist_destroy")};
+            track_error=track_lib->get<const char*(*)()>("dist_error");
+            track_update=track_lib->get<decltype(track_update)>("dist_update");
+        }
         if(!tracker) throw std::runtime_error(track_error());
-        track_update=track_lib->get<decltype(track_update)>("dist_update");
         auto create_flow=flow_lib->get<void*(*)(int,int,int,int,int)>("gmc_create");
         flow={create_flow(320,128,5,args.pyramid_cache,1),flow_lib->get<Deleter>("gmc_destroy")};
         flow_error=flow_lib->get<const char*(*)()>("gmc_error");
@@ -322,6 +336,7 @@ int run(const Args& args) {
                  if(work.stop || work.motion.empty()) return;job=work.motion.front();work.motion.pop_front();}
                 auto start=Clock::now();
                 if(flow_apply(flow.get(),job->frame.data,job->frame.cols,job->frame.rows,job->frame.step,job->frame.channels(),job->warp.data())) throw std::runtime_error(flow_error());
+                if(flow_quality) {double quality[3];flow_quality(flow.get(),quality);job->gmc_quality=quality[0];}
                 job->gmc=ms(start);
                 {std::lock_guard<std::mutex> lock(work.mutex);job->motion=true;work.cv.notify_all();}
             }
@@ -388,7 +403,11 @@ int run(const Args& args) {
         if(job->index!=index) throw std::runtime_error("Out-of-order result");
         auto association_start=Clock::now();std::array<int,200> pairs{};int ntracks=0;
         if(tracker) {
-            ntracks=track_update(tracker.get(),job->boxes.data(),job->n,job->warp.data(),pairs.data(),100);
+            if(motion_update) {
+                if(camera && !job->capture.valid) throw std::runtime_error("Motion tracking requires valid driver timestamps");
+                double timestamp=camera?job->capture.frame_ms/1000.:index/fps;
+                ntracks=motion_update(tracker.get(),job->boxes.data(),job->n,job->warp.data(),job->gmc_quality,timestamp,pairs.data(),100);
+            } else ntracks=track_update(tracker.get(),job->boxes.data(),job->n,job->warp.data(),pairs.data(),100);
             if(ntracks<0) throw std::runtime_error(track_error());
         }
         double association_ms=ms(association_start),latency=ms(job->begin);
@@ -441,7 +460,9 @@ int run(const Args& args) {
             }
             out<<"],\"warp\":";
             if(flow) {out<<'[';for(int r=0;r<2;++r) {if(r) out<<',';out<<'[';for(int c=0;c<3;++c) {if(c) out<<',';out<<job->warp[3*r+c];}out<<']';}out<<']';}
-            else out<<"null";out<<"}\n";
+            else out<<"null";
+            if(motion_update) out<<",\"gmc_quality\":"<<job->gmc_quality<<",\"source_timestamp_seconds\":"<<(camera?job->capture.frame_ms/1000.:index/fps);
+            out<<"}\n";
         }
         detections+=job->n;tracks+=ntracks;bad+=job->bad;
         {std::lock_guard<std::mutex> lock(work.mutex);--work.inflight;work.cv.notify_all();}
@@ -471,6 +492,7 @@ int run(const Args& args) {
     if(args.decoder=="ffmpeg") out<<",\"software_decode_threads\":"<<args.decode_threads
         <<",\"software_decode_threading\":"<<quote(args.decode_threading);
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));
+    out<<",\"tracking_algorithm\":"<<quote(args.tracking);
     out<<",\"args\":{\"conf\":"<<args.conf<<",\"iou\":"<<args.iou<<",\"actual_conf_float32\":"<<float(args.conf)<<",\"actual_iou_float32\":"<<float(args.iou)<<",\"workers\":"<<args.workers<<",\"inflight\":"<<args.inflight<<",\"warmup\":"<<args.warmup<<",\"detector_only\":"<<(args.detector_only?"true":"false")<<",\"pyramid_cache\":"<<(args.pyramid_cache?"true":"false")<<",\"cpus\":"<<quote(args.cpus)<<",\"video\":"<<quote(args.video)<<",\"model\":"<<quote(args.model)<<",\"save_observations\":"<<(args.save?"true":"false")<<'}';
     out<<",\"input_wh\":["<<input_width<<','<<input_height<<"],\"preprocess_effective\":"
        <<quote(fused_half?"fused_half":args.preprocess=="fused"?"opencv_fallback":args.preprocess)
@@ -488,7 +510,7 @@ int run(const Args& args) {
     }
     out<<",\"hardware_before\":"<<before<<",\"hardware_after\":"<<hardware()<<",\"hardware_samples\":[";
     for(size_t i=0;i<samples.size();++i) {if(i) out<<',';out<<samples[i];}
-    out<<"],\"scope\":"<<quote(camera?"Native live raw8 camera + RKNN + GMC + Dist. Dropped frames explicitly counted. No display/encoding. Tracker thresholds unchanged; live tracking accuracy not validated.":"Native C++ video pipeline; no Python, cached detections, frame skipping, rendering or encoding.")<<"}\n";out.close();
+    out<<"],\"scope\":"<<quote(camera?"Native live raw8 camera + RKNN + GMC + selected C++ tracker. Dropped frames explicitly counted. No display/encoding; live tracking accuracy not validated.":"Native C++ video pipeline; no Python, cached detections, frame skipping, rendering or encoding.")<<"}\n";out.close();
     std::cout<<"{\"event\":\"complete\",\"frames\":"<<total<<",\"fps\":"<<(total-args.warmup)/seconds<<'}'<<std::endl;
     return 0;
 }

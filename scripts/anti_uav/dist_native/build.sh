@@ -5,6 +5,8 @@ OUT="${1:?Output directory required}"
 mkdir -p "$OUT"
 g++ -std=c++17 -O3 -DNDEBUG -ffp-contract=off -fPIC -shared \
   "$HERE/tracker.cpp" "$HERE/third_party/lap/lapjv.cpp" -o "$OUT/libdist_tracker.so"
+g++ -std=c++17 -O3 -DNDEBUG -ffp-contract=off -fPIC -shared \
+  "$HERE/motion_tracker.cpp" "$HERE/third_party/lap/lapjv.cpp" -o "$OUT/libmotion_tracker.so"
 if [[ -f "$HERE/gmc.cpp" ]]; then
   g++ -std=c++17 -O3 -DNDEBUG -ffp-contract=off -fPIC -shared \
     $(pkg-config --cflags opencv4) "$HERE/gmc.cpp" -o "$OUT/libdist_gmc.so" \

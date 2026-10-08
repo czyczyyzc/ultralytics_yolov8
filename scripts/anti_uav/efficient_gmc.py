@@ -16,6 +16,8 @@ class EfficientGMC:
         self.resize_first = resize_first
         self.previous = self.points = None
         self.index = 0
+        self.last_quality = 0.
+        self.last_meta = dict(estimated=False, support=0, inlier_ratio=0.)
         self.counts = dict(frames=0, estimated=0, identity_fallback=0, refreshes=0)
         self.seconds = dict(preprocess=0., optical_flow=0., ransac=0., features=0.)
 
@@ -44,6 +46,8 @@ class EfficientGMC:
         warp = np.eye(2, 3, dtype=np.float64)
         next_points = None
         accepted = False
+        self.last_quality = 0.
+        self.last_meta = dict(estimated=False, support=0, inlier_ratio=0.)
         if self.previous is not None and self.previous.shape == gray.shape and self.points is not None and len(self.points) >= 6:
             start = time.perf_counter()
             moved, status, _ = cv2.calcOpticalFlowPyrLK(self.previous, gray, self.points, None,
@@ -68,6 +72,9 @@ class EfficientGMC:
                             warp[:,:2] = np.diag([sx,sy]) @ small[:,:2] @ np.diag([1/sx,1/sy])
                             warp[:,2] = small[:,2] * [sx,sy]
                             next_points, accepted = after[mask].copy(), True
+                            support, ratio = int(mask.sum()), float(mask.mean())
+                            self.last_quality = min(1., support/24)*ratio
+                            self.last_meta = dict(estimated=True, support=support, inlier_ratio=ratio)
         if accepted:
             self.counts["estimated"] += 1
         elif self.index:

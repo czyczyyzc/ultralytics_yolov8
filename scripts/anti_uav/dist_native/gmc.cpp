@@ -24,6 +24,7 @@ struct GMC {
     std::vector<cv::Mat> previous_pyramid,current_pyramid;
     std::array<uint64_t,4> counts{};
     std::array<double,5> seconds{};
+    std::array<double,3> quality{}; // confidence score, inlier count, inlier ratio
     GMC(int w,int c,int r,bool cache,bool resize):width(w),corners(c),refresh(r),cached(cache),resize_first(resize) {
         if(w<64 || c<8 || r<1) throw std::runtime_error("Invalid GMC budget");
         cv::setNumThreads(1);
@@ -52,6 +53,7 @@ struct GMC {
         seconds[0]+=elapsed(start);
         const double identity[]={1,0,0,0,1,0};std::copy(identity,identity+6,warp);
         bool accepted=false,built=false;
+        quality={0,0,0};
         std::vector<cv::Point2f> next_points;
         if(!previous.empty() && previous.size()==current.size() && points.size()>=6) {
             std::vector<cv::Point2f> moved;
@@ -90,6 +92,8 @@ struct GMC {
                         warp[5]=small.at<double>(1,2)*sy;
                         for(size_t i=0;i<after.size();++i) if(inliers.at<uchar>(int(i))) next_points.push_back(after[i]);
                         accepted=true;
+                        double ratio=double(n)/after.size();
+                        quality={std::min(1.,n/24.)*ratio,double(n),ratio};
                     }
                 }
             }
@@ -129,5 +133,9 @@ void gmc_stats(void* p,uint64_t* counts,double* seconds) {
     auto& gmc=*static_cast<GMC*>(p);
     std::copy(gmc.counts.begin(),gmc.counts.end(),counts);
     std::copy(gmc.seconds.begin(),gmc.seconds.end(),seconds);
+}
+void gmc_quality(void* p,double* quality) {
+    auto& gmc=*static_cast<GMC*>(p);
+    std::copy(gmc.quality.begin(),gmc.quality.end(),quality);
 }
 }

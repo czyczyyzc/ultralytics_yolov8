@@ -1,0 +1,173 @@
+import shutil
+import subprocess
+from pathlib import Path
+
+import cv2
+import numpy as np
+import pytest
+
+from scripts.anti_uav.efficient_gmc import EfficientGMC
+from scripts.anti_uav.motion_native_runtime import DEFAULTS, NativeMotion
+
+ROOT = Path(__file__).resolve().parents[1]
+IDENTITY = np.eye(2, 3)
+
+
+@pytest.fixture(scope="session")
+def library(tmp_path_factory):
+    compiler = shutil.which("c++") or shutil.which("g++")
+    if not compiler:
+        pytest.skip("A C++17 compiler is required")
+    output = tmp_path_factory.mktemp("motion_native") / "libmotion_tracker.so"
+    src = ROOT / "scripts/anti_uav/dist_native"
+    subprocess.run([compiler, "-std=c++17", "-O2", "-ffp-contract=off", "-shared", "-fPIC",
+        str(src / "motion_tracker.cpp"), str(src / "third_party/lap/lapjv.cpp"), "-o", str(output)], check=True)
+    return output
+
+
+def boxes(x, y=100, size=4, score=.9):
+    return [[x, y, x+size, y+size, score]]
+
+
+@pytest.mark.parametrize("fps,step", [(30., 12.), (100., 8.)])
+def test_small_nonoverlap_motion_and_maneuver_keep_id(library, fps, step):
+    tracker = NativeMotion(library, fps)
+    try:
+        for i in range(30):
+            jump = 40 if fps==30 else 15
+            x = 100+i*step+(jump if i>=12 else 0)
+            detections = boxes(x)
+            output = tracker.update(detections, IDENTITY, 1., i/fps)
+            if i==0:
+                assert not output
+            else:
+                assert len(output)==1 and output[0]["id"]==1, (i, output)
+                assert output[0]["box"]==detections[0][:4]
+        assert tracker.stats()["zero_iou_matches"]>0
+        assert tracker.stats()["allocated_ids"]==1
+    finally:
+        tracker.close()
+
+
+def test_short_gap_has_no_predicted_output_then_recovers_id(library):
+    tracker = NativeMotion(library)
+    try:
+        assert not tracker.update(boxes(100), IDENTITY, 0., 0)
+        assert tracker.update(boxes(110), IDENTITY, 0., 1/30)[0]["id"]==1
+        assert not tracker.update([], IDENTITY, 0., 2/30)
+        assert tracker.update(boxes(130), IDENTITY, 0., 3/30)[0]["id"]==1
+    finally:
+        tracker.close()
+
+
+def test_single_frame_false_positive_is_never_confirmed(library):
+    tracker = NativeMotion(library)
+    try:
+        assert not tracker.update(boxes(100), IDENTITY, 0., 0)
+        for i in range(1, 8):
+            assert not tracker.update([], IDENTITY, 0., i/30)
+        assert tracker.stats()["confirmations"]==0
+    finally:
+        tracker.close()
+
+
+def test_expiry_does_not_force_old_identity(library):
+    tracker = NativeMotion(library)
+    try:
+        tracker.update(boxes(100), IDENTITY, 0., 0)
+        assert tracker.update(boxes(100), IDENTITY, 0., .03)[0]["id"]==1
+        assert not tracker.update(boxes(100), IDENTITY, 0., 2)
+        assert tracker.update(boxes(100), IDENTITY, 0., 2.03)[0]["id"]==2
+    finally:
+        tracker.close()
+
+
+def test_camera_warp_compensates_pending_and_confirmed_tracks(library):
+    tracker = NativeMotion(library)
+    warp = np.array([[1., 0., 8.], [0., 1., -3.]])
+    try:
+        for i in range(15):
+            output = tracker.update(boxes(100+8*i, 100-3*i), warp if i else IDENTITY, 1., i/30)
+            if i:
+                assert len(output)==1 and output[0]["id"]==1
+    finally:
+        tracker.close()
+
+
+def test_ambiguous_observation_is_not_forced_or_reborn(library):
+    tracker = NativeMotion(library)
+    try:
+        pair = boxes(100)+boxes(108)
+        tracker.update(pair, IDENTITY, 0., 0)
+        assert {t["id"] for t in tracker.update(pair, IDENTITY, 0., .03)}=={1, 2}
+        assert not tracker.update(boxes(104), IDENTITY, 0., .06)
+        assert tracker.stats()["allocated_ids"]==2
+        assert tracker.stats()["ambiguous_columns"]>0
+    finally:
+        tracker.close()
+
+
+def test_far_distractor_cannot_take_existing_identity(library):
+    tracker = NativeMotion(library)
+    try:
+        tracker.update(boxes(100), IDENTITY, 0., 0)
+        assert tracker.update(boxes(110), IDENTITY, 0., .03)[0]["id"]==1
+        assert not tracker.update(boxes(1000), IDENTITY, 0., .06)
+        output = tracker.update(boxes(1000), IDENTITY, 0., .09)
+        assert len(output)==1 and output[0]["id"]==2
+    finally:
+        tracker.close()
+
+
+def test_maneuver_beyond_configured_search_gate_is_not_forced(library):
+    tracker = NativeMotion(library, 100.)
+    try:
+        for i in range(12):
+            tracker.update(boxes(100+8*i), IDENTITY, 1., i/100)
+        # Innovation 40px exceeds the default 30px search budget at dt=.01s.
+        assert not tracker.update(boxes(100+12*8+40), IDENTITY, 1., .12)
+    finally:
+        tracker.close()
+
+
+def test_all_absolute_box_sizes_are_supported(library):
+    tracker = NativeMotion(library)
+    large = [[10, 10, 1810, 1010, .9]]
+    try:
+        assert not tracker.update(large, IDENTITY, 0., 0)
+        output = tracker.update(large, IDENTITY, 0., .03)
+        assert len(output)==1 and output[0]["box"]==large[0][:4]
+    finally:
+        tracker.close()
+
+
+def test_invalid_timestamps_scores_and_quality_fail(library):
+    tracker = NativeMotion(library)
+    try:
+        tracker.update(boxes(100), IDENTITY, 0., 0)
+        with pytest.raises(RuntimeError, match="timestamps"):
+            tracker.update(boxes(100), IDENTITY, 0., 0)
+        with pytest.raises(RuntimeError, match="quality"):
+            tracker.update(boxes(100), IDENTITY, float("nan"), .03)
+        with pytest.raises(RuntimeError, match="box/score"):
+            tracker.update(boxes(100, score=1.1), IDENTITY, 0., .03)
+        tracker.update(boxes(100), IDENTITY, 0., .03)
+    finally:
+        tracker.close()
+    with pytest.raises(RuntimeError, match="configuration"):
+        NativeMotion(library, config=dict(DEFAULTS, confirmation_hits=0))
+
+
+def test_gmc_quality_distinguishes_stationary_scene_and_failed_estimate():
+    gmc = EfficientGMC(320, 128, 5, True)
+    gray = np.random.default_rng(84).integers(0, 256, (180, 320), dtype=np.uint8)
+    gmc.apply(gray)
+    assert gmc.last_quality==0
+    stationary = gmc.apply(gray)
+    np.testing.assert_allclose(stationary, IDENTITY, atol=1e-5)
+    assert gmc.last_quality>0 and gmc.last_meta["estimated"]
+    blank = np.zeros_like(gray)
+    gmc.apply(blank)
+    failed = gmc.apply(blank)
+    np.testing.assert_array_equal(failed, IDENTITY)
+    assert gmc.last_quality==0 and not gmc.last_meta["estimated"]

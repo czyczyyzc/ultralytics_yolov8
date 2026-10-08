@@ -1,0 +1,383 @@
+{
+  "scope": "Experimental native motion-aware balanced tracker. Same detector caches and GMC warps; no predicted boxes, ID remapping, or detector retraining.",
+  "clip000002": {
+    "p3": {
+      "full": {
+        "detector": {
+          "boxes": 547,
+          "frames_with_output": 504
+        },
+        "dist": {
+          "boxes": 445,
+          "frames_with_output": 442
+        },
+        "motion": {
+          "boxes": 475,
+          "frames_with_output": 467
+        }
+      },
+      "13_14_seconds": {
+        "detector": {
+          "boxes": 31,
+          "frames_with_output": 30
+        },
+        "dist": {
+          "boxes": 23,
+          "frames_with_output": 23
+        },
+        "motion": {
+          "boxes": 30,
+          "frames_with_output": 30
+        }
+      },
+      "13_14_333_seconds": {
+        "detector": {
+          "boxes": 42,
+          "frames_with_output": 41
+        },
+        "dist": {
+          "boxes": 23,
+          "frames_with_output": 23
+        },
+        "motion": {
+          "boxes": 41,
+          "frames_with_output": 41
+        }
+      },
+      "dominant_uav_keeps_ID1_frames390_430": true,
+      "motion_summary": {
+        "config": {
+          "high": 0.03,
+          "low": 0.01,
+          "birth": 0.1,
+          "expiry_seconds": 1.0,
+          "nominal_fps": 30.0,
+          "localization_floor_px": 1.5,
+          "acceleration_std_px_s2": 180.0,
+          "unknown_gmc_speed_px_s": 1500.0,
+          "max_innovation_speed_px_s": 3000.0,
+          "max_radius_px": 240.0,
+          "nis_gate": 16.0,
+          "confirmation_hits": 3,
+          "confirmation_window": 4,
+          "ambiguity_margin": 0.03
+        },
+        "provenance": {
+          "source_sha256": "08c88f20b5b7a0793ad3a582303a048af251ff233dc063584207f8be667ebf0b",
+          "weights_sha256": "761ba22431d2062a9fde1cfda08c5e394e2a6f34b60b9328b50ae9860e0b4471",
+          "detector_cache_sha256": "82b17f1f42f66d7e70e4af7296b26737521a4ea81ab652bc374fddf5561ca0d4",
+          "tracker_library": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/motion_aware_tracker_20261008/native/final/libmotion_tracker.so",
+          "tracker_library_sha256": "9684e235aeba09dc607d1906477df23268a5044d67618157157ed1e249c27433",
+          "gmc_implementation_sha256": "874723dce75bcb70d43aaff0a7d0a0e32973d02c0d638326c35564b156533e13",
+          "tracker_source_sha256": "efd36fe2076ced1fca1a0c31b05be53ca446ce2e0355dd6155fc47888f420de2",
+          "adapter_sha256": "c3c0c9486fd87eb54fac1827473c9fc3c6746c613074155a4d401525aff6692d",
+          "git_commit": "2de5b400b27d1a3129983796980e5ed312c2dd81"
+        },
+        "detector_cache_sha256": "82b17f1f42f66d7e70e4af7296b26737521a4ea81ab652bc374fddf5561ca0d4",
+        "gmc": "EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)",
+        "tracker_implementation": "native C++ motion-aware-v1; NOT public Dist/OC-SORT parity",
+        "ground_truth_used": false,
+        "inference_rerun": false,
+        "predicted_boxes_shown": false,
+        "id_remapping": false,
+        "frame_stride": 1,
+        "fps": 30.0,
+        "frames": 1800,
+        "cached_gmc": false,
+        "scope": "Offline server visualization; not board throughput or labelled tracking accuracy",
+        "gmc_counts": {
+          "frames": 1800,
+          "estimated": 1519,
+          "identity_fallback": 280,
+          "refreshes": 847
+        },
+        "displayed_tracks": 475,
+        "frames_with_track": 467,
+        "visible_ids": 8,
+        "maximum_visible_id": 14,
+        "tracks_sha256": "f6b05fb2af34d8fcc8b375d7e13789a2662aa0f141f799a66a6fa911c1b13e3b",
+        "association_bridge_mean_ms": 0.030145685498913128,
+        "association_bridge_p95_ms": 0.04228129982948303,
+        "timing_scope": "Server CPU association plus ctypes/output conversion; NOT board pipeline FPS",
+        "seconds": 5.8,
+        "motion_stats": {
+          "frames": 1800,
+          "matches": 491,
+          "zero_iou_matches": 9,
+          "allocated_ids": 25,
+          "confirmations": 8,
+          "ambiguous_columns": 0,
+          "expired_tracks": 25,
+          "live_tracks": 0
+        }
+      }
+    },
+    "p2p3": {
+      "full": {
+        "detector": {
+          "boxes": 666,
+          "frames_with_output": 515
+        },
+        "dist": {
+          "boxes": 513,
+          "frames_with_output": 447
+        },
+        "motion": {
+          "boxes": 536,
+          "frames_with_output": 473
+        }
+      },
+      "13_14_seconds": {
+        "detector": {
+          "boxes": 32,
+          "frames_with_output": 30
+        },
+        "dist": {
+          "boxes": 23,
+          "frames_with_output": 23
+        },
+        "motion": {
+          "boxes": 30,
+          "frames_with_output": 30
+        }
+      },
+      "13_14_333_seconds": {
+        "detector": {
+          "boxes": 43,
+          "frames_with_output": 41
+        },
+        "dist": {
+          "boxes": 23,
+          "frames_with_output": 23
+        },
+        "motion": {
+          "boxes": 41,
+          "frames_with_output": 41
+        }
+      },
+      "dominant_uav_keeps_ID1_frames390_430": true,
+      "motion_summary": {
+        "config": {
+          "high": 0.03,
+          "low": 0.01,
+          "birth": 0.1,
+          "expiry_seconds": 1.0,
+          "nominal_fps": 30.0,
+          "localization_floor_px": 1.5,
+          "acceleration_std_px_s2": 180.0,
+          "unknown_gmc_speed_px_s": 1500.0,
+          "max_innovation_speed_px_s": 3000.0,
+          "max_radius_px": 240.0,
+          "nis_gate": 16.0,
+          "confirmation_hits": 3,
+          "confirmation_window": 4,
+          "ambiguity_margin": 0.03
+        },
+        "provenance": {
+          "source_sha256": "08c88f20b5b7a0793ad3a582303a048af251ff233dc063584207f8be667ebf0b",
+          "weights_sha256": "8f125903f223810c611bb97f5de3a51c062dab6c4cb3f67420d3d92a3100c1dd",
+          "detector_cache_sha256": "ec816cbebcf50635ab3231a5b99e77a7c06c48c6aa430118e80b6bd966b3a7ca",
+          "tracker_library": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/motion_aware_tracker_20261008/native/final/libmotion_tracker.so",
+          "tracker_library_sha256": "9684e235aeba09dc607d1906477df23268a5044d67618157157ed1e249c27433",
+          "gmc_implementation_sha256": "874723dce75bcb70d43aaff0a7d0a0e32973d02c0d638326c35564b156533e13",
+          "tracker_source_sha256": "efd36fe2076ced1fca1a0c31b05be53ca446ce2e0355dd6155fc47888f420de2",
+          "adapter_sha256": "c3c0c9486fd87eb54fac1827473c9fc3c6746c613074155a4d401525aff6692d",
+          "git_commit": "2de5b400b27d1a3129983796980e5ed312c2dd81"
+        },
+        "detector_cache_sha256": "ec816cbebcf50635ab3231a5b99e77a7c06c48c6aa430118e80b6bd966b3a7ca",
+        "gmc": "EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)",
+        "tracker_implementation": "native C++ motion-aware-v1; NOT public Dist/OC-SORT parity",
+        "ground_truth_used": false,
+        "inference_rerun": false,
+        "predicted_boxes_shown": false,
+        "id_remapping": false,
+        "frame_stride": 1,
+        "fps": 30.0,
+        "frames": 1800,
+        "cached_gmc": false,
+        "scope": "Offline server visualization; not board throughput or labelled tracking accuracy",
+        "gmc_counts": {
+          "frames": 1800,
+          "estimated": 1519,
+          "identity_fallback": 280,
+          "refreshes": 847
+        },
+        "displayed_tracks": 536,
+        "frames_with_track": 473,
+        "visible_ids": 12,
+        "maximum_visible_id": 23,
+        "tracks_sha256": "2c73a00fba18e39d1f0557f711b407f0b3afeb27f82986550bb8b365726d664d",
+        "association_bridge_mean_ms": 0.0308265702592002,
+        "association_bridge_p95_ms": 0.04310477524995803,
+        "timing_scope": "Server CPU association plus ctypes/output conversion; NOT board pipeline FPS",
+        "seconds": 5.68,
+        "motion_stats": {
+          "frames": 1800,
+          "matches": 560,
+          "zero_iou_matches": 8,
+          "allocated_ids": 34,
+          "confirmations": 12,
+          "ambiguous_columns": 1,
+          "expired_tracks": 34,
+          "live_tracks": 0
+        }
+      }
+    }
+  },
+  "Video00009": {
+    "dist": {
+      "metrics": {
+        "tp": 5286,
+        "fp": 2987,
+        "fn": 2696,
+        "frames_with_output": 8092,
+        "outputs": 8273,
+        "precision": 0.638945968814215,
+        "recall": 0.662240040090203,
+        "f1": 0.6503844970778222
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 10,
+        "continuous_gt_id_changes": 6,
+        "adjacent_tp_frame_id_changes": 2
+      },
+      "summary": {
+        "config": {
+          "tracker_type": "botsort",
+          "track_high_thresh": 0.03,
+          "track_low_thresh": 0.01,
+          "new_track_thresh": 0.1,
+          "track_buffer": 30,
+          "match_thresh": 0.8,
+          "fuse_score": false,
+          "gmc_method": "sparseOptFlow",
+          "proximity_thresh": 0.5,
+          "appearance_thresh": 0.25,
+          "with_reid": false
+        },
+        "provenance": {
+          "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+          "weights_sha256": "61e9a3669f964e59e96e9b2a24bf7705b945e184ed5a0628be33ee44d8b4bb59",
+          "detector_cache_sha256": "c1edc4cd5b13756389a33351d631066cc7c4bb9b1c19420ceae33233112ddc29",
+          "tracker_library": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/motion_aware_tracker_20261008/native/libmotion_tracker.so",
+          "tracker_library_sha256": "188af8ff89b0dc3245ae8cc827dead3c325b5d7f1bd4b090aeb2c1dc2bad127a",
+          "gmc_implementation_sha256": "874723dce75bcb70d43aaff0a7d0a0e32973d02c0d638326c35564b156533e13",
+          "tracker_source_sha256": "688eee6cc96c1dbbdcedb17e08316d6036fba44a33f9c772c76f301884c651cd",
+          "adapter_sha256": "563c502d1270d4105778623f77c33df57bdfe1bf35370ac086117746e639ab61",
+          "git_commit": "465d8fb67a32155a6f3d35f87fd4749277cbc768"
+        },
+        "detector_cache_sha256": "c1edc4cd5b13756389a33351d631066cc7c4bb9b1c19420ceae33233112ddc29",
+        "gmc": "EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)",
+        "tracker_implementation": "native C++ Dist; no ReID or score fusion",
+        "ground_truth_used": false,
+        "inference_rerun": false,
+        "predicted_boxes_shown": false,
+        "id_remapping": false,
+        "frame_stride": 1,
+        "fps": 100.0,
+        "frames": 14201,
+        "scope": "Offline server visualization; not board throughput or labelled tracking accuracy",
+        "gmc_counts": {
+          "frames": 14201,
+          "estimated": 14097,
+          "identity_fallback": 103,
+          "refreshes": 3446
+        },
+        "displayed_tracks": 8274,
+        "frames_with_track": 8093,
+        "visible_ids": 58,
+        "maximum_visible_id": 317,
+        "tracks_sha256": "e065d44692e66ac32f91536911dc4cec37f9b3a21ffd442d2dc0843bb8845481",
+        "association_bridge_mean_ms": 0.059985095392011537,
+        "association_bridge_p95_ms": 0.08495524525642395,
+        "timing_scope": "Server CPU association plus ctypes/output conversion; NOT board pipeline FPS",
+        "seconds": 45.09
+      }
+    },
+    "motion": {
+      "metrics": {
+        "tp": 5284,
+        "fp": 3080,
+        "fn": 2698,
+        "frames_with_output": 8106,
+        "outputs": 8364,
+        "precision": 0.6317551410808225,
+        "recall": 0.6619894763217239,
+        "f1": 0.6465190260614218
+      },
+      "identity_diagnostics": {
+        "all_matched_observation_id_changes": 5,
+        "continuous_gt_id_changes": 2,
+        "adjacent_tp_frame_id_changes": 0
+      },
+      "summary": {
+        "config": {
+          "high": 0.03,
+          "low": 0.01,
+          "birth": 0.1,
+          "expiry_seconds": 1.0,
+          "nominal_fps": 100.0,
+          "localization_floor_px": 1.5,
+          "acceleration_std_px_s2": 180.0,
+          "unknown_gmc_speed_px_s": 1500.0,
+          "max_innovation_speed_px_s": 3000.0,
+          "max_radius_px": 240.0,
+          "nis_gate": 16.0,
+          "confirmation_hits": 3,
+          "confirmation_window": 4,
+          "ambiguity_margin": 0.03
+        },
+        "provenance": {
+          "source_sha256": "2629efe7da36dfd079985344653a7a4ecaa25f651954e5258a53c50e960d6b86",
+          "weights_sha256": "61e9a3669f964e59e96e9b2a24bf7705b945e184ed5a0628be33ee44d8b4bb59",
+          "detector_cache_sha256": "c1edc4cd5b13756389a33351d631066cc7c4bb9b1c19420ceae33233112ddc29",
+          "tracker_library": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/motion_aware_tracker_20261008/native/final/libmotion_tracker.so",
+          "tracker_library_sha256": "9684e235aeba09dc607d1906477df23268a5044d67618157157ed1e249c27433",
+          "gmc_implementation_sha256": "874723dce75bcb70d43aaff0a7d0a0e32973d02c0d638326c35564b156533e13",
+          "tracker_source_sha256": "efd36fe2076ced1fca1a0c31b05be53ca446ce2e0355dd6155fc47888f420de2",
+          "adapter_sha256": "c3c0c9486fd87eb54fac1827473c9fc3c6746c613074155a4d401525aff6692d",
+          "git_commit": "2de5b400b27d1a3129983796980e5ed312c2dd81",
+          "gmc_cache_sha256": "e065d44692e66ac32f91536911dc4cec37f9b3a21ffd442d2dc0843bb8845481"
+        },
+        "detector_cache_sha256": "c1edc4cd5b13756389a33351d631066cc7c4bb9b1c19420ceae33233112ddc29",
+        "gmc": "EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)",
+        "tracker_implementation": "native C++ motion-aware-v1; NOT public Dist/OC-SORT parity",
+        "ground_truth_used": false,
+        "inference_rerun": false,
+        "predicted_boxes_shown": false,
+        "id_remapping": false,
+        "frame_stride": 1,
+        "fps": 100.0,
+        "frames": 14201,
+        "cached_gmc": true,
+        "scope": "Offline server visualization; not board throughput or labelled tracking accuracy",
+        "gmc_counts": {
+          "frames": 14201,
+          "estimated": 14097,
+          "identity_fallback": 103,
+          "refreshes": 3446
+        },
+        "displayed_tracks": 8365,
+        "frames_with_track": 8107,
+        "visible_ids": 41,
+        "maximum_visible_id": 162,
+        "tracks_sha256": "f4793fea8a7cd13779dc6f477b140e25b43079afe08fa1fe557b1ef582793229",
+        "association_bridge_mean_ms": 0.013059325965850523,
+        "association_bridge_p95_ms": 0.017369166016578674,
+        "timing_scope": "Server CPU association plus ctypes/output conversion; NOT board pipeline FPS",
+        "seconds": 1.57,
+        "motion_stats": {
+          "frames": 14201,
+          "matches": 8496,
+          "zero_iou_matches": 46,
+          "allocated_ids": 163,
+          "confirmations": 41,
+          "ambiguous_columns": 16,
+          "expired_tracks": 159,
+          "live_tracks": 4
+        }
+      }
+    },
+    "scope": "Validation regression using fixed OLD28 P2+P3 FP32 detections, 14199 reviewed frames/7982 GT. Used during tracker development, NOT independent test or standard MOT identity metrics."
+  }
+}

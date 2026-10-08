@@ -183,3 +183,25 @@ def test_gmc_quality_distinguishes_stationary_scene_and_failed_estimate():
     failed = gmc.apply(blank)
     np.testing.assert_array_equal(failed, IDENTITY)
     assert gmc.last_quality==0 and not gmc.last_meta["estimated"]
+
+
+def test_weak_observations_need_cumulative_confidence_evidence(library):
+    tracker = NativeMotion(library)
+    try:
+        assert not tracker.update(boxes(100, score=.11), IDENTITY, 0., 0)
+        assert not tracker.update(boxes(100, score=.04), IDENTITY, 0., .03)
+        assert not tracker.update(boxes(100, score=.04), IDENTITY, 0., .06)
+        assert tracker.update(boxes(100, score=.4), IDENTITY, 0., .09)[0]["id"]==1
+    finally:
+        tracker.close()
+
+
+def test_float32_threshold_boundaries_are_consistent(library):
+    tracker = NativeMotion(library, config=dict(DEFAULTS, birth=.03))
+    try:
+        assert not tracker.update(boxes(100, score=.03), IDENTITY, 1., 0)
+        assert tracker.update(boxes(100, score=.03), IDENTITY, 1., .03)[0]["id"]==1
+    finally:
+        tracker.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        tracker.stats()

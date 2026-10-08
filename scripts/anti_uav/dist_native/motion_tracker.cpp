@@ -31,6 +31,7 @@ struct Target {
     M8 covariance;
     std::deque<Observation> history;
     std::deque<unsigned char> hits{1};
+    std::deque<double> confidence;
     Target(const Detection& d,int fid,int tid,double time,const Config& c):
         id(tid),index(d.index),frame(fid),last_time(time) {
         for(int i=0;i<4;++i) mean(i,0)=d.measurement[i];
@@ -40,6 +41,7 @@ struct Target {
             covariance(i,i)=sigma*sigma;
         }
         history.push_back({time,{mean(0,0),mean(1,0),mean(2,0),mean(3,0)}});
+        confidence.push_back(d.score);
         confirmed=c.v[11]==1;
     }
     std::array<float,4> bounds() const {
@@ -78,6 +80,7 @@ struct Target {
         for(int i=0;i<2;++i) covariance(i,i)+=camera_sigma*camera_sigma+c.v[5]*c.v[5]*dt*c.v[4];
         mean(2,0)=std::max(.01,mean(2,0));mean(3,0)=std::max(.01,mean(3,0));
         hits.push_back(0);if(hits.size()>size_t(c.v[12])) hits.pop_front();++age;
+        confidence.push_back(0);if(confidence.size()>size_t(c.v[12])) confidence.pop_front();
     }
     double cost(const Detection& d,double time,int fid,const Config& c) const {
         double dx=d.measurement[0]-mean(0,0),dy=d.measurement[1]-mean(1,0);
@@ -180,7 +183,10 @@ struct Target {
             }
         }
         hits.back()=1;
-        if(std::accumulate(hits.begin(),hits.end(),0)>=int(c.v[11])) confirmed=true;
+        confidence.back()=d.score;
+        int support=std::accumulate(hits.begin(),hits.end(),0);
+        double evidence=std::accumulate(confidence.begin(),confidence.end(),0.)/std::max(support,1);
+        if(support>=int(c.v[11]) && evidence>=float(c.v[2])) confirmed=true;
         frame=fid;index=d.index;last_time=time;
     }
 };
@@ -196,7 +202,7 @@ struct Tracker {
         constexpr double limit=.70;
         std::vector<int> rows,cols;
         for(size_t j=0;j<dets.size();++j)
-            if(!used_dets[j] && (low?dets[j].score<config.v[0]:dets[j].score>=config.v[0])) cols.push_back(j);
+            if(!used_dets[j] && (low?dets[j].score<float(config.v[0]):dets[j].score>=float(config.v[0]))) cols.push_back(j);
         for(size_t i=0;i<targets.size();++i) if(!used_targets[i] && (!low || targets[i].confirmed)) rows.push_back(i);
         if(rows.empty() || cols.empty()) return;
         std::vector<std::vector<double>> cost(rows.size(),std::vector<double>(cols.size(),100.));
@@ -257,11 +263,11 @@ struct Tracker {
         }),targets.end());
         for(auto& t:targets) t.predict(dt,warp,quality,config);
         std::vector<Detection> dets;
-        for(int i=0;i<n;++i) if(boxes[5*i+4]>config.v[1]) dets.emplace_back(boxes+5*i,i);
+        for(int i=0;i<n;++i) if(boxes[5*i+4]>float(config.v[1])) dets.emplace_back(boxes+5*i,i);
         std::vector<bool> used_targets(targets.size()),used_dets(dets.size());
         associate(dets,time,used_targets,used_dets,false);
         associate(dets,time,used_targets,used_dets,true);
-        for(size_t j=0;j<dets.size();++j) if(!used_dets[j] && dets[j].score>=config.v[2]) {
+        for(size_t j=0;j<dets.size();++j) if(!used_dets[j] && dets[j].score>=float(config.v[2])) {
             targets.emplace_back(dets[j],frame,next_id++,time,config);++counts[3];
         }
         counts[7]=targets.size();

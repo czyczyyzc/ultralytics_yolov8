@@ -50,6 +50,8 @@ class NativeMotion:
         return shown
 
     def stats(self):
+        if not self.handle:
+            raise RuntimeError("Motion tracker is closed")
         counts = np.empty(8, np.uint64)
         self.lib.motion_stats(self.handle, counts.ctypes.data)
         return dict(zip(("frames", "matches", "zero_iou_matches", "allocated_ids", "confirmations",

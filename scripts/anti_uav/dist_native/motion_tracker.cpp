@@ -103,7 +103,13 @@ struct Target {
         double nis=(e*dx*dx-2*b*dx*dy+a*dy*dy)/determinant;
         double gap=std::max(1./c.v[4],time-last_time);
         double max_variance=.5*(a+e+std::hypot(a-e,2*b));
-        double radius=std::min(c.v[9],std::max({12.,c.v[8]*gap+3*std::hypot(sx,sy),
+        const auto& observed=history.back().box;
+        double extent=std::max(std::hypot(d.measurement[2],d.measurement[3]),
+                               std::hypot(observed[2],observed[3]));
+        // A fixed pixel cap truncates valid large-target / uncertain-camera continuations.
+        // Extra camera allowance remains bounded; small stationary-scene distractors do not gain it.
+        double cap=std::max({c.v[9],2*extent,std::min(3*camera_sigma,4*c.v[9])});
+        double radius=std::min(cap,std::max({12.,c.v[8]*gap+3*std::hypot(sx,sy),
             std::sqrt(c.v[10]*max_variance)}));
         // Score both smooth motion and a bounded maneuver hypothesis in the PRIMARY cost.
         double maneuver_sigma=radius*.25;
@@ -118,7 +124,6 @@ struct Target {
         likelihood=std::min(1.,likelihood);
         double motion_cost=std::min(1.,-2*std::log(std::max(1e-12,likelihood))/c.v[10]);
         double size_blend=std::clamp((std::sqrt(d.measurement[2]*d.measurement[3])-16.)/48.,0.,1.);
-        const auto& observed=history.back().box;
         double width=(1-size_blend)*mean(2,0)+size_blend*observed[2];
         double height=(1-size_blend)*mean(3,0)+size_blend*observed[3];
         double shape=std::abs(std::log(d.measurement[2]/std::max(.01,width)))+

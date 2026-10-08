@@ -459,3 +459,20 @@ def test_ambiguous_observations_do_not_get_fake_candidate_ids(library):
         assert o["id"] is None and o["status"]=="ambiguous"
     finally:
         tracker.close()
+
+
+@pytest.mark.parametrize("size", [8, 260])
+def test_camera_reversal_during_gmc_loss_is_not_cut_by_fixed_pixel_cap(library,size):
+    tracker=NativeMotion(library,config=dict(CAUSAL_DEFAULTS))
+    positions=[700,400,100,460,820,460,100]
+    try:
+        for i,y in enumerate(positions):
+            q=0. if i in (0,3,4) else .95
+            warp=IDENTITY.copy()
+            if q:warp[1,2]=y-positions[i-1]
+            detections=[[800,y,800+size,y+size,.9]]
+            tracker.update(detections,warp,q,i/30)
+            assert tracker.observations()[0]["id"]==1,(i,tracker.observations())
+        assert tracker.stats()["allocated_ids"]==1
+    finally:
+        tracker.close()

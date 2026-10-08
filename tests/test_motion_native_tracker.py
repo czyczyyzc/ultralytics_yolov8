@@ -313,3 +313,33 @@ def test_observation_capacity_error_and_closed_handle(library):
         tracker.update(boxes(100), IDENTITY, 0., .03)
     with pytest.raises(RuntimeError, match="closed"):
         tracker.observations()
+
+
+def test_large_target_nested_duplicate_does_not_replace_confirmed_identity(library):
+    tracker = NativeMotion(library, 100.)
+    full = [[720, 1000, 1028, 1080, .8]]
+    growing = [[664, 984, 1024, 1080, .6], [792, 1022, 1011, 1080, .2]]
+    next_frame = [[691, 990, 973, 1080, .7]]
+    try:
+        for i in range(5):
+            tracker.update(full, IDENTITY, 1., i/100)
+        matched = tracker.update(growing, IDENTITY, 1., .05)
+        assert any(t["id"]==1 and t["detection_index"]==0 for t in matched)
+        validate_observations(growing, tracker.observations(), matched, 5)
+        assert tracker.update(next_frame, IDENTITY, 1., .06)[0]["id"]==1
+    finally:
+        tracker.close()
+
+
+def test_all_observation_coverage_is_not_confirmed_tracking_accuracy():
+    from scripts.anti_uav.audit_motion_observations import coverage, labelled
+    detections = boxes(100)
+    rows = [dict(boxes_xyxy_score=detections, displayed_tracks=[], observations=[
+        dict(id=None, detection_index=0, status="pending", confirmed=False,
+            predicted=False, box=detections[0][:4], score=detections[0][4])])]
+    metrics = coverage(rows)
+    assert metrics["missing_measured_boxes"]==0
+    assert metrics["confirmed_track_boxes"]==0
+    measured = labelled(rows, {0: [detections[0][:4]]}, {0})
+    assert measured["detector_tp_without_confirmed_track_count"]==1
+    assert measured["confirmed_only_metrics"]["recall"]==0

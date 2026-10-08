@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Cached-measurement C++ kernel timing only, never camera/RKNN end-to-end latency.
-#include "motion_tracker.cpp"
+#include "motion_tracker.hpp"
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <numeric>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 struct Frame {
     double time,quality;

@@ -297,6 +297,8 @@ struct Tracker {
                 std::accumulate(t.hits.begin(),t.hits.end(),0)==0);
             if(expired) ++counts[6];return expired;
         }),targets.end());
+        std::unordered_set<int> trusted_ids;
+        for(const auto& t:targets) if(t.confirmed) trusted_ids.insert(t.id);
         for(auto& t:targets) t.predict(dt,warp,quality,config);
         std::vector<Detection> dets;
         for(int i=0;i<n;++i) if(boxes[5*i+4]>float(config.v[1])) dets.emplace_back(boxes+5*i,i);
@@ -310,9 +312,34 @@ struct Tracker {
             targets.emplace_back(dets[j],frame,next_id++,time,config);++counts[3];
             if(targets.back().confirmed) ++counts[4];
         }
+        std::vector<bool> overlap_ambiguity(targets.size(),false);
+        if(config.v[15]) for(size_t i=0;i<targets.size();++i) {
+            auto& t=targets[i];if(t.frame!=frame || trusted_ids.count(t.id)) continue;
+            const float* a=boxes+5*t.index;
+            double aw=a[2]-a[0],ah=a[3]-a[1],aa=aw*ah;
+            for(size_t j=0;j<targets.size();++j) {
+                const auto& other=targets[j];if(j==i || other.frame!=frame) continue;
+                const float* b=boxes+5*other.index;
+                double bw=b[2]-b[0],bh=b[3]-b[1],ba=bw*bh;
+                double inter=std::max(0.,double(std::min(a[2],b[2])-std::max(a[0],b[0])))*
+                    std::max(0.,double(std::min(a[3],b[3])-std::max(a[1],b[1])));
+                double iou=inter/(aa+ba-inter),containment=inter/std::min(aa,ba);
+                double center=std::hypot(double(a[0]+a[2]-b[0]-b[2]),double(a[1]+a[3]-b[1]-b[3]))*.5;
+                // Geometry cannot prove a second independent identity inside a known target.
+                // Retain the measured box, but never merge IDs or promote this overlap blindly.
+                if((iou>=.35 || containment>=.8) && std::max(aa,ba)/std::min(aa,ba)<=4 &&
+                    center<=.35*(std::hypot(aw,ah)+std::hypot(bw,bh))*.5) {
+                    overlap_ambiguity[i]=true;
+                    if(t.confirmed) {t.confirmed=false;--counts[4];}
+                    ++counts[5];break;
+                }
+            }
+        }
         for(const auto& t:targets) if(t.frame==frame)
             observations[t.index]={t.confirmed || config.v[15]?t.id:0,t.index,int(t.confirmed?
                 MotionObservationStatus::Confirmed:MotionObservationStatus::Pending)};
+        for(size_t i=0;i<targets.size();++i) if(overlap_ambiguity[i])
+            observations[targets[i].index]={0,targets[i].index,int(MotionObservationStatus::Ambiguous)};
         counts[7]=targets.size();
     }
 };

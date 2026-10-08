@@ -511,3 +511,33 @@ def test_large_stationary_target_does_not_admit_far_new_object(library):
         assert tracker.observations()[0]["id"]!=1
     finally:
         tracker.close()
+
+
+def test_overlapping_new_candidate_does_not_become_second_reliable_identity(library):
+    tracker=NativeMotion(library,config=dict(CAUSAL_DEFAULTS))
+    full=[[720,1000,1028,1080,.8]]
+    try:
+        for i in range(5):tracker.update(full,IDENTITY,1.,i/30)
+        pair=full+[[792,1022,1011,1080,.7]]
+        for i in range(5,10):
+            matched=tracker.update(pair,IDENTITY,1.,i/30)
+            assert len(matched)==1 and matched[0]["id"]==1
+            observed=tracker.observations();validate_observations(pair,observed,matched,i)
+            assert len(observed)==2 and observed[1]["id"] is None
+            assert observed[1]["status"]=="ambiguous"
+        assert tracker.stats()["confirmations"]==1
+    finally:
+        tracker.close()
+
+
+def test_previously_distinct_confirmed_targets_are_not_merged_when_overlapping(library):
+    tracker=NativeMotion(library,config=dict(CAUSAL_DEFAULTS,ambiguity_margin=0.))
+    try:
+        pair=[[100,100,200,200,.9],[300,100,400,200,.9]]
+        for i in range(5):tracker.update(pair,IDENTITY,1.,i/30)
+        close=[[140,100,240,200,.9],[200,100,300,200,.9]]
+        output=tracker.update(close,IDENTITY,0.,5/30)
+        assert {t["id"] for t in output}=={1,2}
+        assert all(o["confirmed"] for o in tracker.observations())
+    finally:
+        tracker.close()

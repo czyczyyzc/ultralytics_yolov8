@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from scripts.anti_uav.efficient_gmc import EfficientGMC
-from scripts.anti_uav.motion_native_runtime import DEFAULTS, NativeMotion
+from scripts.anti_uav.motion_native_runtime import DEFAULTS, CAUSAL_DEFAULTS, NativeMotion
 from scripts.anti_uav.render_cached_tracker_result_video import panel, validate_observations
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -284,7 +284,7 @@ def test_observation_validation_rejects_missing_boxes_and_fake_ids():
     validate_observations([detection], [valid], [], 0)
     with pytest.raises(ValueError, match="Missing"):
         validate_observations([detection], [], [], 0)
-    for change in (dict(id=1), dict(box=[100, 100, 105, 105]), dict(predicted=True),
+    for change in (dict(id=1,status="unassigned"), dict(box=[100, 100, 105, 105]), dict(predicted=True),
                    dict(detection_index=1), dict(status="confirmed", confirmed=True, id=1)):
         with pytest.raises(ValueError):
             validate_observations([detection], [dict(valid, **change)], [], 0)
@@ -402,3 +402,60 @@ def test_top_observation_diagnostic_rejects_unsorted_detection_scores():
                  observations=[dict(detection_index=0,id=1),dict(detection_index=1,id=2)])]
     with pytest.raises(ValueError,match="score-sorted"):
         top_observation_ids(rows, [0])
+
+
+def test_candidate_id_is_not_confirmation_and_survives_promotion(library):
+    tracker = NativeMotion(library, config=dict(CAUSAL_DEFAULTS))
+    try:
+        for i,score in enumerate((.03,.04,.30)):
+            output = tracker.update(boxes(100,score=score), IDENTITY, 1., i/30)
+            observed = tracker.observations()
+            assert observed[0]["id"]==1
+            assert observed[0]["confirmed"]==(i==2)
+            assert observed[0]["status"]==("confirmed" if i==2 else "pending")
+            validate_observations(boxes(100,score=score), observed, output, i)
+            assert bool(output)==(i==2)
+        assert tracker.stats()["allocated_ids"]==1
+        assert tracker.stats()["confirmations"]==1
+    finally:
+        tracker.close()
+
+
+def test_weak_candidates_keep_id_but_are_not_confirmed(library):
+    tracker = NativeMotion(library, config=dict(CAUSAL_DEFAULTS))
+    try:
+        for i in range(20):
+            output = tracker.update(boxes(100+i,score=.04), IDENTITY, 1., i/30)
+            assert not output
+            observed = tracker.observations()
+            assert observed[0]["id"]==1 and not observed[0]["confirmed"]
+        assert tracker.stats()["confirmations"]==0
+    finally:
+        tracker.close()
+
+
+def test_candidate_id_survives_short_gap_without_predicted_boxes(library):
+    tracker = NativeMotion(library, config=dict(CAUSAL_DEFAULTS))
+    try:
+        tracker.update(boxes(100,score=.04), IDENTITY, 0., 0.)
+        assert tracker.observations()[0]["id"]==1
+        for i in range(1,6):
+            assert not tracker.update([], IDENTITY, 0., i/30)
+            assert tracker.observations()==[]
+        tracker.update(boxes(101,score=.04), IDENTITY, 0., .2)
+        assert tracker.observations()[0]["id"]==1
+    finally:
+        tracker.close()
+
+
+def test_ambiguous_observations_do_not_get_fake_candidate_ids(library):
+    tracker = NativeMotion(library, config=dict(CAUSAL_DEFAULTS, confirmation_hits=2,confirmation_window=3))
+    try:
+        pair=boxes(100)+boxes(108)
+        tracker.update(pair, IDENTITY, 0., 0.)
+        tracker.update(pair, IDENTITY, 0., .03)
+        assert not tracker.update(boxes(104), IDENTITY, 0., .06)
+        o=tracker.observations()[0]
+        assert o["id"] is None and o["status"]=="ambiguous"
+    finally:
+        tracker.close()

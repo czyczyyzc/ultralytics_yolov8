@@ -3,6 +3,7 @@
 // Reuse the tested matrix/LAP primitives and retain the original Dist ABI unchanged.
 #include "tracker.cpp"
 #include "motion_tracker.hpp"
+#include "global_assignment.hpp"
 #include <deque>
 #include <limits>
 #include <numeric>
@@ -15,15 +16,17 @@
 namespace motion {
 struct Observation { double time; std::array<double,4> box; double camera_variance=0; };
 struct Config {
-    std::array<double,14> v;
+    std::array<double,16> v{};
     explicit Config(const double* data,int n) {
-        if(!data || n!=14) throw std::runtime_error("Expected 14 motion configuration values");
+        if(!data || (n!=14 && n!=16)) throw std::runtime_error("Expected 14 or 16 motion configuration values");
         std::copy(data,data+n,v.begin());
+        if(n==14) {v[14]=v[2];v[15]=0;}
         for(double x:v) if(!std::isfinite(x)) throw std::runtime_error("Non-finite motion configuration");
         if(!(0<=v[1] && v[1]<v[0] && v[0]<=v[2] && v[2]<=1 && v[3]>0 && v[4]>0 &&
              v[5]>0 && v[6]>0 && v[7]>=0 && v[8]>0 && v[9]>0 && v[10]>0 &&
              v[11]>=1 && v[11]<=v[12] && v[12]<=32 && v[11]==int(v[11]) &&
-             v[12]==int(v[12]) && v[13]>=0 && v[13]<.5))
+             v[12]==int(v[12]) && v[13]>=0 && v[13]<.5 &&
+             v[14]>=v[0] && v[14]<=v[2] && (v[15]==0 || v[15]==1)))
             throw std::runtime_error("Invalid motion configuration");
     }
 };
@@ -46,7 +49,7 @@ struct Target {
         }
         history.push_back({time,{mean(0,0),mean(1,0),mean(2,0),mean(3,0)}});
         confidence.push_back(d.score);
-        confirmed=c.v[11]==1;
+        confirmed=c.v[11]==1 && d.score>=float(c.v[2]);
     }
     std::array<float,4> bounds() const {
         double w=std::max(.01,mean(2,0)),h=std::max(.01,mean(3,0));
@@ -130,7 +133,7 @@ struct Target {
                 direction=(1-std::clamp((vx*mx+vy*my)/(speed*movement),-1.,1.))*.5;
         }
         double gap_penalty=.12*std::min(1.,(time-last_time)/c.v[3]);
-        double continuity_prior=!confirmed?.08:frame==fid-1?0:.12;
+        double continuity_prior=(!confirmed?.08:0)+(frame==fid-1?0:.12);
         // Large/clipped boxes change geometry faster than the size Kalman state adapts.
         // Their latest GMC-warped real extent is more reliable than extrapolated box geometry.
         std::array<float,4> observation_bounds={float(observed[0]-observed[2]/2),float(observed[1]-observed[3]/2),
@@ -219,6 +222,7 @@ struct Tracker {
     int frame=0,next_id=1;
     std::array<uint64_t,8> counts{};
     std::vector<std::array<int,3>> observations;
+    GlobalAssignment assignment;
     explicit Tracker(const double* data,int n):config(data,n) {}
     void associate(const std::vector<Detection>& dets,double time,std::vector<bool>& used_targets,
                    std::vector<bool>& used_dets,bool low,bool confirmed) {
@@ -245,36 +249,13 @@ struct Tracker {
             }
         }
 #endif
-        // Ambiguous observations remain unassigned; do not manufacture stable identities.
-        for(size_t j=0;j<cols.size();++j) {
-            double first=100,second=100;
-            for(size_t i=0;i<rows.size();++i) {double c=cost[i][j];if(c<first) {second=first;first=c;} else second=std::min(second,c);}
-            if(first<limit && second<limit && second-first<config.v[13]) {
-                for(auto& row:cost) row[j]=100.;used_dets[cols[j]]=true;++counts[5];
-                observations[dets[cols[j]].index][2]=int(MotionObservationStatus::Ambiguous);
-            }
+        auto result=assignment.assign(cost,limit,config.v[13]);
+        for(size_t j=0;j<cols.size();++j) if(result.ambiguous[j]) {
+            used_dets[cols[j]]=true;++counts[5];
+            observations[dets[cols[j]].index][2]=int(MotionObservationStatus::Ambiguous);
         }
-        for(auto& row:cost) {
-            auto sorted=row;std::sort(sorted.begin(),sorted.end());
-            if(sorted.size()>1 && sorted[1]<limit && sorted[1]-sorted[0]<config.v[13]) {
-                for(size_t j=0;j<cols.size();++j) if(row[j]<limit && row[j]-sorted[0]<config.v[13])
-                    {used_dets[cols[j]]=true;observations[dets[cols[j]].index][2]=int(MotionObservationStatus::Ambiguous);}
-                std::fill(row.begin(),row.end(),100.);++counts[5];
-            }
-        }
-        for(size_t j=0;j<cols.size();++j) if(used_dets[cols[j]]) for(auto& row:cost) row[j]=100.;
-        std::vector<int> relevant;
-        for(size_t i=0;i<rows.size();++i) if(*std::min_element(cost[i].begin(),cost[i].end())<limit) relevant.push_back(i);
-        if(relevant.empty()) return;
-        int nr=relevant.size(),nc=cols.size(),n=nr+nc;
-        std::vector<double> padded(n*n,limit/2);
-        std::vector<double*> pointers(n);std::vector<int> x(n),y(n);
-        for(int i=0;i<n;++i) pointers[i]=padded.data()+i*n;
-        for(int i=nr;i<n;++i) for(int j=nc;j<n;++j) pointers[i][j]=0;
-        for(int i=0;i<nr;++i) for(int j=0;j<nc;++j) pointers[i][j]=cost[relevant[i]][j];
-        if(lapjv_internal(n,pointers.data(),x.data(),y.data())) throw std::runtime_error("Motion LAPJV failed");
-        for(int i=0;i<nr;++i) if(x[i]>=0 && x[i]<nc) {
-            int ti=rows[relevant[i]],di=cols[x[i]];
+        for(size_t i=0;i<rows.size();++i) if(result.columns[i]>=0) {
+            int ti=rows[i],di=cols[result.columns[i]];
             auto& target=targets[ti];auto& d=dets[di];
             if(distance(target.bounds(),d.bounds)>.99999f) ++counts[2];
             bool confirmed=target.confirmed;target.observe(d,frame,time,config);
@@ -293,12 +274,13 @@ struct Tracker {
             if(!(b[2]>b[0] && b[3]>b[1] && b[4]>=0 && b[4]<=1)) throw std::runtime_error("Invalid motion box/score");
         }
         ++frame;++counts[0];
+        assignment.begin_frame();
         observations.resize(n);
         for(int i=0;i<n;++i) observations[i]={0,i,int(boxes[5*i+4]>float(config.v[1])?
             MotionObservationStatus::Unassigned:MotionObservationStatus::BelowLow)};
         double dt=previous_time<0?1/config.v[4]:time-previous_time;previous_time=time;
         targets.erase(std::remove_if(targets.begin(),targets.end(),[&](const Target& t) {
-            bool expired=time-t.last_time>config.v[3] || (!t.confirmed && t.age>int(config.v[12]) &&
+            bool expired=time-t.last_time>config.v[3] || (!t.confirmed && !config.v[15] && t.age>int(config.v[12]) &&
                 std::accumulate(t.hits.begin(),t.hits.end(),0)==0);
             if(expired) ++counts[6];return expired;
         }),targets.end());
@@ -311,12 +293,12 @@ struct Tracker {
         associate(dets,time,used_targets,used_dets,false,true);
         associate(dets,time,used_targets,used_dets,true,true);
         associate(dets,time,used_targets,used_dets,false,false);
-        for(size_t j=0;j<dets.size();++j) if(!used_dets[j] && dets[j].score>=float(config.v[2])) {
+        for(size_t j=0;j<dets.size();++j) if(!used_dets[j] && dets[j].score>=float(config.v[14])) {
             targets.emplace_back(dets[j],frame,next_id++,time,config);++counts[3];
             if(targets.back().confirmed) ++counts[4];
         }
         for(const auto& t:targets) if(t.frame==frame)
-            observations[t.index]={t.confirmed?t.id:0,t.index,int(t.confirmed?
+            observations[t.index]={t.confirmed || config.v[15]?t.id:0,t.index,int(t.confirmed?
                 MotionObservationStatus::Confirmed:MotionObservationStatus::Pending)};
         counts[7]=targets.size();
     }
@@ -351,5 +333,9 @@ int motion_observations(void* p,int* triples,int capacity) {
 }
 void motion_stats(void* p,uint64_t* counts) {
     auto& t=*static_cast<motion::Tracker*>(p);std::copy(t.counts.begin(),t.counts.end(),counts);
+}
+void motion_assignment_stats(void* p,uint64_t* counts) {
+    const auto& a=static_cast<motion::Tracker*>(p)->assignment.counts;
+    std::copy(a.begin(),a.end(),counts);
 }
 }

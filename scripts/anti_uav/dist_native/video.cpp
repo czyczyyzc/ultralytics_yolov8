@@ -283,8 +283,9 @@ int run(const Args& args) {
                     size_t consumed=0;motion_config[n++]=std::stod(value,&consumed);
                     if(consumed!=value.size()) throw std::runtime_error("Invalid motion parameter");
                 }
-                if(n!=motion_config.size() || args.motion_params.back()==',' || std::abs(motion_config[4]-fps)>1e-6)
-                    throw std::runtime_error("Motion parameters require 14 values and source nominal FPS");
+                if((n!=14 && n!=16) || args.motion_params.back()==',' || std::abs(motion_config[4]-fps)>1e-6)
+                    throw std::runtime_error("Motion parameters require 14 or 16 values and source nominal FPS");
+                if(n==14) {motion_config[14]=motion_config[2];motion_config[15]=0;}
             }
             auto create_motion=track_lib->get<void*(*)(const double*,int)>("motion_create");
             tracker={create_motion(motion_config.data(),motion_config.size()),track_lib->get<Deleter>("motion_destroy")};
@@ -430,7 +431,8 @@ int run(const Args& args) {
                 if(nobserved!=job->n) throw std::runtime_error("Native tracker dropped a detector observation");
                 for(int i=0;i<nobserved;++i) {
                     const int id=observed[3*i],di=observed[3*i+1],status=observed[3*i+2];
-                    if(di!=i || status<0 || status>4 || id<0 || ((id>0)!=(status==2)))
+                    bool eligible=status==2 || (status==1 && motion_config[15]==1);
+                    if(di!=i || status<0 || status>4 || id<0 || (id>0 && !eligible) || (status==2 && id==0))
                         throw std::runtime_error("Invalid native observation status/identity");
                     ++observation_boxes;if(status!=2) ++unconfirmed_observations;
                 }
@@ -534,7 +536,7 @@ int run(const Args& args) {
     if(tracker) out<<",\"tracker_library_sha256\":"<<quote(sha256(args.tracker))<<",\"gmc_library_sha256\":"<<quote(sha256(args.gmc));
     out<<",\"tracking_algorithm\":"<<quote(args.tracking);
     if(motion_update) {
-        out<<",\"observation_output_contract\":\"all current detector boxes; null ID until confirmed; no predictions/remapping\"";
+        out<<",\"observation_output_contract\":\"all current detector boxes; optional candidate ID is NOT confirmation; no predictions/remapping\"";
         out<<",\"observation_boxes\":"<<observation_boxes<<",\"unconfirmed_observations\":"<<unconfirmed_observations;
         out<<",\"motion_config_ordered\":[";
         for(size_t i=0;i<motion_config.size();++i) {if(i) out<<',';out<<motion_config[i];}out<<']';

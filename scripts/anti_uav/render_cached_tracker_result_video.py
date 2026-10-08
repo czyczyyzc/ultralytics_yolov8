@@ -59,6 +59,7 @@ def validate_observations(boxes, observations, confirmed, index):
     if len(observations)!=len(boxes):
         raise ValueError(f"Missing detector observation at {index}")
     expected_ids = {t["detection_index"]: t["id"] for t in confirmed}
+    ids = set()
     for di, (box, obs) in enumerate(zip(boxes, observations)):
         status, identity = obs["status"], obs["id"]
         if (obs["detection_index"]!=di or status not in
@@ -68,8 +69,13 @@ def validate_observations(boxes, observations, confirmed, index):
         if status=="confirmed":
             if type(identity) is not int or identity<=0 or expected_ids.get(di)!=identity:
                 raise ValueError(f"Observation does not match confirmed identity at {index}")
-        elif identity is not None or di in expected_ids:
+        elif di in expected_ids or (identity is not None and
+                (status!="pending" or type(identity) is not int or identity<=0)):
             raise ValueError(f"Unconfirmed observation exposes an identity at {index}")
+        if identity is not None:
+            if identity in ids:
+                raise ValueError(f"Duplicate observation identity at {index}")
+            ids.add(identity)
         actual = np.asarray([*obs["box"], obs["score"]], dtype=float)
         if actual.shape!=(5,) or not np.isfinite(actual).all() or not np.allclose(actual, box, rtol=0, atol=1e-5):
             raise ValueError(f"Observation altered detector geometry/score at {index}")
@@ -77,12 +83,12 @@ def validate_observations(boxes, observations, confirmed, index):
 
 def observation_label(track):
     if track["id"] is not None:
-        return f"ID {track['id']}"
-    return "UNCERTAIN" if track.get("status")=="ambiguous" else "PENDING"
+        return f"ID {track['id']}"+("?" if track.get("confirmed") is False else "")
+    return "UNCERTAIN" if track.get("status")=="ambiguous" else "PENDING" if track.get("status")=="pending" else "DET"
 
 
 def observation_color(track):
-    return (255, 210, 40) if track["id"] is not None else (30, 190, 255)
+    return (255, 210, 40) if track["id"] is not None and track.get("confirmed") is not False else (30, 190, 255)
 
 
 def crop_bounds(box, width, height):
@@ -111,7 +117,8 @@ def panel(frame, tracks, index, count, fps, title):
     cv2.putText(canvas, title, (16, 25), cv2.FONT_HERSHEY_SIMPLEX,
                 .61, (240, 240, 240), 1, cv2.LINE_AA)
     identified = sum(t["id"] is not None for t in shown)
-    status = (f"frame {index+1}/{count} | {index/fps:.2f}s | boxes {len(shown)} | IDs {identified} | pending {len(shown)-identified}"
+    confirmed = sum(t.get("confirmed",True) for t in shown)
+    status = (f"frame {index+1}/{count} | {index/fps:.2f}s | boxes {len(shown)} | IDs {identified} | confirmed {confirmed} | no-ID {len(shown)-identified}"
               f" | NO GT | original speed {fps:g} FPS")
     cv2.putText(canvas, status, (16, 52), cv2.FONT_HERSHEY_SIMPLEX,
                 .53, (210, 215, 220), 1, cv2.LINE_AA)

@@ -25,9 +25,9 @@ from scripts.anti_uav.render_pt_detector_video import dump, probe, sha256
 
 
 def motion_config_for_replay(fps, custom, gmc_mode):
-    from scripts.anti_uav.motion_native_runtime import DEFAULTS
+    from scripts.anti_uav.motion_native_runtime import DEFAULTS, CAUSAL_DEFAULTS
     config = dict(DEFAULTS, nominal_fps=float(fps)) if custom is None else dict(custom)
-    if set(config)!=set(DEFAULTS):
+    if set(config) not in (set(DEFAULTS),set(CAUSAL_DEFAULTS)):
         raise ValueError("Motion configuration must contain exactly the documented keys")
     if gmc_mode=="disabled":
         # Model the combined image-coordinate velocity, not an unknown failed compensation.
@@ -101,17 +101,22 @@ def main():
         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
     if args.cached_gmc:
         provenance["gmc_cache_sha256"] = sha256(args.baseline_dir / "tracks.jsonl")
+    if args.tracker_kind=="motion":
+        native = ROOT/"scripts/anti_uav/dist_native"
+        provenance["motion_sources_sha256"] = {name:sha256(native/name) for name in
+            ("motion_tracker.cpp","motion_tracker.hpp","global_assignment.hpp","tracker.cpp",
+             "third_party/lap/lapjv.cpp","third_party/lap/lapjv.h")}
     protocol = dict(config=config, provenance=provenance, detector_cache_sha256=sha256(cache),
         gmc=("EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)" if args.gmc_mode=="estimate"
             else "Disabled; identity transform; image-coordinate motion; no camera uncertainty" if args.gmc_mode=="disabled"
             else "Unavailable; identity transform; retain configured unknown-camera uncertainty"),
         gmc_mode=args.gmc_mode,
-        tracker_implementation=("native C++ motion-aware-v1; NOT public Dist/OC-SORT parity" if
+        tracker_implementation=("native C++ causal global-assignment motion tracker; NOT public Dist/OC-SORT parity" if
             args.tracker_kind == "motion" else "native C++ Dist; no ReID or score fusion"),
         ground_truth_used=False, inference_rerun=False, predicted_boxes_shown=False,
         id_remapping=False, frame_stride=1, fps=fps, frames=count,
         cached_gmc=args.cached_gmc,
-        observation_output_contract=("all current detections; null ID until confirmed; no predictions/remapping"
+        observation_output_contract=("all current detections; optional candidate ID is NOT confirmation; no predictions/remapping"
             if args.tracker_kind=="motion" else "legacy confirmed-only"),
         scope="Offline server visualization; not board throughput or labelled tracking accuracy")
     dump(args.output / "protocol.json", protocol)

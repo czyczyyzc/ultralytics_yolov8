@@ -114,8 +114,12 @@ struct Target {
             .1*std::exp(-maneuver_nis*.5)*(reference_variance+maneuver_sigma*maneuver_sigma)/std::sqrt(am*em-b*b);
         likelihood=std::min(1.,likelihood);
         double motion_cost=std::min(1.,-2*std::log(std::max(1e-12,likelihood))/c.v[10]);
-        double shape=std::abs(std::log(d.measurement[2]/std::max(.01,mean(2,0))))+
-                     std::abs(std::log(d.measurement[3]/std::max(.01,mean(3,0))));
+        double size_blend=std::clamp((std::sqrt(d.measurement[2]*d.measurement[3])-16.)/48.,0.,1.);
+        const auto& observed=history.back().box;
+        double width=(1-size_blend)*mean(2,0)+size_blend*observed[2];
+        double height=(1-size_blend)*mean(3,0)+size_blend*observed[3];
+        double shape=std::abs(std::log(d.measurement[2]/std::max(.01,width)))+
+                     std::abs(std::log(d.measurement[3]/std::max(.01,height)));
         if(shape>std::log(16.)) return 100.;
         double direction=0;
         if(history.size()>=2) {
@@ -127,10 +131,13 @@ struct Target {
         }
         double gap_penalty=.12*std::min(1.,(time-last_time)/c.v[3]);
         double continuity_prior=!confirmed?.08:frame==fid-1?0:.12;
-        // IoU is reliable for large boxes; tiny boxes need motion-distance evidence instead.
-        double size_blend=std::clamp((std::sqrt(d.measurement[2]*d.measurement[3])-16.)/48.,0.,1.);
-        return (.55-.30*size_blend)*motion_cost+(.15+.35*size_blend)*distance(bounds(),d.bounds)+
-               .10*std::min(1.,shape/std::log(4.))+(.10-.05*size_blend)*direction+.05*(1-d.score)+
+        // Large/clipped boxes change geometry faster than the size Kalman state adapts.
+        // Their latest GMC-warped real extent is more reliable than extrapolated box geometry.
+        std::array<float,4> observation_bounds={float(observed[0]-observed[2]/2),float(observed[1]-observed[3]/2),
+            float(observed[0]+observed[2]/2),float(observed[1]+observed[3]/2)};
+        double overlap=(1-size_blend)*distance(bounds(),d.bounds)+size_blend*distance(observation_bounds,d.bounds);
+        return (.55-.30*size_blend)*motion_cost+(.15+.35*size_blend)*overlap+
+               .10*std::min(1.,shape/std::log(4.))+.10*(1-size_blend)*direction+.05*(1-d.score)+
                gap_penalty+continuity_prior;
     }
     void observe(const Detection& d,int fid,double time,const Config& c) {

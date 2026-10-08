@@ -104,7 +104,7 @@ struct Target {
         double gap=std::max(1./c.v[4],time-last_time);
         double max_variance=.5*(a+e+std::hypot(a-e,2*b));
         const auto& observed=history.back().box;
-        double extent=std::max(std::hypot(d.measurement[2],d.measurement[3]),
+        double extent=std::max(std::hypot(double(d.measurement[2]),double(d.measurement[3])),
                                std::hypot(observed[2],observed[3]));
         // A fixed pixel cap truncates valid large-target / uncertain-camera continuations.
         // Extra camera allowance remains bounded; small stationary-scene distractors do not gain it.

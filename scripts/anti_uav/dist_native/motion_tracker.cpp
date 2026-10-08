@@ -109,8 +109,10 @@ struct Target {
         // A fixed pixel cap truncates valid large-target / uncertain-camera continuations.
         // Extra camera allowance remains bounded; small stationary-scene distractors do not gain it.
         double cap=std::max({c.v[9],2*extent,std::min(3*camera_sigma,4*c.v[9])});
+        double camera_uncertainty=std::clamp(camera_sigma/
+            std::max(c.v[5],.25*std::sqrt(d.measurement[2]*d.measurement[3])),0.,1.);
         double radius=std::min(cap,std::max({12.,c.v[8]*gap+3*std::hypot(sx,sy),
-            std::sqrt(c.v[10]*max_variance)}));
+            std::sqrt(c.v[10]*max_variance),1.5*extent*camera_uncertainty}));
         // Score both smooth motion and a bounded maneuver hypothesis in the PRIMARY cost.
         double maneuver_sigma=radius*.25;
         double am=a+maneuver_sigma*maneuver_sigma,em=e+maneuver_sigma*maneuver_sigma;
@@ -144,7 +146,9 @@ struct Target {
         std::array<float,4> observation_bounds={float(observed[0]-observed[2]/2),float(observed[1]-observed[3]/2),
             float(observed[0]+observed[2]/2),float(observed[1]+observed[3]/2)};
         double overlap=(1-size_blend)*distance(bounds(),d.bounds)+size_blend*distance(observation_bounds,d.bounds);
-        return (.55-.30*size_blend)*motion_cost+(.15+.35*size_blend)*overlap+
+        // Large extent alone does not make IoU reliable when camera motion is unknown.
+        double overlap_trust=size_blend*(1-camera_uncertainty);
+        return (.55-.30*overlap_trust)*motion_cost+(.15+.35*overlap_trust)*overlap+
                .10*std::min(1.,shape/std::log(4.))+.10*(1-size_blend)*direction+.05*(1-d.score)+
                gap_penalty+continuity_prior;
     }
@@ -186,6 +190,10 @@ struct Target {
         if(dt>0 && !history.empty()) {
             double vx=(d.measurement[0]-history.back().box[0])/dt;
             double vy=(d.measurement[1]-history.back().box[1])/dt;
+            // Learn a bounded allowance from an ALREADY accepted confirmed continuation.
+            // This is unmodelled image motion, not a claim to identify camera motion alone.
+            if(confirmed && camera_sigma>c.v[5])
+                camera_speed_bound=std::max(camera_speed_bound,std::min(4*c.v[8],std::hypot(vx,vy)));
             double observed_a=std::min(60000.,std::hypot(vx-mean(4,0),vy-mean(5,0))/dt);
             double localization=.5*(variance[0]+variance[1]);
             double reliability=localization/(localization+history.back().camera_variance);

@@ -476,3 +476,38 @@ def test_camera_reversal_during_gmc_loss_is_not_cut_by_fixed_pixel_cap(library,s
         assert tracker.stats()["allocated_ids"]==1
     finally:
         tracker.close()
+
+
+def test_unmodelled_motion_allowance_adapts_only_after_valid_continuation(library):
+    tracker=NativeMotion(library,config=dict(CAUSAL_DEFAULTS))
+    positions=[700,550,400,100,500,900,400,50]
+    try:
+        for i,y in enumerate(positions):
+            q=.99 if i in (1,2,6,7) else 0.
+            warp=IDENTITY.copy()
+            if q:warp[1,2]=y-positions[i-1]
+            tracker.update([[800,y,1100,y+200,.9]],warp,q,i/30)
+            assert tracker.observations()[0]["id"]==1,(i,tracker.observations())
+    finally:
+        tracker.close()
+
+
+def test_large_target_sudden_camera_motion_without_gmc_keeps_id(library):
+    tracker=NativeMotion(library,config=dict(CAUSAL_DEFAULTS))
+    positions=[300,320,380,490,450,90,520,120]
+    try:
+        for i,y in enumerate(positions):
+            tracker.update([[800,y,1100,y+260,.9]],IDENTITY,0.,i/30)
+            assert tracker.observations()[0]["id"]==1,(i,tracker.observations())
+    finally:
+        tracker.close()
+
+
+def test_large_stationary_target_does_not_admit_far_new_object(library):
+    tracker=NativeMotion(library,config=dict(CAUSAL_DEFAULTS))
+    try:
+        for i in range(5):tracker.update([[100,100,400,360,.9]],IDENTITY,1.,i/30)
+        assert not tracker.update([[600,100,900,360,.9]],IDENTITY,1.,5/30)
+        assert tracker.observations()[0]["id"]!=1
+    finally:
+        tracker.close()

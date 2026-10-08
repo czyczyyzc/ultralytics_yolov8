@@ -52,12 +52,14 @@ def main():
     parser.add_argument("--detector-root", type=Path, required=True)
     parser.add_argument("--reference-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--include-unavailable", action="store_true", help="Also audit no-GMC with default unknown-camera uncertainty")
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
     result = dict(models={}, scope="000002 fixed FP32 detections; no GT provided, no precision/recall/MOT-IDSW claims",
         inference_rerun=False, id_remapping=False, predicted_boxes_shown=False,
         no_gmc_definition="Identity warp, quality zero, unknown_gmc_speed_px_s=0; model total image-coordinate velocity",
+        unavailable_gmc_definition="Identity warp, quality zero; retain default unknown_gmc_speed_px_s=1500",
         immediate_id_definition="birth=.03, confirmation_hits=1, confirmation_window=1; ambiguity rejection retained")
     native_hashes = set()
     for model in ("p3", "p2p3"):
@@ -70,7 +72,7 @@ def main():
         reference = load_records(args.reference_root/(model+"_geometry_trial")/"tracks.jsonl")
         data, estimated_inputs = {}, None
         for policy in ("balanced", "immediate"):
-            for mode in ("estimate", "disabled"):
+            for mode in (("estimate", "disabled", "unavailable") if args.include_unavailable else ("estimate", "disabled")):
                 name = model+"_"+policy+"_"+mode
                 directory = args.experiment_root/name
                 summary = json.loads((directory/"summary.json").read_text())
@@ -88,8 +90,9 @@ def main():
                 expected = dict(DEFAULTS, nominal_fps=fps)
                 if policy=="immediate":
                     expected.update(birth=.03, confirmation_hits=1, confirmation_window=1)
-                if mode=="disabled":
-                    expected["unknown_gmc_speed_px_s"] = 0.
+                if mode!="estimate":
+                    if mode=="disabled":
+                        expected["unknown_gmc_speed_px_s"] = 0.
                     if any(r["warp"]!=[[1.,0.,0.],[0.,1.,0.]] or r["gmc_quality"]!=0.
                            or not r["gmc_meta"].get("disabled") for r in rows):
                         raise ValueError("Disabled GMC contains non-identity motion")

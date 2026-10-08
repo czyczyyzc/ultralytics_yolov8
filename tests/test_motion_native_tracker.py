@@ -364,6 +364,7 @@ def test_disabled_gmc_models_image_motion_without_camera_variance(library):
     config = motion_config_for_replay(30., None, "disabled")
     assert config["unknown_gmc_speed_px_s"]==0.
     assert motion_config_for_replay(30., None, "estimate")["unknown_gmc_speed_px_s"]==1500.
+    assert motion_config_for_replay(30., None, "unavailable")["unknown_gmc_speed_px_s"]==1500.
     tracker = NativeMotion(library, config=config)
     try:
         for i in range(15):

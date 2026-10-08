@@ -46,15 +46,15 @@ def main():
     parser.add_argument("--baseline-dir", type=Path, help="Verify GMC and detections against a frozen baseline")
     parser.add_argument("--motion-config", type=Path)
     parser.add_argument("--cached-gmc", action="store_true", help="Offline ablation only; requires quality-aware baseline cache")
-    parser.add_argument("--gmc-mode", choices=("estimate", "disabled"), default="estimate",
-        help="Disabled: image-coordinate motion model, no warp or camera-uncertainty term")
+    parser.add_argument("--gmc-mode", choices=("estimate", "disabled", "unavailable"), default="estimate",
+        help="Disabled: image-coordinate motion; unavailable: no warp but retain default unknown-camera uncertainty")
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
     if args.cached_gmc and not args.baseline_dir:
         parser.error("--cached-gmc requires --baseline-dir")
-    if args.cached_gmc and args.gmc_mode=="disabled":
-        parser.error("--cached-gmc cannot be used with disabled GMC")
+    if args.cached_gmc and args.gmc_mode!="estimate":
+        parser.error("--cached-gmc requires estimated GMC")
     detector = json.loads((args.detector_dir / "summary.json").read_text())
     cache = args.detector_dir / "predictions.jsonl"
     source = probe(args.source)
@@ -103,7 +103,8 @@ def main():
         provenance["gmc_cache_sha256"] = sha256(args.baseline_dir / "tracks.jsonl")
     protocol = dict(config=config, provenance=provenance, detector_cache_sha256=sha256(cache),
         gmc=("EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)" if args.gmc_mode=="estimate"
-            else "Disabled; identity transform; image-coordinate motion; no camera uncertainty"),
+            else "Disabled; identity transform; image-coordinate motion; no camera uncertainty" if args.gmc_mode=="disabled"
+            else "Unavailable; identity transform; retain configured unknown-camera uncertainty"),
         gmc_mode=args.gmc_mode,
         tracker_implementation=("native C++ motion-aware-v1; NOT public Dist/OC-SORT parity" if
             args.tracker_kind == "motion" else "native C++ Dist; no ReID or score fusion"),
@@ -114,7 +115,7 @@ def main():
             if args.tracker_kind=="motion" else "legacy confirmed-only"),
         scope="Offline server visualization; not board throughput or labelled tracking accuracy")
     dump(args.output / "protocol.json", protocol)
-    cap = None if args.cached_gmc or args.gmc_mode=="disabled" else cv2.VideoCapture(str(args.source))
+    cap = None if args.cached_gmc or args.gmc_mode!="estimate" else cv2.VideoCapture(str(args.source))
     if cap is not None and not cap.isOpened():
         raise ValueError("Cannot open source video")
     gmc = EfficientGMC(320, 128, 5, True)
@@ -125,7 +126,7 @@ def main():
         with (args.output / "tracks.jsonl").open("x") as stream:
             for index, row in enumerate(records):
                 boxes = np.asarray(row["boxes_xyxy_score"], dtype=np.float32).reshape(-1, 5)
-                if args.gmc_mode=="disabled":
+                if args.gmc_mode!="estimate":
                     warp = np.eye(2, 3, dtype=np.float64)
                     quality, gmc_meta = 0., dict(estimated=False, support=0, inlier_ratio=0., disabled=True)
                 elif args.cached_gmc:
@@ -169,7 +170,7 @@ def main():
         if args.cached_gmc and sha256(args.baseline_dir / "tracks.jsonl") != provenance["gmc_cache_sha256"]:
             raise ValueError("GMC cache changed during tracking")
         summary = dict(protocol, gmc_counts=original["gmc_counts"] if args.cached_gmc else gmc.counts,
-            gmc_disabled_frames=count if args.gmc_mode=="disabled" else 0,
+            gmc_disabled_frames=count if args.gmc_mode!="estimate" else 0,
             displayed_tracks=sum(len(t["displayed_tracks"]) for t in tracks),
             frames_with_track=sum(bool(t["displayed_tracks"]) for t in tracks),
             visible_ids=len(identities), maximum_visible_id=max(identities, default=0),

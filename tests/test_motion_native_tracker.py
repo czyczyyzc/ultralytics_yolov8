@@ -141,6 +141,18 @@ def test_all_absolute_box_sizes_are_supported(library):
         tracker.close()
 
 
+def test_large_target_localization_jitter_does_not_break_identity(library):
+    tracker = NativeMotion(library, 100.)
+    try:
+        for i in range(40):
+            x=600+2*i+(25 if i%2 else -25)
+            output=tracker.update([[x, 900, x+320, 1050, .8]], IDENTITY, 1., i/100)
+            if i:
+                assert len(output)==1 and output[0]["id"]==1
+    finally:
+        tracker.close()
+
+
 def test_invalid_timestamps_scores_and_quality_fail(library):
     tracker = NativeMotion(library)
     try:

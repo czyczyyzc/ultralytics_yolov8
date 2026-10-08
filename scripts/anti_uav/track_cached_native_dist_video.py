@@ -33,9 +33,12 @@ def main():
     parser.add_argument("--tracker-kind", choices=("dist", "motion"), default="dist")
     parser.add_argument("--baseline-dir", type=Path, help="Verify GMC and detections against a frozen baseline")
     parser.add_argument("--motion-config", type=Path)
+    parser.add_argument("--cached-gmc", action="store_true", help="Offline ablation only; requires quality-aware baseline cache")
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
+    if args.cached_gmc and not args.baseline_dir:
+        parser.error("--cached-gmc requires --baseline-dir")
     detector = json.loads((args.detector_dir / "summary.json").read_text())
     cache = args.detector_dir / "predictions.jsonl"
     source = probe(args.source)
@@ -54,6 +57,8 @@ def main():
         baseline = [json.loads(line) for line in (args.baseline_dir / "tracks.jsonl").read_text().splitlines()]
         if len(baseline) != count:
             raise ValueError("Baseline frame coverage differs")
+        if args.cached_gmc and any("gmc_quality" not in row for row in baseline):
+            raise ValueError("Cached GMC must contain per-frame quality")
     if len(records) != count:
         raise ValueError("Detector cache does not cover every frame")
     for index, row in enumerate(records):
@@ -77,16 +82,19 @@ def main():
             ("motion_tracker.cpp" if args.tracker_kind == "motion" else "tracker.cpp")),
         adapter_sha256=sha256(Path(__file__)),
         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
+    if args.cached_gmc:
+        provenance["gmc_cache_sha256"] = sha256(args.baseline_dir / "tracks.jsonl")
     protocol = dict(config=config, provenance=provenance, detector_cache_sha256=sha256(cache),
         gmc="EfficientGMC(width=320,corners=128,refresh=5,resize_first=True)",
         tracker_implementation=("native C++ motion-aware-v1; NOT public Dist/OC-SORT parity" if
             args.tracker_kind == "motion" else "native C++ Dist; no ReID or score fusion"),
         ground_truth_used=False, inference_rerun=False, predicted_boxes_shown=False,
         id_remapping=False, frame_stride=1, fps=fps, frames=count,
+        cached_gmc=args.cached_gmc,
         scope="Offline server visualization; not board throughput or labelled tracking accuracy")
     dump(args.output / "protocol.json", protocol)
-    cap = cv2.VideoCapture(str(args.source))
-    if not cap.isOpened():
+    cap = None if args.cached_gmc else cv2.VideoCapture(str(args.source))
+    if cap is not None and not cap.isOpened():
         raise ValueError("Cannot open source video")
     gmc = EfficientGMC(320, 128, 5, True)
     tracks, identities = [], set()
@@ -95,24 +103,30 @@ def main():
     try:
         with (args.output / "tracks.jsonl").open("x") as stream:
             for index, row in enumerate(records):
-                ok, frame = cap.read()
-                if not ok:
-                    raise ValueError(f"Source ended at {index}, expected {count}")
                 boxes = np.asarray(row["boxes_xyxy_score"], dtype=np.float32).reshape(-1, 5)
-                warp = gmc.apply(frame)
+                if args.cached_gmc:
+                    warp = np.asarray(baseline[index]["warp"], dtype=np.float64)
+                    quality = baseline[index]["gmc_quality"]
+                    gmc_meta = baseline[index]["gmc_meta"]
+                else:
+                    ok, frame = cap.read()
+                    if not ok:
+                        raise ValueError(f"Source ended at {index}, expected {count}")
+                    warp = gmc.apply(frame)
+                    quality, gmc_meta = gmc.last_quality, gmc.last_meta
                 if baseline is not None:
                     ref = baseline[index]
                     if (ref["frame_index"] != index or ref["boxes_xyxy_score"] != row["boxes_xyxy_score"]
                             or not np.array_equal(warp, np.asarray(ref["warp"]))):
                         raise ValueError(f"Baseline inputs/GMC changed at {index}")
                 association_started = time.perf_counter()
-                outputs = (tracker.update(boxes, warp, gmc.last_quality, index/fps) if
+                outputs = (tracker.update(boxes, warp, quality, index/fps) if
                            args.tracker_kind == "motion" else tracker.update(boxes, warp))
                 association_times.append((time.perf_counter()-association_started)*1000)
                 shown = [dict(t, confirmed=True, predicted=False) for t in outputs]
                 record = dict(frame_index=index, time_seconds=index/fps, raw_tracks=shown,
                     displayed_tracks=shown, boxes_xyxy_score=row["boxes_xyxy_score"], warp=warp.tolist(),
-                    gmc_quality=gmc.last_quality, gmc_meta=gmc.last_meta)
+                    gmc_quality=quality, gmc_meta=gmc_meta)
                 stream.write(json.dumps(record) + "\n")
                 tracks.append(record)
                 identities.update(t["id"] for t in shown)
@@ -121,12 +135,14 @@ def main():
                         seconds=round(time.monotonic()-started, 2))
                     dump(args.output / "status.json", status)
                     print(json.dumps(status), flush=True)
-            if cap.read()[0]:
+            if cap is not None and cap.read()[0]:
                 raise ValueError("Source exceeds detector cache frame count")
         validate_records(records, tracks, count, fps)
         if sha256(cache) != protocol["detector_cache_sha256"]:
             raise ValueError("Detector cache changed during tracking")
-        summary = dict(protocol, gmc_counts=gmc.counts,
+        if args.cached_gmc and sha256(args.baseline_dir / "tracks.jsonl") != provenance["gmc_cache_sha256"]:
+            raise ValueError("GMC cache changed during tracking")
+        summary = dict(protocol, gmc_counts=original["gmc_counts"] if args.cached_gmc else gmc.counts,
             displayed_tracks=sum(len(t["displayed_tracks"]) for t in tracks),
             frames_with_track=sum(bool(t["displayed_tracks"]) for t in tracks),
             visible_ids=len(identities), maximum_visible_id=max(identities, default=0),
@@ -144,7 +160,8 @@ def main():
         dump(args.output / "status.json", dict(stage="failed", error=repr(error)))
         raise
     finally:
-        cap.release()
+        if cap is not None:
+            cap.release()
         tracker.close()
 
 

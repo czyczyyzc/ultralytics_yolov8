@@ -26,7 +26,7 @@ struct Config {
 struct Target {
     int id,index,frame,age=1;
     bool confirmed=false;
-    double last_time,accel=0;
+    double last_time,accel=0,camera_sigma=0;
     V8 mean;
     M8 covariance;
     std::deque<Observation> history;
@@ -74,12 +74,12 @@ struct Target {
             covariance(axis+4,axis)+=q*dt*dt*dt/2;
             covariance(axis+4,axis+4)+=q*dt*dt;
         }
-        double camera_sigma=(1-quality)*c.v[7]*dt;
+        camera_sigma=(1-quality)*c.v[7]*dt;
         for(int i=0;i<2;++i) covariance(i,i)+=camera_sigma*camera_sigma+c.v[5]*c.v[5]*dt*c.v[4];
         mean(2,0)=std::max(.01,mean(2,0));mean(3,0)=std::max(.01,mean(3,0));
         hits.push_back(0);if(hits.size()>size_t(c.v[12])) hits.pop_front();++age;
     }
-    double cost(const Detection& d,double time,const Config& c) const {
+    double cost(const Detection& d,double time,int fid,const Config& c) const {
         double dx=d.measurement[0]-mean(0,0),dy=d.measurement[1]-mean(1,0);
         double sx=std::max(c.v[5],.03*d.measurement[2]),sy=std::max(c.v[5],.03*d.measurement[3]);
         double a=covariance(0,0)+sx*sx,b=covariance(0,1),e=covariance(1,1)+sy*sy;
@@ -87,13 +87,18 @@ struct Target {
         if(!(determinant>0)) return 100.;
         double nis=(e*dx*dx-2*b*dx*dy+a*dy*dy)/determinant;
         double gap=std::max(1./c.v[4],time-last_time);
-        double radius=std::min(c.v[9],std::max(12.,c.v[8]*gap));
+        double radius=std::min(c.v[9],std::max(12.,c.v[8]*gap+3*std::hypot(sx,sy)));
         // Score both smooth motion and a bounded maneuver hypothesis in the PRIMARY cost.
         double maneuver_sigma=radius*.25;
         double am=a+maneuver_sigma*maneuver_sigma,em=e+maneuver_sigma*maneuver_sigma;
         double maneuver_nis=(em*dx*dx-2*b*dx*dy+am*dy*dy)/(am*em-b*b);
         if((nis>c.v[10] && maneuver_nis>c.v[10]) || std::hypot(dx,dy)>radius) return 100.;
-        double likelihood=.9*std::exp(-nis*.5)+.1*std::exp(-maneuver_nis*.5);
+        // A large covariance is not evidence of a good identity match: penalize its volume.
+        double reference_variance=std::pow(std::max(c.v[5]*2,.1*std::sqrt(d.measurement[2]*d.measurement[3])),2)
+                                  +camera_sigma*camera_sigma;
+        double likelihood=.9*std::exp(-nis*.5)*reference_variance/std::sqrt(determinant)+
+            .1*std::exp(-maneuver_nis*.5)*(reference_variance+maneuver_sigma*maneuver_sigma)/std::sqrt(am*em-b*b);
+        likelihood=std::min(1.,likelihood);
         double motion_cost=std::min(1.,-2*std::log(std::max(1e-12,likelihood))/c.v[10]);
         double shape=std::abs(std::log(d.measurement[2]/std::max(.01,mean(2,0))))+
                      std::abs(std::log(d.measurement[3]/std::max(.01,mean(3,0))));
@@ -107,9 +112,12 @@ struct Target {
                 direction=(1-std::clamp((vx*mx+vy*my)/(speed*movement),-1.,1.))*.5;
         }
         double gap_penalty=.12*std::min(1.,(time-last_time)/c.v[3]);
-        return .55*motion_cost+.15*distance(bounds(),d.bounds)+
-               .10*std::min(1.,shape/std::log(4.))+.10*direction+.05*(1-d.score)+
-               gap_penalty+(confirmed?0:.025);
+        double continuity_prior=!confirmed?.08:frame==fid-1?0:.12;
+        // IoU is reliable for large boxes; tiny boxes need motion-distance evidence instead.
+        double size_blend=std::clamp((std::sqrt(d.measurement[2]*d.measurement[3])-16.)/48.,0.,1.);
+        return (.55-.30*size_blend)*motion_cost+(.15+.35*size_blend)*distance(bounds(),d.bounds)+
+               .10*std::min(1.,shape/std::log(4.))+(.10-.05*size_blend)*direction+.05*(1-d.score)+
+               gap_penalty+continuity_prior;
     }
     void observe(const Detection& d,int fid,double time,const Config& c) {
         Matrix<4,4> s,l;
@@ -160,7 +168,16 @@ struct Target {
             for(auto& o:history) {mt+=o.time;mx+=o.box[0];my+=o.box[1];}
             mt/=history.size();mx/=history.size();my/=history.size();
             for(auto& o:history) {double t=o.time-mt;den+=t*t;nx+=t*(o.box[0]-mx);ny+=t*(o.box[1]-my);}
-            if(den>1e-12) {mean(4,0)=.25*mean(4,0)+.75*nx/den;mean(5,0)=.25*mean(5,0)+.75*ny/den;}
+            if(den>1e-12) {
+                const double slopes[]={nx/den,ny/den};
+                for(int axis=0;axis<2;++axis) {
+                    double observed_variance=variance[axis]/den;
+                    double prior_variance=covariance(4+axis,4+axis);
+                    double weight=std::min(.75,prior_variance/(prior_variance+observed_variance));
+                    mean(4+axis,0)=(1-weight)*mean(4+axis,0)+weight*slopes[axis];
+                    covariance(4+axis,4+axis)=std::max(prior_variance,weight*weight*observed_variance);
+                }
+            }
         }
         hits.back()=1;
         if(std::accumulate(hits.begin(),hits.end(),0)>=int(c.v[11])) confirmed=true;
@@ -184,7 +201,7 @@ struct Tracker {
         if(rows.empty() || cols.empty()) return;
         std::vector<std::vector<double>> cost(rows.size(),std::vector<double>(cols.size(),100.));
         for(size_t i=0;i<rows.size();++i) for(size_t j=0;j<cols.size();++j)
-            cost[i][j]=targets[rows[i]].cost(dets[cols[j]],time,config);
+            cost[i][j]=targets[rows[i]].cost(dets[cols[j]],time,frame,config);
         // Ambiguous observations remain unassigned; do not manufacture stable identities.
         for(size_t j=0;j<cols.size();++j) {
             double first=100,second=100;

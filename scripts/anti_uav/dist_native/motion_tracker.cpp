@@ -26,7 +26,7 @@ struct Config {
 struct Target {
     int id,index,frame,age=1;
     bool confirmed=false;
-    double last_time,accel=0,camera_sigma=0;
+    double last_time,accel=0,camera_sigma=0,camera_speed_bound=0;
     V8 mean;
     M8 covariance;
     std::deque<Observation> history;
@@ -50,6 +50,10 @@ struct Target {
                 float(mean(0,0)+w/2),float(mean(1,0)+h/2)};
     }
     void predict(double dt,const double* h,double quality,const Config& c) {
+        double camera_dx=(h[0]-1)*mean(0,0)+h[1]*mean(1,0)+h[2];
+        double camera_dy=h[3]*mean(0,0)+(h[4]-1)*mean(1,0)+h[5];
+        camera_speed_bound*=std::exp(-dt/.25);
+        if(quality>=.15) camera_speed_bound=std::max(camera_speed_bound,std::hypot(camera_dx,camera_dy)/dt);
         // Warp observations as well as the state, so measured velocity is camera compensated.
         M8 j;
         for(int i=0;i<8;i+=4) {
@@ -76,7 +80,7 @@ struct Target {
             covariance(axis+4,axis)+=q*dt*dt*dt/2;
             covariance(axis+4,axis+4)+=q*dt*dt;
         }
-        camera_sigma=(1-quality)*c.v[7]*dt;
+        camera_sigma=(1-quality)*std::max(c.v[7],camera_speed_bound)*dt;
         for(int i=0;i<2;++i) covariance(i,i)+=camera_sigma*camera_sigma+c.v[5]*c.v[5]*dt*c.v[4];
         mean(2,0)=std::max(.01,mean(2,0));mean(3,0)=std::max(.01,mean(3,0));
         hits.push_back(0);if(hits.size()>size_t(c.v[12])) hits.pop_front();++age;
@@ -90,7 +94,9 @@ struct Target {
         if(!(determinant>0)) return 100.;
         double nis=(e*dx*dx-2*b*dx*dy+a*dy*dy)/determinant;
         double gap=std::max(1./c.v[4],time-last_time);
-        double radius=std::min(c.v[9],std::max(12.,c.v[8]*gap+3*std::hypot(sx,sy)));
+        double max_variance=.5*(a+e+std::hypot(a-e,2*b));
+        double radius=std::min(c.v[9],std::max({12.,c.v[8]*gap+3*std::hypot(sx,sy),
+            std::sqrt(c.v[10]*max_variance)}));
         // Score both smooth motion and a bounded maneuver hypothesis in the PRIMARY cost.
         double maneuver_sigma=radius*.25;
         double am=a+maneuver_sigma*maneuver_sigma,em=e+maneuver_sigma*maneuver_sigma;

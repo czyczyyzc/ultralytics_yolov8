@@ -223,3 +223,18 @@ def test_balanced_default_requires_three_observations_in_four_frames(library):
         tracker.close()
     with pytest.raises(ValueError, match="source FPS"):
         NativeMotion(library, 100., dict(DEFAULTS))
+
+
+def test_fast_camera_motion_then_gmc_loss_preserves_identity(library):
+    tracker = NativeMotion(library, 100.)
+    warp = np.array([[1., 0., 110.], [0., 1., 60.]])
+    try:
+        for i in range(8):
+            actual_warp=IDENTITY if i==0 or i in (4,5) else warp
+            quality=0. if i==0 or i in (4,5) else .9
+            output=tracker.update(boxes(100+110*i, 100+60*i, size=8), actual_warp, quality, i/100)
+            if i>=2:
+                assert len(output)==1 and output[0]["id"]==1, (i, output)
+        assert tracker.stats()["allocated_ids"]==1
+    finally:
+        tracker.close()

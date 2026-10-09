@@ -197,6 +197,31 @@ class FrozenP3AddOnP2Detect(Detect):
             self.cv2[target_index] = legacy.cv2[source_index]
             self.cv3[target_index] = legacy.cv3[source_index]
 
+        # Distillation experiments may use P2 only as a training-time auxiliary
+        # branch. Keep the default disabled so existing four-scale checkpoints
+        # retain their original inference behavior.
+        self.auxiliary_training_only = False
+
+    def _legacy_inference(self, x):
+        """Decode only P3-P5 without mutating the four-scale anchor cache."""
+        shape = x[0].shape
+        x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
+        anchors, strides = (value.transpose(0, 1) for value in make_anchors(x, self.stride[1:], 0.5))
+        box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
+        dbox = self.decode_bboxes(self.dfl(box), anchors.unsqueeze(0)) * strides
+        return torch.cat((dbox, cls.sigmoid()), 1)
+
+    def forward(self, x, task_type="Detect"):
+        """Use all four levels for training but only P3-P5 for student validation."""
+        if not self.training and getattr(self, "auxiliary_training_only", False) and not self.export and task_type == "Detect":
+            legacy = [
+                torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
+                for i in range(self.legacy_start_index, self.nl)
+            ]
+            decoded = self._legacy_inference(legacy)
+            return decoded, legacy
+        return super().forward(x, task_type)
+
 
 class Segment(Detect):
     """YOLOv8 Segment head for segmentation models."""

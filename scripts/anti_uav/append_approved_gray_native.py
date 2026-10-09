@@ -118,12 +118,18 @@ def main():
         source, config, base, positive_count, negative_pool, a.negative_fraction)
     pool_file = a.output / "new_negative_pool.txt"
     pool_file.write_text("\n".join(sorted(negative_pool)) + "\n")
+    online_replacement = config.get("online_replacement")
     config = dict(path=str(a.output), train=str(train_file),
                   val=str(a.output / "val_monitor.txt"), names=config["names"],
                   label_sampling=dict(negative_pool=str(pool_file), negative_pool_count=len(negative_pool),
                                       negatives_per_epoch=budget, anchor_slots=anchors,
                                       target_negative_fraction=a.negative_fraction))
-    (a.output / "train_hardneg_gray_monitor.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    if online_replacement:
+        config["online_replacement"] = online_replacement
+    serialized_config = yaml.safe_dump(config, sort_keys=False)
+    (a.output / "train_hardneg_gray_monitor.yaml").write_text(serialized_config)
+    if a.source_yaml != "train_hardneg_gray_monitor.yaml":
+        (a.output / a.source_yaml).write_text(serialized_config)
     negative = source["negative"] + negative_count
     manifest = dict(source, schema="native_approved_expansion.v1", source_dataset=str(a.source),
                     source_train_sha256=source_train_sha256,

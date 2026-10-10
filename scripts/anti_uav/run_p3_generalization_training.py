@@ -98,6 +98,7 @@ def main() -> None:
     parser.add_argument("--teacher-epochs", type=int, default=12)
     parser.add_argument("--distill-epochs", type=int, default=15)
     parser.add_argument("--qat-epochs", type=int, default=4)
+    parser.add_argument("--resume", action="store_true", help="Continue after a completed pipeline stage")
     args = parser.parse_args()
 
     args.data, args.p3_initial, args.run_dir = args.data.resolve(), args.p3_initial.resolve(), args.run_dir.resolve()
@@ -106,10 +107,11 @@ def main() -> None:
     args.run_dir.mkdir(parents=True, exist_ok=True)
     lock = (args.run_dir / "pipeline.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    if (args.run_dir / "protocol.json").exists():
+    protocol_path = args.run_dir / "protocol.json"
+    if protocol_path.exists() and not args.resume:
         raise FileExistsError("Refuse to overwrite an existing generalization experiment")
-    (args.run_dir / "configs").mkdir()
-    (args.run_dir / "audit").mkdir()
+    (args.run_dir / "configs").mkdir(exist_ok=args.resume)
+    (args.run_dir / "audit").mkdir(exist_ok=args.resume)
 
     SETTINGS.update(dict(sync=False, wandb=False, clearml=False, comet=False, dvc=False, hub=False,
                          mlflow=False, neptune=False, raytune=False))
@@ -148,25 +150,40 @@ def main() -> None:
         checkpoint_selection="Video00009: 0.5 F2@0.03 + 0.3 AP50 + 0.2 AP50-95",
         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
     )
-    (args.run_dir / "protocol.json").write_text(json.dumps(protocol, indent=2) + "\n")
+    if protocol_path.exists():
+        previous_protocol = json.loads(protocol_path.read_text())
+        for key in ("data", "p3_initial", "input_hw", "training_videos", "batch", "seed", "epochs"):
+            if previous_protocol.get(key) != protocol.get(key):
+                raise ValueError(f"Resume protocol mismatch for {key}")
+        previous_protocol["resume"] = dict(
+            time=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            git_commit=protocol["git_commit"],
+            reason="continue from completed Teacher after Student initialization compatibility fix",
+        )
+        protocol_path.write_text(json.dumps(previous_protocol, indent=2) + "\n")
+    else:
+        protocol_path.write_text(json.dumps(protocol, indent=2) + "\n")
 
     try:
-        write_status(args.run_dir, "initialize_47_video_teacher")
-        teacher_init = args.run_dir / "teacher_initialized.pt"
-        teacher, teacher_report = initialize_addon_model(args.p3_initial, DEFAULT_CFG, teacher_init)
-        (args.run_dir / "audit/teacher_initialization.json").write_text(json.dumps(teacher_report, indent=2) + "\n")
-        teacher.add_callback("on_fit_epoch_end", lambda trainer: write_status(
-            args.run_dir, "train_47_video_teacher", epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
-        ))
-        write_status(args.run_dir, "train_47_video_teacher", epoch=0)
-        teacher.train(
-            trainer=TinyAwareAddOnTrainer,
-            project=str(args.run_dir / "teacher"), name="p2p3", lr0=.001, warmup_epochs=1,
-            **common_train(teacher_data, args, args.teacher_epochs, min(5, args.teacher_epochs)),
-        )
         teacher_best = args.run_dir / "teacher/p2p3/weights/best.pt"
-        frozen = verify_legacy_outputs(YOLO(str(args.p3_initial)).model, YOLO(str(teacher_best)).model)
-        (args.run_dir / "audit/teacher_frozen_p3.json").write_text(json.dumps(frozen, indent=2) + "\n")
+        if args.resume and teacher_best.is_file():
+            write_status(args.run_dir, "resume_from_completed_teacher", best=str(teacher_best))
+        else:
+            write_status(args.run_dir, "initialize_47_video_teacher")
+            teacher_init = args.run_dir / "teacher_initialized.pt"
+            teacher, teacher_report = initialize_addon_model(args.p3_initial, DEFAULT_CFG, teacher_init)
+            (args.run_dir / "audit/teacher_initialization.json").write_text(json.dumps(teacher_report, indent=2) + "\n")
+            teacher.add_callback("on_fit_epoch_end", lambda trainer: write_status(
+                args.run_dir, "train_47_video_teacher", epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
+            ))
+            write_status(args.run_dir, "train_47_video_teacher", epoch=0)
+            teacher.train(
+                trainer=TinyAwareAddOnTrainer,
+                project=str(args.run_dir / "teacher"), name="p2p3", lr0=.001, warmup_epochs=1,
+                **common_train(teacher_data, args, args.teacher_epochs, min(5, args.teacher_epochs)),
+            )
+            frozen = verify_legacy_outputs(YOLO(str(args.p3_initial)).model, YOLO(str(teacher_best)).model)
+            (args.run_dir / "audit/teacher_frozen_p3.json").write_text(json.dumps(frozen, indent=2) + "\n")
 
         write_status(args.run_dir, "initialize_fp32_student")
         student_init = args.run_dir / "student_four_scale_initialized.pt"

@@ -115,11 +115,21 @@ def verify_legacy_outputs(reference: DetectionModel, addon: DetectionModel, size
     """Prove that adding P2 did not numerically change P3/P4/P5 raw outputs."""
     reference = reference.float().cpu().eval()
     addon = addon.float().cpu().eval()
+    addon_head = addon.model[-1]
+    auxiliary_training_only = getattr(addon_head, "auxiliary_training_only", None)
+    if auxiliary_training_only is not None:
+        # This is a structural four-level regression. A Student checkpoint may
+        # intentionally expose only P3-P5 in eval mode, so unfold P2 temporarily.
+        addon_head.auxiliary_training_only = False
     torch.manual_seed(20260903)
     image = torch.rand(1, 3, size, size)
-    with torch.inference_mode():
-        reference_raw = raw_features(reference, image)
-        addon_raw = raw_features(addon, image)
+    try:
+        with torch.inference_mode():
+            reference_raw = raw_features(reference, image)
+            addon_raw = raw_features(addon, image)
+    finally:
+        if auxiliary_training_only is not None:
+            addon_head.auxiliary_training_only = auxiliary_training_only
     if len(reference_raw) != 3 or len(addon_raw) != 4:
         raise RuntimeError(f"Unexpected levels: reference={len(reference_raw)}, addon={len(addon_raw)}")
     maximum_absolute_errors = [

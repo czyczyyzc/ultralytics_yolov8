@@ -16,7 +16,11 @@ from scripts.anti_uav.rknn_qat import (
     strip_rknn_qat,
     sync_rknn_qat_observer_flags,
 )
-from scripts.anti_uav.train_frozen_p3_addon_p2 import initialize_addon_model, transfer_frozen_p3_weights
+from scripts.anti_uav.train_frozen_p3_addon_p2 import (
+    initialize_addon_model,
+    transfer_frozen_p3_weights,
+    verify_legacy_outputs,
+)
 from ultralytics import YOLO
 from ultralytics.nn.tasks import DetectionModel
 
@@ -46,6 +50,16 @@ def test_auxiliary_p2_is_not_used_for_student_validation():
     torch.testing.assert_close(addon_output, p3_output, rtol=0, atol=0)
     for left, right in zip(addon_raw, p3_raw):
         torch.testing.assert_close(left, right, rtol=0, atol=0)
+
+
+def test_legacy_regression_temporarily_unfolds_auxiliary_p2():
+    p3, addon = build_pair()
+    addon.model[-1].auxiliary_training_only = True
+    report = verify_legacy_outputs(p3, addon, size=64)
+    assert report["reference_levels"] == 3
+    assert report["addon_levels"] == 4
+    assert report["bit_exact"]
+    assert addon.model[-1].auxiliary_training_only is True
 
 
 def test_addon_initialization_reads_class_count_from_standard_detect_head(tmp_path):

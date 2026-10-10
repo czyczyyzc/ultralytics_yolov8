@@ -16,7 +16,8 @@ from scripts.anti_uav.rknn_qat import (
     strip_rknn_qat,
     sync_rknn_qat_observer_flags,
 )
-from scripts.anti_uav.train_frozen_p3_addon_p2 import transfer_frozen_p3_weights
+from scripts.anti_uav.train_frozen_p3_addon_p2 import initialize_addon_model, transfer_frozen_p3_weights
+from ultralytics import YOLO
 from ultralytics.nn.tasks import DetectionModel
 
 
@@ -45,6 +46,23 @@ def test_auxiliary_p2_is_not_used_for_student_validation():
     torch.testing.assert_close(addon_output, p3_output, rtol=0, atol=0)
     for left, right in zip(addon_raw, p3_raw):
         torch.testing.assert_close(left, right, rtol=0, atol=0)
+
+
+def test_addon_initialization_reads_class_count_from_standard_detect_head(tmp_path):
+    p3, _ = build_pair()
+    assert not hasattr(p3, "nc")
+    wrapper = YOLO(str(ROOT / "ultralytics/cfg/models/v8/yolov8.yaml"))
+    wrapper.model = p3
+    wrapper.ckpt = {}
+    source = tmp_path / "p3.pt"
+    wrapper.save(source)
+    initialized, report = initialize_addon_model(
+        source,
+        ROOT / "ultralytics/cfg/models/v8/yolov8-frozen-p3-addon-p2.yaml",
+        tmp_path / "addon.pt",
+    )
+    assert initialized.model.model[-1].nc == 1
+    assert report["legacy_regression"]["bit_exact"]
 
 
 def test_rknn_qat_wraps_toggles_and_strips_convolutions():

@@ -283,6 +283,19 @@ def export_pure_p3_student(qat_checkpoint: Path, output: Path, p3_cfg: Path) -> 
     target.args = dict(source.args)
     transfer = transfer_student_to_p3(source, target)
 
+    torch.manual_seed(20261009)
+    sample = torch.rand(1, 3, 64, 64)
+    clean_source = qat_copy(source, bake_weights=True).eval()
+    with torch.inference_mode():
+        source_raw = clean_source(sample)[1]
+        target_raw = target(sample)[1]
+    extraction_errors = [float((left - right).abs().max()) for left, right in zip(source_raw, target_raw)]
+    if len(source_raw) != 3 or len(target_raw) != 3 or any(error != 0.0 for error in extraction_errors):
+        raise RuntimeError(
+            f"Pure P3 extraction regression: source={len(source_raw)}, target={len(target_raw)}, "
+            f"errors={extraction_errors}"
+        )
+
     wrapper = YOLO(str(p3_cfg))
     wrapper.model = target
     wrapper.ckpt = {
@@ -294,20 +307,24 @@ def export_pure_p3_student(qat_checkpoint: Path, output: Path, p3_cfg: Path) -> 
     wrapper.save(output)
 
     reloaded = YOLO(str(output)).model.float().cpu().eval()
-    torch.manual_seed(20261009)
-    sample = torch.rand(1, 3, 64, 64)
-    clean_source = qat_copy(source, bake_weights=True).eval()
+    # YOLO.save serializes weights as FP16. Compare against the same explicit
+    # round trip rather than mistaking expected FP16 rounding for a graph error.
+    serialized_reference = deepcopy(target).half().float().eval()
     with torch.inference_mode():
-        source_raw = clean_source(sample)[1]
-        target_raw = reloaded(sample)[1]
-    errors = [float((left - right).abs().max()) for left, right in zip(source_raw, target_raw)]
-    if len(source_raw) != 3 or len(target_raw) != 3 or any(error != 0.0 for error in errors):
-        raise RuntimeError(f"Pure P3 extraction regression: source={len(source_raw)}, target={len(target_raw)}, errors={errors}")
+        reference_raw = serialized_reference(sample)[1]
+        reloaded_raw = reloaded(sample)[1]
+    serialization_errors = [float((left - right).abs().max()) for left, right in zip(reference_raw, reloaded_raw)]
+    if len(reference_raw) != 3 or len(reloaded_raw) != 3 or any(error != 0.0 for error in serialization_errors):
+        raise RuntimeError(
+            f"Pure P3 serialization regression: reference={len(reference_raw)}, reloaded={len(reloaded_raw)}, "
+            f"errors={serialization_errors}"
+        )
     return {
         "source": str(qat_checkpoint.resolve()),
         "output": str(output.resolve()),
         "transfer": transfer,
         "levels": 3,
-        "legacy_max_abs_error": errors,
+        "extraction_max_abs_error": extraction_errors,
+        "serialization_max_abs_error": serialization_errors,
         "parameters": sum(parameter.numel() for parameter in reloaded.parameters()),
     }

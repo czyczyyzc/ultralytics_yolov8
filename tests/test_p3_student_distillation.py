@@ -10,6 +10,7 @@ from scripts.anti_uav.p3_student_distillation import (
 from scripts.anti_uav.rknn_qat import (
     RKNNFakeQuantConv2d,
     prepare_rknn_qat,
+    qat_copy,
     set_rknn_qat,
     strip_rknn_qat,
     sync_rknn_qat_observer_flags,
@@ -89,7 +90,10 @@ def test_distillation_loss_backpropagates_and_pure_p3_extraction_is_exact():
     target = DetectionModel(ROOT / "ultralytics/cfg/models/v8/yolov8.yaml", nc=1, verbose=False).eval()
     report = transfer_student_to_p3(student, target)
     assert report["transferred_tensors"] == report["target_tensors"]
+    clean_student = qat_copy(student, bake_weights=True).eval()
     with torch.inference_mode():
-        source_raw = student(image)[1]
+        source_raw = clean_student(image)[1]
         target_raw = target(image)[1]
     assert len(source_raw) == len(target_raw) == 3
+    for source_level, target_level in zip(source_raw, target_raw):
+        torch.testing.assert_close(source_level, target_level, rtol=0, atol=0)

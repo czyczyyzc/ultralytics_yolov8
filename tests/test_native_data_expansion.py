@@ -68,6 +68,46 @@ def test_label_pool_covers_all_negatives_and_keeps_anchors(tmp_path):
         NativeExposureSampler(Dataset(), cfg)
 
 
+def test_tiny_aware_sampler_preserves_epoch_and_balances_batches(tmp_path):
+    from scripts.anti_uav.label_pool_sampling import NativeExposureSampler, TinyAwareSampler
+
+    class Dataset:
+        labels = []
+
+        def __len__(self):
+            return len(self.labels)
+
+    dataset = Dataset()
+    for index in range(80):
+        tiny = index < 24
+        positive = index < 64
+        dataset.labels.append(
+            dict(
+                im_file=f"/images/video{index % 4}/{index}.jpg",
+                cls=np.ones((1, 1)) if positive else np.empty((0, 1)),
+                bboxes=np.asarray([[.5, .5, 6 / 960 if tiny else .1, 6 / 544 if tiny else .1]], dtype=np.float32)
+                if positive
+                else np.empty((0, 4), dtype=np.float32),
+                shape=(544, 960),
+                normalized=True,
+                bbox_format="xywh",
+            )
+        )
+    pool = tmp_path / "negative.txt"
+    pool.write_text("\n".join(dataset.labels[index]["im_file"] for index in range(72, 80)))
+    config = dict(negative_pool=str(pool), negative_pool_count=8, negatives_per_epoch=4, anchor_slots=72)
+    native = NativeExposureSampler(dataset, config, seed=3)
+    sampler = TinyAwareSampler(dataset, config, dict(input_hw=[544, 960]), batch_size=8, seed=3)
+    native.set_epoch(1)
+    sampler.set_epoch(1)
+    native_indices, indices = list(native), list(sampler)
+    assert sorted(indices) == sorted(native_indices)
+    assert len(indices) == len(set(indices)) == 76
+    for start in range(0, 72, 8):
+        categories = sampler.categories[indices[start : start + 8]]
+        assert 0 in categories and 1 in categories and 2 in categories
+
+
 def test_real_training_loader_cycles_negative_pool(tmp_path):
     pytest.importorskip("torch")
     import cv2

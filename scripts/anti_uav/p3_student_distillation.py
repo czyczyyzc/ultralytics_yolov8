@@ -4,23 +4,60 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import weakref
 
 import torch
 import torch.nn.functional as F
+from torch import nn
 
-from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayP3Trainer
+from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayAddOnTrainer, FixedShapeGrayP3Trainer
 from scripts.anti_uav.rknn_qat import (
     prepare_rknn_qat,
     qat_copy,
     set_rknn_qat,
     sync_rknn_qat_observer_flags,
 )
+from scripts.anti_uav.tiny_aware_loss import TinyAwareAddOnP2DetectionLoss, TinyAwareDetectionLoss
 from ultralytics import YOLO
 from ultralytics.nn.modules import FrozenP3AddOnP2Detect
 from ultralytics.nn.tasks import DetectionModel
 from ultralytics.utils import LOGGER
 from ultralytics.utils.loss import v8DetectionLoss
 from ultralytics.utils.torch_utils import de_parallel
+
+
+class DetectInputCapture:
+    """Retain the current detector-neck inputs for localized feature transfer."""
+
+    def __init__(self, detector: nn.Module):
+        self.features = None
+        owner = weakref.ref(self)
+
+        def capture(_module, inputs):
+            value = inputs[0]
+            if not isinstance(value, (list, tuple)):
+                raise TypeError("Expected a list of detector feature maps")
+            current = owner()
+            if current is not None:
+                current.features = tuple(value)
+
+        self.handle = detector.register_forward_pre_hook(capture)
+
+
+def attach_tiny_feature_projection(model: DetectionModel) -> nn.Conv2d:
+    """Attach the disposable teacher-P2 to student-P3 projection before optimizer creation."""
+    if hasattr(model, "tiny_feature_projection"):
+        return model.tiny_feature_projection
+    detector = model.model[-1]
+    if not isinstance(detector, FrozenP3AddOnP2Detect):
+        raise TypeError("Feature projection requires a temporary P2+P3 graph")
+    p2_channels = detector.cv2[0][0].conv.in_channels
+    p3_channels = detector.cv2[1][0].conv.in_channels
+    projection = nn.Conv2d(p2_channels, p3_channels, kernel_size=1, bias=False)
+    nn.init.kaiming_normal_(projection.weight, mode="fan_out", nonlinearity="linear")
+    projection.to(next(model.parameters()).device)
+    model.add_module("tiny_feature_projection", projection)
+    return projection
 
 
 class P3StudentDistillationLoss:
@@ -35,6 +72,8 @@ class P3StudentDistillationLoss:
         p3_dfl_weight: float = 0.05,
         p2_cls_weight: float = 0.25,
         p2_box_weight: float = 0.10,
+        feature_weight: float = 0.10,
+        tiny_multiplier: float = 1.75,
         temperature: float = 2.0,
     ):
         detector = model.model[-1]
@@ -42,7 +81,7 @@ class P3StudentDistillationLoss:
             raise TypeError("The student must use FrozenP3AddOnP2Detect during training")
         self.model = model
         self.teacher = teacher
-        self.primary = v8DetectionLoss(model)
+        self.primary = TinyAwareDetectionLoss(model, tiny_multiplier=tiny_multiplier)
         self.primary.stride = detector.stride[detector.legacy_start_index :]
         self.auxiliary = v8DetectionLoss(model)
         self.auxiliary.stride = detector.stride[: detector.legacy_start_index]
@@ -54,8 +93,12 @@ class P3StudentDistillationLoss:
             p3_dfl=p3_dfl_weight,
             p2_cls=p2_cls_weight,
             p2_box=p2_box_weight,
+            feature=feature_weight,
         )
         self.temperature = temperature
+        self.projection = attach_tiny_feature_projection(model)
+        self.student_capture = DetectInputCapture(model.model[-1])
+        self.teacher_capture = DetectInputCapture(teacher.model[-1])
 
     def _split(self, raw: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         boundary = self.reg_max * 4
@@ -132,6 +175,37 @@ class P3StudentDistillationLoss:
         box_loss = self._weighted_mean(box_delta, target_confidence)
         return cls_loss, box_loss
 
+    def _localized_feature_kd(self, batch) -> torch.Tensor:
+        student_features = self.student_capture.features
+        teacher_features = self.teacher_capture.features
+        if student_features is None or teacher_features is None:
+            raise RuntimeError("Detector feature capture did not run")
+        student_p3 = student_features[1]
+        teacher_p2 = teacher_features[0].detach()
+        target = F.adaptive_avg_pool2d(teacher_p2, student_p3.shape[-2:])
+        target = self.projection(target)
+
+        batch_size, _, height, width = student_p3.shape
+        mask = student_p3.new_zeros((batch_size, 1, height, width))
+        image_height, image_width = batch["img"].shape[-2:]
+        boxes = batch["bboxes"]
+        long_edges = torch.maximum(boxes[:, 2] * image_width, boxes[:, 3] * image_height)
+        selected = (long_edges >= 4.0) & (long_edges <= 8.0)
+        regions = torch.cat((batch["batch_idx"].view(-1, 1), boxes), dim=1)[selected].detach().cpu().tolist()
+        for index, cx, cy, bw, bh in regions:
+            x1 = max(int((cx - bw / 2) * width) - 1, 0)
+            y1 = max(int((cy - bh / 2) * height) - 1, 0)
+            x2 = min(int((cx + bw / 2) * width + 0.9999) + 1, width)
+            y2 = min(int((cy + bh / 2) * height + 0.9999) + 1, height)
+            index = int(index)
+            mask[index, :, y1:max(y2, y1 + 1), x1:max(x2, x1 + 1)] = 1
+        if not mask.any():
+            return student_p3.sum() * 0.0
+        student_normalized = F.normalize(student_p3.float(), dim=1)
+        target_normalized = F.normalize(target.float(), dim=1)
+        delta = F.smooth_l1_loss(student_normalized, target_normalized, reduction="none").mean(dim=1, keepdim=True)
+        return (delta * mask).sum() / mask.sum().clamp_min(1.0)
+
     def __call__(self, predictions, batch):
         student_raw = predictions[1] if isinstance(predictions, tuple) else predictions
         if len(student_raw) != 4:
@@ -156,18 +230,24 @@ class P3StudentDistillationLoss:
         p3_cls = p3_cls / 3.0
         p3_dfl = p3_dfl / 3.0
         p2_cls, p2_box = self._p2_to_p3(student_raw[1], teacher_raw[0])
+        feature = self._localized_feature_kd(batch)
 
         distillation = (
             self.weights["p3_cls"] * p3_cls
             + self.weights["p3_dfl"] * p3_dfl
             + self.weights["p2_cls"] * p2_cls
             + self.weights["p2_box"] * p2_box
+            + self.weights["feature"] * feature
         )
         batch_size = student_raw[0].shape[0]
         total = primary_total + self.weights["auxiliary"] * auxiliary_total + batch_size * distillation
         items = primary_items + self.weights["auxiliary"] * auxiliary_items
         items[0] += self.weights["p2_box"] * p2_box.detach()
-        items[1] += (self.weights["p3_cls"] * p3_cls + self.weights["p2_cls"] * p2_cls).detach()
+        items[1] += (
+            self.weights["p3_cls"] * p3_cls
+            + self.weights["p2_cls"] * p2_cls
+            + self.weights["feature"] * feature
+        ).detach()
         items[2] += self.weights["p3_dfl"] * p3_dfl.detach()
         return total, items
 
@@ -178,6 +258,7 @@ class P3StudentDistillationTrainer(FixedShapeGrayP3Trainer):
     teacher_weights: Path | None = None
     qat_start_epoch = 0
     qat_observer_freeze_epoch = 12
+    enable_qat = True
     loss_options: dict = {}
 
     def get_model(self, cfg=None, weights=None, verbose=True):
@@ -186,10 +267,12 @@ class P3StudentDistillationTrainer(FixedShapeGrayP3Trainer):
         if not isinstance(detector, FrozenP3AddOnP2Detect):
             raise TypeError("Distillation trainer requires the temporary four-scale student graph")
         detector.auxiliary_training_only = True
-        wrapped = prepare_rknn_qat(model)
-        if wrapped == 0:
-            raise RuntimeError("No convolution was prepared for RKNN INT8 QAT")
-        LOGGER.info("Prepared %d Conv2d layers for RKNN INT8 QAT", wrapped)
+        attach_tiny_feature_projection(model)
+        if self.enable_qat:
+            wrapped = prepare_rknn_qat(model)
+            if wrapped == 0:
+                raise RuntimeError("No convolution was prepared for RKNN INT8 QAT")
+            LOGGER.info("Prepared %d Conv2d layers for RKNN INT8 QAT", wrapped)
         return model
 
     def _setup_train(self, world_size):
@@ -212,12 +295,64 @@ class P3StudentDistillationTrainer(FixedShapeGrayP3Trainer):
 
     def preprocess_batch(self, batch):
         batch = super().preprocess_batch(batch)
-        enabled = self.epoch >= self.qat_start_epoch
-        observe = self.epoch < self.qat_observer_freeze_epoch
-        set_rknn_qat(de_parallel(self.model), enabled=enabled, observer_enabled=observe)
-        if self.ema:
-            set_rknn_qat(self.ema.ema, enabled=enabled, observer_enabled=False)
+        if self.enable_qat:
+            enabled = self.epoch >= self.qat_start_epoch
+            observe = self.epoch < self.qat_observer_freeze_epoch
+            set_rknn_qat(de_parallel(self.model), enabled=enabled, observer_enabled=observe)
+            if self.ema:
+                set_rknn_qat(self.ema.ema, enabled=enabled, observer_enabled=False)
         self.teacher.eval()
+        return batch
+
+    def optimizer_step(self):
+        super().optimizer_step()
+        if self.enable_qat and self.ema:
+            sync_rknn_qat_observer_flags(de_parallel(self.model), self.ema.ema)
+
+
+class P3StudentFP32DistillationTrainer(P3StudentDistillationTrainer):
+    """Distill without fake-quant noise; QAT is a later, short stage."""
+
+    enable_qat = False
+
+
+class TinyAwareAddOnTrainer(FixedShapeGrayAddOnTrainer):
+    """Train the new Teacher P2 branch with bounded tiny-target weighting."""
+
+    tiny_multiplier = 1.75
+
+    def _setup_train(self, world_size):
+        super()._setup_train(world_size)
+        model = de_parallel(self.model)
+        model.criterion = TinyAwareAddOnP2DetectionLoss(model, tiny_multiplier=self.tiny_multiplier)
+
+
+class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):
+    """Short pure-P3 QAT stage after FP32 distillation has converged."""
+
+    tiny_multiplier = 1.75
+    observer_freeze_epoch = 3
+
+    def get_model(self, cfg=None, weights=None, verbose=True):
+        model = super().get_model(cfg=cfg, weights=weights, verbose=verbose)
+        wrapped = prepare_rknn_qat(model)
+        if wrapped == 0:
+            raise RuntimeError("No convolution was prepared for pure-P3 QAT")
+        return model
+
+    def _setup_train(self, world_size):
+        if world_size != 1:
+            raise ValueError("RKNN QAT is intentionally restricted to one GPU")
+        super()._setup_train(world_size)
+        model = de_parallel(self.model)
+        model.criterion = TinyAwareDetectionLoss(model, tiny_multiplier=self.tiny_multiplier)
+
+    def preprocess_batch(self, batch):
+        batch = super().preprocess_batch(batch)
+        observe = self.epoch < self.observer_freeze_epoch
+        set_rknn_qat(de_parallel(self.model), enabled=True, observer_enabled=observe)
+        if self.ema:
+            set_rknn_qat(self.ema.ema, enabled=True, observer_enabled=False)
         return batch
 
     def optimizer_step(self):
@@ -326,5 +461,41 @@ def export_pure_p3_student(qat_checkpoint: Path, output: Path, p3_cfg: Path) -> 
         "levels": 3,
         "extraction_max_abs_error": extraction_errors,
         "serialization_max_abs_error": serialization_errors,
+        "parameters": sum(parameter.numel() for parameter in reloaded.parameters()),
+    }
+
+
+def export_standard_p3_qat(qat_checkpoint: Path, output: Path) -> dict[str, object]:
+    """Bake fake-quantized weights from a standard three-scale P3 checkpoint."""
+    source_wrapper = YOLO(str(qat_checkpoint))
+    source = source_wrapper.model.float().cpu().eval()
+    if len(source.model[-1].stride) != 3:
+        raise ValueError("Expected a standard three-scale P3 checkpoint")
+    target = qat_copy(source, bake_weights=True).eval()
+    wrapper = YOLO(str(qat_checkpoint))
+    wrapper.model = target
+    wrapper.ckpt = {
+        "train_args": dict(target.args),
+        "source_qat_checkpoint": str(qat_checkpoint.resolve()),
+        "training_method": "FP32 P2-to-P3 distillation followed by short pure-P3 RKNN INT8 QAT",
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.save(output)
+
+    torch.manual_seed(20261010)
+    image = torch.rand(1, 3, 64, 64)
+    reference = deepcopy(target).half().float().eval()
+    reloaded = YOLO(str(output)).model.float().cpu().eval()
+    with torch.inference_mode():
+        reference_raw = reference(image)[1]
+        reloaded_raw = reloaded(image)[1]
+    errors = [float((left - right).abs().max()) for left, right in zip(reference_raw, reloaded_raw)]
+    if len(reference_raw) != 3 or len(reloaded_raw) != 3 or any(error != 0.0 for error in errors):
+        raise RuntimeError(f"Pure P3 QAT serialization regression: {errors}")
+    return {
+        "source": str(qat_checkpoint.resolve()),
+        "output": str(output.resolve()),
+        "levels": 3,
+        "serialization_max_abs_error": errors,
         "parameters": sum(parameter.numel() for parameter in reloaded.parameters()),
     }

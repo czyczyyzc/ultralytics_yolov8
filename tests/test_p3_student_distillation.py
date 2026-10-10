@@ -7,6 +7,7 @@ from scripts.anti_uav.p3_student_distillation import (
     P3StudentDistillationLoss,
     transfer_student_to_p3,
 )
+from scripts.anti_uav.tiny_aware_loss import TinyAwareAddOnP2DetectionLoss, TinyAwareDetectionLoss
 from scripts.anti_uav.rknn_qat import (
     RKNNFakeQuantConv2d,
     prepare_rknn_qat,
@@ -97,3 +98,37 @@ def test_distillation_loss_backpropagates_and_pure_p3_extraction_is_exact():
     assert len(source_raw) == len(target_raw) == 3
     for source_level, target_level in zip(source_raw, target_raw):
         torch.testing.assert_close(source_level, target_level, rtol=0, atol=0)
+
+
+def test_tiny_aware_loss_is_bounded_and_backpropagates():
+    p3, _ = build_pair()
+    p3.train()
+    p3.args = SimpleNamespace(box=7.5, cls=.5, dfl=1.5)
+    criterion = TinyAwareDetectionLoss(p3, tiny_multiplier=1.75)
+    image = torch.rand(2, 3, 64, 64)
+    prediction = p3(image)
+    batch = dict(
+        img=image,
+        batch_idx=torch.tensor([0.0, 1.0]),
+        cls=torch.tensor([[0.0], [0.0]]),
+        bboxes=torch.tensor([[.5, .5, 6 / 64, 6 / 64], [.5, .5, .25, .25]]),
+    )
+    loss, items = criterion(prediction, batch)
+    assert torch.isfinite(loss) and items.shape == (3,)
+    loss.backward()
+    assert p3.model[0].conv.weight.grad is not None
+
+
+def test_tiny_aware_addon_loss_uses_only_p2_level():
+    _, addon = build_pair()
+    addon.train()
+    addon.args = SimpleNamespace(box=7.5, cls=.5, dfl=1.5)
+    image = torch.rand(1, 3, 64, 64)
+    batch = dict(
+        img=image,
+        batch_idx=torch.tensor([0.0]),
+        cls=torch.tensor([[0.0]]),
+        bboxes=torch.tensor([[.5, .5, 6 / 64, 6 / 64]]),
+    )
+    loss, items = TinyAwareAddOnP2DetectionLoss(addon)(addon(image), batch)
+    assert torch.isfinite(loss) and items.shape == (3,)

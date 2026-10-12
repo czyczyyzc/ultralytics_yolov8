@@ -74,6 +74,9 @@ class P3StudentDistillationLoss:
         p2_box_weight: float = 0.10,
         feature_weight: float = 0.10,
         tiny_multiplier: float = 1.75,
+        localization_weight: float = 0.0,
+        localization_min_px: float = 4.0,
+        localization_max_px: float = 64.0,
         temperature: float = 2.0,
     ):
         detector = model.model[-1]
@@ -81,7 +84,13 @@ class P3StudentDistillationLoss:
             raise TypeError("The student must use FrozenP3AddOnP2Detect during training")
         self.model = model
         self.teacher = teacher
-        self.primary = TinyAwareDetectionLoss(model, tiny_multiplier=tiny_multiplier)
+        self.primary = TinyAwareDetectionLoss(
+            model,
+            tiny_multiplier=tiny_multiplier,
+            localization_weight=localization_weight,
+            localization_min_px=localization_min_px,
+            localization_max_px=localization_max_px,
+        )
         self.primary.stride = detector.stride[detector.legacy_start_index :]
         self.auxiliary = v8DetectionLoss(model)
         self.auxiliary.stride = detector.stride[: detector.legacy_start_index]
@@ -331,6 +340,9 @@ class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):
     """Short pure-P3 QAT stage after FP32 distillation has converged."""
 
     tiny_multiplier = 1.75
+    localization_weight = 0.0
+    localization_min_px = 4.0
+    localization_max_px = 64.0
     observer_freeze_epoch = 3
 
     def get_model(self, cfg=None, weights=None, verbose=True):
@@ -345,7 +357,13 @@ class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):
             raise ValueError("RKNN QAT is intentionally restricted to one GPU")
         super()._setup_train(world_size)
         model = de_parallel(self.model)
-        model.criterion = TinyAwareDetectionLoss(model, tiny_multiplier=self.tiny_multiplier)
+        model.criterion = TinyAwareDetectionLoss(
+            model,
+            tiny_multiplier=self.tiny_multiplier,
+            localization_weight=self.localization_weight,
+            localization_min_px=self.localization_min_px,
+            localization_max_px=self.localization_max_px,
+        )
 
     def preprocess_batch(self, batch):
         batch = super().preprocess_batch(batch)

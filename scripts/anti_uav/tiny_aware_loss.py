@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 
 from ultralytics.utils.loss import v8DetectionLoss
 from ultralytics.utils.tal import make_anchors
@@ -11,15 +12,62 @@ from ultralytics.utils.tal import make_anchors
 class TinyAwareDetectionLoss(v8DetectionLoss):
     """Increase positive classification/box gradients for tiny assigned targets only."""
 
-    def __init__(self, model, tiny_multiplier=1.75, tiny_min_px=4.0, tiny_max_px=8.0):
+    def __init__(
+        self,
+        model,
+        tiny_multiplier=1.75,
+        tiny_min_px=4.0,
+        tiny_max_px=8.0,
+        localization_weight=0.0,
+        localization_min_px=4.0,
+        localization_max_px=64.0,
+    ):
         super().__init__(model)
         self.tiny_multiplier = float(tiny_multiplier)
         self.tiny_min_px = float(tiny_min_px)
         self.tiny_max_px = float(tiny_max_px)
+        self.localization_weight = float(localization_weight)
+        self.localization_min_px = float(localization_min_px)
+        self.localization_max_px = float(localization_max_px)
         if not 1.0 <= self.tiny_multiplier <= 2.0:
             raise ValueError("tiny_multiplier must stay in the bounded [1, 2] range")
         if not 0 <= self.tiny_min_px < self.tiny_max_px:
             raise ValueError("Invalid tiny target size range")
+        if not 0.0 <= self.localization_weight <= 1.0:
+            raise ValueError("localization_weight must stay in the bounded [0, 1] range")
+        if not 0 <= self.localization_min_px < self.localization_max_px:
+            raise ValueError("Invalid localization target size range")
+
+    def relative_edge_loss(
+        self,
+        pred_bboxes: torch.Tensor,
+        target_bboxes: torch.Tensor,
+        target_scores: torch.Tensor,
+        fg_mask: torch.Tensor,
+        stride_tensor: torch.Tensor,
+        normalizer: torch.Tensor | float,
+    ) -> torch.Tensor:
+        """Penalize sub-pixel edge error relative to each assigned target's size."""
+        if not fg_mask.any() or self.localization_weight == 0.0:
+            return pred_bboxes.sum() * 0.0
+        predicted = (pred_bboxes * stride_tensor)[fg_mask]
+        target = target_bboxes[fg_mask]
+        target_wh = (target[:, 2:] - target[:, :2]).clamp_min(1.0)
+        long_edge = target_wh.amax(dim=-1)
+        selected = (long_edge >= self.localization_min_px) & (long_edge <= self.localization_max_px)
+        if not selected.any():
+            return pred_bboxes.sum() * 0.0
+
+        edge_scale = torch.cat((target_wh, target_wh), dim=-1)
+        normalized_error = (predicted - target) / edge_scale
+        edge_loss = F.smooth_l1_loss(
+            normalized_error[selected],
+            torch.zeros_like(normalized_error[selected]),
+            reduction="none",
+            beta=0.125,
+        ).mean(dim=-1)
+        assignment_weight = target_scores.sum(dim=-1)[fg_mask][selected]
+        return (edge_loss * assignment_weight).sum() / normalizer
 
     def __call__(self, preds, batch):
         loss = torch.zeros(3, device=self.device)
@@ -69,6 +117,14 @@ class TinyAwareDetectionLoss(v8DetectionLoss):
         cls = self.bce(pred_scores, target_scores.to(dtype)).sum(dim=-1)
         loss[1] = (cls * anchor_weight).sum() / normalizer
         if fg_mask.sum():
+            localization = self.relative_edge_loss(
+                pred_bboxes,
+                target_bboxes,
+                target_scores,
+                fg_mask,
+                stride_tensor,
+                normalizer,
+            )
             target_bboxes /= stride_tensor
             weighted_scores = target_scores * anchor_weight.unsqueeze(-1)
             loss[0], loss[2] = self.bbox_loss(
@@ -80,6 +136,7 @@ class TinyAwareDetectionLoss(v8DetectionLoss):
                 normalizer,
                 fg_mask,
             )
+            loss[0] += self.localization_weight * localization
 
         loss[0] *= self.hyp.box
         loss[1] *= self.hyp.cls

@@ -108,6 +108,12 @@ def merge_shards(output, shards):
     output.mkdir(parents=True, exist_ok=False)
     records = [json.loads((path / "results.json").read_text()) for path in shards]
     reference = records[0]["protocol"]
+    quantization_defaults = dict(
+        quantized_dtype="w8a8",
+        quantized_algorithm="normal",
+        quantized_method="channel",
+        auto_hybrid=False,
+    )
     shard_count = reference["shards"]
     if len(records) != shard_count or {r["protocol"]["shard_index"] for r in records} != set(range(shard_count)):
         raise ValueError("Missing or duplicate shards")
@@ -115,14 +121,19 @@ def merge_shards(output, shards):
         if json.loads((path / "status.json").read_text())["stage"] != "complete":
             raise ValueError(f"Incomplete shard: {path}")
         p = record["protocol"]
-        for key in ("artifacts", "target", "toolkit_version", "input_hw", "padding", "thresholds", "shards"):
-            if p[key] != reference[key]:
+        for key in (
+            "artifacts", "target", "toolkit_version", "input_hw", "padding", "thresholds", "shards",
+            "quantized_dtype", "quantized_algorithm", "quantized_method", "auto_hybrid",
+        ):
+            if p.get(key, quantization_defaults.get(key)) != reference.get(key, quantization_defaults.get(key)):
                 raise ValueError(f"Shard protocol differs: {key}")
         if p["smoke_limit_per_split"]:
             raise ValueError("Do not merge smoke subsets as full evaluation")
     result = dict(protocol=dict(reference), backends={b: {} for b in BACKENDS},
         raw_export_max_error={k: max(r["raw_export_max_error"][k] for r in records)
                               for k in records[0]["raw_export_max_error"]})
+    for key, value in quantization_defaults.items():
+        result["protocol"].setdefault(key, value)
     result["protocol"].update(shard_index=None, merged_shards=[str(p) for p in shards],
         rebuilt_matches_delivered=all(r["protocol"]["rebuilt_matches_delivered"] for r in records),
         rebuilt_shard_hashes=[r["protocol"]["rebuilt_sha256"] for r in records])
@@ -192,6 +203,10 @@ def main():
     for name in ("weights", "onnx", "rknn", "calibration"):
         parser.add_argument(f"--{name}", type=Path)
     parser.add_argument("--target", choices=("rk3576", "rk3588"), default="rk3576")
+    parser.add_argument("--quantized-dtype", choices=("w8a8", "w8a16"), default="w8a8")
+    parser.add_argument("--quantized-algorithm", choices=("normal", "mmse", "kl_divergence", "gdq"), default="normal")
+    parser.add_argument("--quantized-method", choices=("layer", "channel", "group32", "group64"), default="channel")
+    parser.add_argument("--auto-hybrid", action="store_true")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--limit-per-split", type=int, default=0, help="Smoke only; 0 evaluates all native frames")
     parser.add_argument("--shards", type=int, default=1)
@@ -234,6 +249,8 @@ def main():
         protocol = dict(target=args.target, toolkit_version=version("rknn-toolkit2"),
             input_hw=[544, 960], padding=114, conf_floor=.001, nms_iou=.45, max_det=100,
             thresholds=[.01, .03, .05], matching_iou=.5, calibration_frames=len(calibration),
+            quantized_dtype=args.quantized_dtype, quantized_algorithm=args.quantized_algorithm,
+            quantized_method=args.quantized_method, auto_hybrid=args.auto_hybrid,
             scope="detector-only host quantization simulator", pooled_is_independent_test=False,
             smoke_limit_per_split=args.limit_per_split,
             shards=args.shards, shard_index=args.shard_index,
@@ -268,10 +285,20 @@ def main():
         def require_zero(code, operation):
             if code != 0:
                 raise RuntimeError(f"{operation} failed: {code}")
-        require_zero(runtime.config(target_platform=args.target, mean_values=[[0, 0, 0]],
-            std_values=[[255, 255, 255]]), "config")
+        require_zero(runtime.config(
+            target_platform=args.target,
+            mean_values=[[0, 0, 0]],
+            std_values=[[255, 255, 255]],
+            quantized_dtype=args.quantized_dtype,
+            quantized_algorithm=args.quantized_algorithm,
+            quantized_method=args.quantized_method,
+        ), "config")
         require_zero(runtime.load_onnx(model=str(args.onnx)), "load_onnx")
-        require_zero(runtime.build(do_quantization=True, dataset=str(args.calibration)), "build")
+        require_zero(runtime.build(
+            do_quantization=True,
+            dataset=str(args.calibration),
+            auto_hybrid=args.auto_hybrid,
+        ), "build")
         rebuilt = args.output / "rebuilt_for_simulator.rknn"
         require_zero(runtime.export_rknn(str(rebuilt)), "export_rknn")
         protocol["rebuilt_sha256"] = sha256(rebuilt)

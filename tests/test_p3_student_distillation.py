@@ -151,6 +151,27 @@ def test_tiny_aware_loss_is_bounded_and_backpropagates():
     assert p3.model[0].conv.weight.grad is not None
 
 
+def test_localization_loss_penalizes_relative_edge_error_only_in_selected_scale_range():
+    p3, _ = build_pair()
+    p3.args = SimpleNamespace(box=7.5, cls=.5, dfl=1.5)
+    criterion = TinyAwareDetectionLoss(
+        p3,
+        localization_weight=.2,
+        localization_min_px=4,
+        localization_max_px=64,
+    )
+    targets = torch.tensor([[[8.0, 8.0, 16.0, 16.0], [0.0, 0.0, 2.0, 2.0]]])
+    predicted = targets.clone()
+    scores = torch.ones(1, 2, 1)
+    foreground = torch.tensor([[True, True]])
+    strides = torch.ones(2, 1)
+    exact = criterion.relative_edge_loss(predicted, targets, scores, foreground, strides, scores.sum())
+    predicted[0, 0, 0] += 1.0
+    shifted = criterion.relative_edge_loss(predicted, targets, scores, foreground, strides, scores.sum())
+    assert exact == 0
+    assert shifted > 0
+
+
 def test_tiny_aware_addon_loss_uses_only_p2_level():
     _, addon = build_pair()
     addon.train()

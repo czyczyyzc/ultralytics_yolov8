@@ -12,6 +12,7 @@ from torch import nn
 
 from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayAddOnTrainer, FixedShapeGrayP3Trainer
 from scripts.anti_uav.rknn_qat import (
+    canonicalize_dfl,
     prepare_rknn_qat,
     qat_copy,
     set_rknn_qat,
@@ -272,6 +273,7 @@ class P3StudentDistillationTrainer(FixedShapeGrayP3Trainer):
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         model = super().get_model(cfg=cfg, weights=weights, verbose=verbose)
+        canonicalize_dfl(model)
         detector = model.model[-1]
         if not isinstance(detector, FrozenP3AddOnP2Detect):
             raise TypeError("Distillation trainer requires the temporary four-scale student graph")
@@ -291,6 +293,7 @@ class P3StudentDistillationTrainer(FixedShapeGrayP3Trainer):
         if not self.teacher_weights:
             raise ValueError("Configure P3StudentDistillationTrainer.teacher_weights before training")
         teacher = YOLO(str(self.teacher_weights)).model.float().to(self.device).eval()
+        canonicalize_dfl(teacher)
         for parameter in teacher.parameters():
             parameter.requires_grad_(False)
         detector = teacher.model[-1]
@@ -347,6 +350,7 @@ class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         model = super().get_model(cfg=cfg, weights=weights, verbose=verbose)
+        canonicalize_dfl(model)
         wrapped = prepare_rknn_qat(model)
         if wrapped == 0:
             raise RuntimeError("No convolution was prepared for pure-P3 QAT")
@@ -423,6 +427,7 @@ def transfer_student_to_p3(source: DetectionModel, target: DetectionModel) -> di
     if missing:
         raise RuntimeError(f"Pure P3 extraction missed {len(missing)} tensors: {sorted(missing)[:3]}")
     target.load_state_dict(transferred, strict=True)
+    canonicalize_dfl(target)
     return {"transferred_tensors": len(transferred), "target_tensors": len(target_state)}
 
 
@@ -490,6 +495,7 @@ def export_standard_p3_qat(qat_checkpoint: Path, output: Path) -> dict[str, obje
     if len(source.model[-1].stride) != 3:
         raise ValueError("Expected a standard three-scale P3 checkpoint")
     target = qat_copy(source, bake_weights=True).eval()
+    canonicalize_dfl(target)
     wrapper = YOLO(str(qat_checkpoint))
     wrapper.model = target
     wrapper.ckpt = {

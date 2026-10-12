@@ -23,6 +23,7 @@ from scripts.anti_uav.p3_student_distillation import (  # noqa: E402
     copy_teacher_auxiliary,
     export_pure_p3_student,
 )
+from scripts.anti_uav.rknn_qat import canonicalize_dfl  # noqa: E402
 from scripts.anti_uav.run_p3_generalization_training import (  # noqa: E402
     P3_CFG,
     common_train,
@@ -117,8 +118,18 @@ def main() -> None:
 
     try:
         write_status(args.run_dir, "initialize")
+        canonical_initial = args.run_dir / "p3_initial_canonical_dfl.pt"
+        canonical_wrapper = YOLO(str(args.p3_initial))
+        canonical_report = canonicalize_dfl(canonical_wrapper.model)
+        if canonical_report["modules"] != 1:
+            raise RuntimeError(f"Expected one DFL module, got {canonical_report}")
+        canonical_wrapper.save(canonical_initial)
+        (args.run_dir / "audit/dfl_canonicalization.json").write_text(
+            json.dumps(canonical_report, indent=2) + "\n"
+        )
         student_init = args.run_dir / "student_four_scale_initialized.pt"
-        student, report = initialize_addon_model(args.p3_initial, DEFAULT_CFG, student_init)
+        student, report = initialize_addon_model(canonical_initial, DEFAULT_CFG, student_init)
+        report["student_dfl"] = canonicalize_dfl(student.model)
         report["teacher_auxiliary_copy"] = copy_teacher_auxiliary(YOLO(str(args.teacher)).model, student.model)
         student.model.model[-1].auxiliary_training_only = True
         student.save(student_init)
@@ -150,7 +161,9 @@ def main() -> None:
 
         write_status(args.run_dir, "compare_video00009")
         comparison = {
-            "baseline": validate(args.p3_initial, data, args, args.run_dir / "audit/video00009_baseline.json"),
+            "baseline": validate(
+                canonical_initial, data, args, args.run_dir / "audit/video00009_baseline.json"
+            ),
             "refined": validate(
                 args.run_dir / "p3_student_best_fp32.pt",
                 data,

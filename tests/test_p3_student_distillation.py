@@ -10,6 +10,7 @@ from scripts.anti_uav.p3_student_distillation import (
 from scripts.anti_uav.tiny_aware_loss import TinyAwareAddOnP2DetectionLoss, TinyAwareDetectionLoss
 from scripts.anti_uav.rknn_qat import (
     RKNNFakeQuantConv2d,
+    canonicalize_dfl,
     prepare_rknn_qat,
     qat_copy,
     set_rknn_qat,
@@ -82,8 +83,12 @@ def test_addon_initialization_reads_class_count_from_standard_detect_head(tmp_pa
 def test_rknn_qat_wraps_toggles_and_strips_convolutions():
     p3, _ = build_pair()
     original = p3.model[0].conv.weight.detach().clone()
+    dfl = p3.model[-1].dfl
+    dfl.conv.weight.data.add_(.25)
     count = prepare_rknn_qat(p3)
     assert count > 0 and isinstance(p3.model[0].conv, RKNNFakeQuantConv2d)
+    assert not isinstance(dfl.conv, RKNNFakeQuantConv2d)
+    torch.testing.assert_close(dfl.conv.weight.flatten(), torch.arange(16.0), rtol=0, atol=0)
     set_rknn_qat(p3, enabled=True)
     p3.train()(torch.rand(1, 3, 64, 64))
     assert bool(p3.model[0].conv.observer_initialized)
@@ -94,6 +99,15 @@ def test_rknn_qat_wraps_toggles_and_strips_convolutions():
     strip_rknn_qat(p3, bake_weights=True)
     assert not any(isinstance(module, RKNNFakeQuantConv2d) for module in p3.modules())
     assert not torch.equal(p3.model[0].conv.weight, original)
+
+
+def test_canonicalize_dfl_reports_and_repairs_fixed_integral_weights():
+    p3, _ = build_pair()
+    p3.model[-1].dfl.conv.weight.data[0, 3, 0, 0] = 2.5
+    report = canonicalize_dfl(p3)
+    assert report == {"modules": 1, "max_abs_correction": .5}
+    torch.testing.assert_close(p3.model[-1].dfl.conv.weight.flatten(), torch.arange(16.0), rtol=0, atol=0)
+    assert not p3.model[-1].dfl.conv.weight.requires_grad
 
 
 def test_distillation_loss_backpropagates_and_pure_p3_extraction_is_exact():

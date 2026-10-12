@@ -9,6 +9,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def canonicalize_dfl(module: nn.Module) -> dict[str, float | int]:
+    """Restore fixed DFL integration weights that must never be learned or quantized."""
+    count = 0
+    max_abs_correction = 0.0
+    for child in module.modules():
+        if child.__class__.__name__ != "DFL" or not hasattr(child, "conv"):
+            continue
+        weight = child.conv.weight
+        expected = torch.arange(weight.numel(), device=weight.device, dtype=weight.dtype).view_as(weight)
+        max_abs_correction = max(max_abs_correction, float((weight.detach() - expected).abs().max()))
+        weight.data.copy_(expected)
+        weight.requires_grad_(False)
+        count += 1
+    return {"modules": count, "max_abs_correction": max_abs_correction}
+
+
 def _ste(original: torch.Tensor, quantized: torch.Tensor) -> torch.Tensor:
     """Use quantized values in the forward pass and identity gradients backward."""
     return original + (quantized - original).detach()
@@ -97,6 +113,11 @@ def prepare_rknn_qat(module: nn.Module) -> int:
     """Replace every Conv2d in-place and return the number of wrapped layers."""
     count = 0
     for name, child in list(module.named_children()):
+        # DFL is a fixed 0..15 expectation operator and is outside the RKNN export
+        # graph. Fake-quantizing it changes PyTorch box coordinates only.
+        if child.__class__.__name__ == "DFL":
+            canonicalize_dfl(child)
+            continue
         if isinstance(child, RKNNFakeQuantConv2d):
             continue
         if isinstance(child, nn.Conv2d):

@@ -34,6 +34,56 @@ EXPECTED = {"Video00004_test": (2359, 448), "Video00009_selection_subset": (1421
 BACKENDS = ("pt_fp32", "onnx_fp32", "rknn_int8_simulator")
 
 
+def greedy_nms(boxes, scores, iou_threshold, max_det):
+    """Torch-only greedy NMS for the single-class simulator evaluator."""
+    order = torch.argsort(scores, descending=True, stable=True)
+    keep = []
+    while order.numel() and len(keep) < max_det:
+        index = order[0]
+        keep.append(index)
+        if order.numel() == 1:
+            break
+        remaining = order[1:]
+        selected = boxes[index]
+        candidates = boxes[remaining]
+        top_left = torch.maximum(selected[:2], candidates[:, :2])
+        bottom_right = torch.minimum(selected[2:], candidates[:, 2:])
+        intersection = (bottom_right - top_left).clamp(min=0).prod(1)
+        selected_area = (selected[2:] - selected[:2]).clamp(min=0).prod()
+        candidate_area = (candidates[:, 2:] - candidates[:, :2]).clamp(min=0).prod(1)
+        iou = intersection / (selected_area + candidate_area - intersection + 1e-7)
+        order = remaining[iou <= iou_threshold]
+    return torch.stack(keep) if keep else torch.empty(0, dtype=torch.long, device=boxes.device)
+
+
+def single_class_non_max_suppression(prediction, conf_threshold, iou_threshold, max_det):
+    """Convert YOLO BCN output to xyxy detections without importing torchvision."""
+    if isinstance(prediction, (tuple, list)):
+        prediction = prediction[0]
+    if prediction.ndim != 3 or prediction.shape[1] != 5:
+        raise ValueError(f"Expected single-class BCN prediction, got {tuple(prediction.shape)}")
+    output = []
+    for image in prediction.transpose(1, 2):
+        image = image[image[:, 4] > conf_threshold]
+        if not len(image):
+            output.append(torch.zeros((0, 6), dtype=prediction.dtype, device=prediction.device))
+            continue
+        xywh, scores = image[:, :4], image[:, 4]
+        half = xywh[:, 2:] / 2
+        boxes = torch.cat((xywh[:, :2] - half, xywh[:, :2] + half), 1)
+        keep = greedy_nms(boxes, scores, iou_threshold, max_det)
+        output.append(torch.cat((boxes[keep], scores[keep, None],
+                                 torch.zeros((len(keep), 1), dtype=boxes.dtype, device=boxes.device)), 1))
+    return output
+
+
+class SimulatorPairValidator(PairValidator):
+    """Reference metrics with a binary-extension-free single-class NMS."""
+
+    def postprocess(self, preds):
+        return single_class_non_max_suppression(preds, self.args.conf, self.args.iou, self.args.max_det)
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
@@ -68,7 +118,7 @@ def raw_prediction(outputs, input_hw=(544, 960)):
 
 
 def make_validator(listing, output):
-    validator = PairValidator(save_dir=output, args=dict(imgsz=[544, 960], rect=False,
+    validator = SimulatorPairValidator(save_dir=output, args=dict(imgsz=[544, 960], rect=False,
         batch=1, workers=4, conf=.001, iou=.45, max_det=100, half=False, plots=False))
     validator.device = torch.device("cpu")
     validator.training = False

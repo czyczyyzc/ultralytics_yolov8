@@ -4,7 +4,7 @@ import torch
 import json
 
 from scripts.anti_uav import compare_gray_rknn_quantization as comparison
-from scripts.anti_uav.compare_gray_rknn_quantization import raw_prediction
+from scripts.anti_uav.compare_gray_rknn_quantization import raw_prediction, single_class_non_max_suppression
 
 
 @pytest.mark.parametrize("branches", [3, 4])
@@ -32,6 +32,19 @@ def test_raw_prediction_rejects_wrong_layout_or_integer_outputs():
     outputs[0] = np.zeros((1, 1, 1, 64), np.float32)
     with pytest.raises(ValueError, match="NCHW"):
         raw_prediction(outputs)
+
+
+def test_single_class_nms_suppresses_overlap_and_honors_max_det():
+    # xywh candidates: the second overlaps the first, while the third is disjoint.
+    prediction = torch.tensor([[[10., 10.5, 30.], [10., 10.5, 30.], [10., 10., 4.],
+                                [10., 10., 4.], [.9, .8, .7]]])
+    result = single_class_non_max_suppression(prediction, .001, .45, 100)[0]
+    assert result.shape == (2, 6)
+    torch.testing.assert_close(result[:, 4], torch.tensor([.9, .7]))
+    torch.testing.assert_close(result[:, :4], torch.tensor([[5., 5., 15., 15.], [28., 28., 32., 32.]]))
+    limited = single_class_non_max_suppression(prediction, .001, .45, 1)[0]
+    assert limited.shape == (1, 6)
+    assert limited[0, 4] == pytest.approx(.9)
 
 
 def test_merge_restores_frame_order_and_rejects_missing_shards(tmp_path, monkeypatch):

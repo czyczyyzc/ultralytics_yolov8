@@ -7,6 +7,17 @@ import numpy as np
 import yaml
 
 from scripts.anti_uav import prepare_stratified_rknn_calibration as calibration
+from scripts.anti_uav.blend_rknn_calibration import choose_stratified
+
+
+def test_blended_selection_preserves_requested_scale_mix():
+    rows = [dict(category=category, calibration_image=f"/{category}_{index}.png")
+            for category in calibration.CATEGORIES for index in range(100)]
+    selected = choose_stratified(rows, 192, np.random.default_rng(7))
+    expected = calibration.category_budgets(192)
+    assert len(selected) == 192
+    assert {category: sum(row["category"] == category for row in selected)
+            for category in calibration.CATEGORIES} == expected
 
 
 def test_stratified_calibration_writes_fixed_letterbox_and_audit(tmp_path, monkeypatch):

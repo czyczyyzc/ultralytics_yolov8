@@ -79,7 +79,7 @@ def main() -> None:
     val_paths = Path(source["val"]).read_text().splitlines()
     if set(train_paths) & set(val_paths):
         raise ValueError("Training and validation paths overlap")
-    if any("Video00004" in path for path in train_paths + val_paths):
+    if any("Video00004" in Path(path).parts for path in train_paths + val_paths):
         raise ValueError("Video00004 must remain test-only")
     data = stage_yaml(source, args.run_dir / "configs/refine.yaml", 0)
 

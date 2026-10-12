@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sys
 
 import cv2
@@ -23,6 +24,20 @@ def test_stratified_calibration_writes_fixed_letterbox_and_audit(tmp_path, monke
         paths.append(str(path))
     listing = root / "train.txt"
     listing.write_text("\n".join(paths) + "\n")
+    cached_labels = []
+    for path, label in zip(paths, boxes):
+        parsed = [line.split() for line in label.splitlines() if line.strip()]
+        bboxes = np.asarray([[float(value) for value in fields[1:5]] for fields in parsed], dtype=np.float32)
+        cached_labels.append(dict(
+            im_file=path,
+            shape=(100, 200),
+            cls=np.zeros((len(parsed), 1), np.float32),
+            bboxes=bboxes.reshape(-1, 4),
+            normalized=True,
+            bbox_format="xywh",
+        ))
+    with listing.with_suffix(".cache").open("wb") as handle:
+        np.save(handle, dict(labels=cached_labels))
     data = root / "data.yaml"
     data.write_text(yaml.safe_dump(dict(train=str(listing))))
     output = tmp_path / "calibration"
@@ -42,7 +57,8 @@ def test_stratified_calibration_writes_fixed_letterbox_and_audit(tmp_path, monke
     generated = [Path(line) for line in (output / "dataset.txt").read_text().splitlines()]
     assert len(generated) == 5
     assert all(cv2.imread(str(path)).shape == (64, 96, 3) for path in generated)
-    assert (output / "audit.json").is_file()
+    audit = json.loads((output / "audit.json").read_text())
+    assert audit["label_cache"].endswith("train.cache")
 
 
 def test_calibration_rejects_evaluation_source(tmp_path, monkeypatch):

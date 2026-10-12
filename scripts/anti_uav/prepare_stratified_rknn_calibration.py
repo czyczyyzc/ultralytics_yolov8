@@ -15,7 +15,6 @@ sys.path.insert(0, str(ROOT))
 
 import cv2
 import numpy as np
-from PIL import Image
 import yaml
 
 from ultralytics.data.utils import img2label_paths
@@ -93,6 +92,42 @@ def category_for(edges: list[float]) -> str:
     return "other"
 
 
+def cached_candidates(
+    train_list: Path,
+    source_paths: list[Path],
+    labels: list[Path],
+    input_hw: tuple[int, int],
+) -> tuple[list[dict], Path | None]:
+    """Use the audited Ultralytics label cache instead of opening every source image."""
+    cache_path = train_list.with_suffix(".cache")
+    if not cache_path.is_file():
+        return [], None
+    cache = np.load(cache_path, allow_pickle=True).item()
+    cached = {row["im_file"]: row for row in cache.get("labels", [])}
+    if any(str(path) not in cached for path in source_paths):
+        return [], None
+    candidates = []
+    for image, label in zip(source_paths, labels):
+        row = cached[str(image)]
+        if row.get("bbox_format") != "xywh" or not row.get("normalized"):
+            raise ValueError(f"Unsupported cached annotation format: {image}")
+        height, width = (int(value) for value in row["shape"])
+        boxes = np.asarray(row["bboxes"], dtype=np.float32)
+        gain = min(input_hw[1] / width, input_hw[0] / height)
+        edges = (np.maximum(boxes[:, 2] * width, boxes[:, 3] * height) * gain).tolist()
+        candidates.append(
+            dict(
+                image=str(image),
+                label=str(label),
+                video=video_identity(image),
+                category=category_for(edges),
+                target_long_edges_px=[round(value, 4) for value in edges],
+                source_hw=[height, width],
+            )
+        )
+    return candidates, cache_path
+
+
 def category_budgets(samples: int) -> dict[str, int]:
     raw = {name: samples * fraction for name, fraction in DEFAULT_FRACTIONS.items()}
     result = {name: int(value) for name, value in raw.items()}
@@ -156,23 +191,31 @@ def main() -> None:
         raise ValueError(f"Training list contains an excluded evaluation source: {excluded}")
 
     labels = [Path(value) for value in img2label_paths([str(path) for path in source_paths])]
-    candidates = []
-    for image, label in zip(source_paths, labels):
-        if not image.is_file():
-            raise FileNotFoundError(image)
-        with Image.open(image) as opened:
-            width, height = opened.size
-        edges = read_long_edges(label, width, height, (args.height, args.width))
-        candidates.append(
-            dict(
-                image=str(image),
-                label=str(label),
-                video=video_identity(image),
-                category=category_for(edges),
-                target_long_edges_px=[round(value, 4) for value in edges],
-                source_hw=[height, width],
+    candidates, cache_path = cached_candidates(
+        train_list,
+        source_paths,
+        labels,
+        (args.height, args.width),
+    )
+    if not candidates:
+        for image, label in zip(source_paths, labels):
+            if not image.is_file():
+                raise FileNotFoundError(image)
+            decoded = cv2.imread(str(image), cv2.IMREAD_COLOR)
+            if decoded is None:
+                raise RuntimeError(f"Unable to decode training image: {image}")
+            height, width = decoded.shape[:2]
+            edges = read_long_edges(label, width, height, (args.height, args.width))
+            candidates.append(
+                dict(
+                    image=str(image),
+                    label=str(label),
+                    video=video_identity(image),
+                    category=category_for(edges),
+                    target_long_edges_px=[round(value, 4) for value in edges],
+                    source_hw=[height, width],
+                )
             )
-        )
 
     rng = np.random.default_rng(args.seed)
     budgets = category_budgets(args.samples)
@@ -207,6 +250,8 @@ def main() -> None:
         data=str(data_path),
         train_list=str(train_list),
         train_list_sha256=sha256(train_list),
+        label_cache=str(cache_path) if cache_path else None,
+        label_cache_sha256=sha256(cache_path) if cache_path else None,
         unique_training_images=len(source_paths),
         input_hw=[args.height, args.width],
         samples=len(selected),

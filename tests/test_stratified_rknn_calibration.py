@@ -69,7 +69,12 @@ def test_calibration_rejects_evaluation_source(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["prepare_stratified_rknn_calibration.py", "--data", str(data), "--output-dir", str(tmp_path / "out")],
+        [
+            "prepare_stratified_rknn_calibration.py",
+            "--data", str(data),
+            "--output-dir", str(tmp_path / "out"),
+            "--exclude-token", "Video00009",
+        ],
     )
     try:
         calibration.main()

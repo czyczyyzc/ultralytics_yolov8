@@ -38,7 +38,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=544)
     parser.add_argument("--width", type=int, default=960)
     parser.add_argument("--seed", type=int, default=20261012)
-    parser.add_argument("--exclude-token", nargs="*", default=("Video00004", "Video00009"))
+    parser.add_argument("--exclude-token", nargs="*", default=())
+    parser.add_argument(
+        "--exclude-list",
+        type=Path,
+        action="append",
+        default=[],
+        help="Image manifest excluded by exact path. May be repeated; the data YAML val list is always excluded.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -189,6 +196,17 @@ def main() -> None:
     excluded = tuple(args.exclude_token)
     if any(token in str(path) for path in source_paths for token in excluded):
         raise ValueError(f"Training list contains an excluded evaluation source: {excluded}")
+    excluded_lists = [resolve_from_yaml(data["val"], data_path)] if data.get("val") else []
+    excluded_lists.extend(path.expanduser().resolve() for path in args.exclude_list)
+    excluded_paths = {
+        str(Path(line.strip()).expanduser().resolve())
+        for listing in excluded_lists
+        for line in listing.read_text().splitlines()
+        if line.strip()
+    }
+    overlap = excluded_paths.intersection(str(path) for path in source_paths)
+    if overlap:
+        raise ValueError(f"Training list overlaps excluded evaluation manifests by {len(overlap)} images")
 
     labels = [Path(value) for value in img2label_paths([str(path) for path in source_paths])]
     candidates, cache_path = cached_candidates(
@@ -257,6 +275,8 @@ def main() -> None:
         samples=len(selected),
         seed=args.seed,
         excluded_tokens=list(excluded),
+        excluded_lists=[str(path) for path in excluded_lists],
+        excluded_images=len(excluded_paths),
         requested_fractions=DEFAULT_FRACTIONS,
         category_counts=counts,
         source_videos=len({row["video"] for row in selected}),

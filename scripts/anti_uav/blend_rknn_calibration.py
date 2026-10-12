@@ -60,9 +60,9 @@ def main() -> None:
     audit_path = args.stratified_audit.expanduser().resolve()
     base = [line.strip() for line in base_path.read_text().splitlines() if line.strip()]
     rows = json.loads(audit_path.read_text())["rows"]
-    if any(token in path for token in ("Video00004", "Video00009") for path in base):
+    if any(token in Path(path).parts for token in ("Video00004", "Video00009") for path in base):
         raise ValueError("Base calibration contains an evaluation video")
-    if any(token in row["image"] for token in ("Video00004", "Video00009") for row in rows):
+    if any(token in Path(row["image"]).parts for token in ("Video00004", "Video00009") for row in rows):
         raise ValueError("Stratified calibration contains an evaluation video")
 
     rng = np.random.default_rng(args.seed)

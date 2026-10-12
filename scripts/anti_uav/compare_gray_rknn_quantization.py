@@ -131,7 +131,9 @@ def make_validator(listing, output):
 
 def report(output, result):
     protocol = result["protocol"]
-    lines = ["# 44-video detector: FP32 vs INT8", "",
+    backends = tuple(result["backends"])
+    quantization = "hybrid INT8/FP16" if protocol.get("auto_hybrid") else "INT8"
+    lines = [f"# 44-video detector: FP32 vs {quantization}", "",
         f"Target: {protocol['target']}; RKNN Toolkit2 {protocol['toolkit_version']} host simulator.",
         "Not a board accuracy or FPS measurement. Tracking is excluded.",
         "Identical validation-loader RGB pixels for all backends: 960x544, padding 114.",
@@ -144,7 +146,7 @@ def report(output, result):
         lines += [f"## {split}", "", "| Backend | Conf | P | R | TP | FP | FN | AP50 | AP50-95 | 4-8px R |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for conf in (.01, .03, .05):
-            for backend in BACKENDS:
+            for backend in backends:
                 m, q = result["backends"][backend][split], f"native/c{conf:.2f}/"
                 tiny = m.get(q + "long_4to8px/R")
                 lines.append(f"| {backend} | {conf:.2f} | {m[q+'P']:.2%} | {m[q+'R']:.2%} | "
@@ -258,6 +260,8 @@ def main():
     parser.add_argument("--quantized-algorithm", choices=("normal", "mmse", "kl_divergence", "gdq"), default="normal")
     parser.add_argument("--quantized-method", choices=("layer", "channel", "group32", "group64"), default="channel")
     parser.add_argument("--auto-hybrid", action="store_true")
+    parser.add_argument("--rknn-only", action="store_true",
+                        help="Evaluate one rebuilt RKNN model without rerunning PT/ONNX baselines")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--limit-per-split", type=int, default=0, help="Smoke only; 0 evaluates all native frames")
     parser.add_argument("--shards", type=int, default=1)
@@ -302,6 +306,7 @@ def main():
             thresholds=[.01, .03, .05], matching_iou=.5, calibration_frames=len(calibration),
             quantized_dtype=args.quantized_dtype, quantized_algorithm=args.quantized_algorithm,
             quantized_method=args.quantized_method, auto_hybrid=args.auto_hybrid,
+            rknn_only=args.rknn_only,
             scope="detector-only host quantization simulator", pooled_is_independent_test=False,
             smoke_limit_per_split=args.limit_per_split,
             shards=args.shards, shard_index=args.shard_index,
@@ -356,43 +361,51 @@ def main():
         protocol["rebuilt_matches_delivered"] = protocol["rebuilt_sha256"] == protocol["artifacts"]["rknn"]["sha256"]
         require_zero(runtime.init_runtime(), "init_runtime")
         write_json(args.output / "protocol.json", protocol)
-        pt = YOLO(str(args.weights)).model.float().fuse().eval().to(args.device)
-        protocol["pt_dfl_canonicalization"] = canonicalize_dfl(pt)
+        quantized_backend = "rknn_hybrid_simulator" if args.auto_hybrid else "rknn_int8_simulator"
+        backends = ((quantized_backend,) if args.rknn_only
+                    else ("pt_fp32", "onnx_fp32", quantized_backend))
+        pt = onnx = None
+        if not args.rknn_only:
+            pt = YOLO(str(args.weights)).model.float().fuse().eval().to(args.device)
+            protocol["pt_dfl_canonicalization"] = canonicalize_dfl(pt)
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads, opts.inter_op_num_threads = 2, 1
+            onnx = ort.InferenceSession(str(args.onnx), sess_options=opts, providers=["CPUExecutionProvider"])
         write_json(args.output / "protocol.json", protocol)
-        opts = ort.SessionOptions()
-        opts.intra_op_num_threads, opts.inter_op_num_threads = 2, 1
-        onnx = ort.InferenceSession(str(args.onnx), sess_options=opts, providers=["CPUExecutionProvider"])
-        result = dict(protocol=protocol, backends={backend: {} for backend in BACKENDS},
+        result = dict(protocol=protocol, backends={backend: {} for backend in backends},
                       raw_export_max_error=dict(box_xywh=0., class_score=0.))
-        entries = {backend: [] for backend in BACKENDS}
+        entries = {backend: [] for backend in backends}
         started = time.monotonic()
         for split, listing in manifests.items():
             validators = {backend: make_validator(listing, args.output / "metrics" / split / backend)
-                          for backend in BACKENDS}
-            reference = validators["pt_fp32"]
+                          for backend in backends}
+            reference = validators[backends[0]]
             loader = reference.get_dataloader(str(listing), 1)
-            pred_frames = {b: [] for b in BACKENDS}
+            pred_frames = {b: [] for b in backends}
             target_frames = []
             if len(loader.dataset) != protocol["datasets"][split]["evaluated_frames"]:
                 raise ValueError("Missing/corrupt image: loader coverage differs from manifest")
             for index, batch in enumerate(loader):
                 rgb = np.ascontiguousarray(batch["img"].numpy().transpose(0, 2, 3, 1))
                 batch = reference.preprocess(batch)
-                with torch.inference_mode():
-                    pred = pt(batch["img"].to(args.device))
-                pt_raw = (pred[0] if isinstance(pred, (tuple, list)) else pred).detach().cpu()
-                ort_raw = raw_prediction(onnx.run(None, {onnx.get_inputs()[0].name: batch["img"].numpy()}))
-                if pt_raw.shape != ort_raw.shape:
-                    raise ValueError(f"PT/export shape mismatch: {pt_raw.shape} vs {ort_raw.shape}")
-                error = (pt_raw-ort_raw).abs()
-                result["raw_export_max_error"]["box_xywh"] = max(
-                    result["raw_export_max_error"]["box_xywh"], float(error[:, :4].max()))
-                result["raw_export_max_error"]["class_score"] = max(
-                    result["raw_export_max_error"]["class_score"], float(error[:, 4:].max()))
                 quantized = raw_prediction(runtime.inference(inputs=[rgb], data_format=["nhwc"]))
+                raw_predictions = (quantized,)
+                if not args.rknn_only:
+                    with torch.inference_mode():
+                        pred = pt(batch["img"].to(args.device))
+                    pt_raw = (pred[0] if isinstance(pred, (tuple, list)) else pred).detach().cpu()
+                    ort_raw = raw_prediction(onnx.run(None, {onnx.get_inputs()[0].name: batch["img"].numpy()}))
+                    if pt_raw.shape != ort_raw.shape:
+                        raise ValueError(f"PT/export shape mismatch: {pt_raw.shape} vs {ort_raw.shape}")
+                    error = (pt_raw-ort_raw).abs()
+                    result["raw_export_max_error"]["box_xywh"] = max(
+                        result["raw_export_max_error"]["box_xywh"], float(error[:, :4].max()))
+                    result["raw_export_max_error"]["class_score"] = max(
+                        result["raw_export_max_error"]["class_score"], float(error[:, 4:].max()))
+                    raw_predictions = (pt_raw, ort_raw, quantized)
                 frame_index = frame_indices[split][batch["im_file"][0]]
                 target_frames.append(np.full(len(batch["cls"]), frame_index, dtype=np.int32))
-                for backend, raw in zip(BACKENDS, (pt_raw, ort_raw, quantized)):
+                for backend, raw in zip(backends, raw_predictions):
                     processed = validators[backend].postprocess(raw)
                     pred_frames[backend].append(np.full(len(processed[0]), frame_index, dtype=np.int32))
                     validators[backend].update_metrics(processed, batch)
@@ -411,7 +424,7 @@ def main():
                     prediction_frame_index=np.concatenate(pred_frames[backend]),
                     target_frame_index=np.concatenate(target_frames))
             write_json(args.output / "results.json", result)
-        for backend in BACKENDS:
+        for backend in backends:
             metrics, arrays = pool_native(entries[backend])
             result["backends"][backend]["pooled_native"] = clean(metrics)
             np.savez_compressed(args.output / f"pooled_{backend}_pr.npz", **arrays)

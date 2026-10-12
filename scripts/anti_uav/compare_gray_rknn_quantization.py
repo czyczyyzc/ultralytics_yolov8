@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from scripts.anti_uav.evaluate_p3_gray_pair import PairValidator, pool_native
+from scripts.anti_uav.rknn_qat import canonicalize_dfl
 from scripts.anti_uav.rknn_simulator_video_clip import decode_boxes
 from scripts.anti_uav.run_native_pool_comparison import HOLDOUT, clean
 from ultralytics import YOLO
@@ -356,6 +357,8 @@ def main():
         require_zero(runtime.init_runtime(), "init_runtime")
         write_json(args.output / "protocol.json", protocol)
         pt = YOLO(str(args.weights)).model.float().fuse().eval().to(args.device)
+        protocol["pt_dfl_canonicalization"] = canonicalize_dfl(pt)
+        write_json(args.output / "protocol.json", protocol)
         opts = ort.SessionOptions()
         opts.intra_op_num_threads, opts.inter_op_num_threads = 2, 1
         onnx = ort.InferenceSession(str(args.onnx), sess_options=opts, providers=["CPUExecutionProvider"])

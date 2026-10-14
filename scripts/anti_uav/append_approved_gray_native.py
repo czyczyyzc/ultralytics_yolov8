@@ -59,7 +59,8 @@ def main():
                    help="Training YAML inside --source; defaults to the native schedule")
     p.add_argument("--snapshot", type=Path, required=True)
     p.add_argument("--video-root", type=Path, required=True)
-    p.add_argument("--old-root", type=Path, required=True)
+    p.add_argument("--old-root", type=Path,
+                   help="Legacy manifest containing videos[]; optional when source manifest has test_sha256")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--positive-stride", type=int, default=1)
     p.add_argument("--negative-stride", type=int, default=1)
@@ -76,8 +77,12 @@ def main():
         raise ValueError("Baseline must use native data only")
     base = Path(config["train"]).read_text().splitlines()
     val_text = Path(config["val"]).read_text()
-    old = json.loads((a.old_root / "manifest.json").read_text())
-    test_hash = next(r["video_sha256"] for r in old["videos"] if Path(r["video_name"]).stem == "Video00004")
+    test_hash = source.get("test_sha256")
+    if not test_hash:
+        if not a.old_root:
+            raise ValueError("Source has no test_sha256; provide --old-root for legacy compatibility")
+        old = json.loads((a.old_root / "manifest.json").read_text())
+        test_hash = next(r["video_sha256"] for r in old["videos"] if Path(r["video_name"]).stem == "Video00004")
     val_hash = source["validation_video"]["sha256"]
     blocked = set(source["train_video_hashes"]) | {test_hash, val_hash}
     snapshot = json.loads(a.snapshot.read_text())

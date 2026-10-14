@@ -106,6 +106,7 @@ def main() -> None:
     realized_fraction = additional_slots / (native_positive + additional_slots)
 
     args.output.mkdir(parents=True)
+    (args.output / "manifest.json").write_bytes((args.data.parent / "manifest.json").read_bytes())
     donor_manifest = args.output / "online_scale_donors.json"
     donor_manifest.write_text(json.dumps({"donors": [donor_row(row) for row in donors]}, indent=2) + "\n")
     result = dict(config)

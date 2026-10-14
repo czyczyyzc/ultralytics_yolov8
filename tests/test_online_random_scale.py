@@ -16,6 +16,14 @@ def test_donor_selection_is_deduplicated_and_excludes_val_and_tiny():
     assert len(records) == 6
 
 
+def test_donor_selection_excludes_geometry_that_cannot_preserve_full_gt():
+    valid = dict(im_file='/images/train/valid.jpg', shape=(1080, 1920),
+                 bboxes=np.array([[.5, .5, .2, .2]]), normalized=True, bbox_format='xywh')
+    too_wide = dict(im_file='/images/train/wide.jpg', shape=(1080, 1920),
+                    bboxes=np.array([[.5, .5, 1., .1]]), normalized=True, bbox_format='xywh')
+    assert [row['im_file'] for row in eligible_donors([valid, too_wide])] == ['/images/train/valid.jpg']
+
+
 def test_context_randomizes_but_keeps_geometry_and_pixel_budget():
     image = np.zeros((1080, 1920, 3), dtype=np.uint8)
     box = np.array([700., 300., 1020., 580.])

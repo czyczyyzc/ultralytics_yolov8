@@ -12,7 +12,19 @@ AREA_BINS = ((.02, .10), (.10, .25), (.25, .50), (.50, .80), (.80, 1.001))
 DEFAULT_LONG_EDGE_BINS = ((.15, .30, 1.), (.30, .60, 3.), (.60, .80, 1.))
 
 
-def eligible_donors(labels):
+def full_object_crop_fits(image_hw, box, max_upscale=4.):
+    """Return whether a full GT can fit the deployment aspect ratio and resize budget."""
+    h, w = image_hw
+    x1, y1, x2, y2 = np.asarray(box, dtype=np.float64)
+    ratio = 960 / 544
+    max_cw = min(w, int(h * ratio))
+    min_cw = int(np.ceil(max(960 / max_upscale, (544 / max_upscale + .5) * ratio)))
+    span_w = int(np.ceil(x2)) - int(np.floor(x1))
+    span_h = int(np.ceil(y2)) - int(np.floor(y1))
+    return max(min_cw, span_w, int(np.ceil((span_h + .5) * ratio))) <= max_cw
+
+
+def eligible_donors(labels, max_upscale=4.):
     """Pixel thresholds select extra views only, never remove original examples."""
     donors = {}
     for row in labels:
@@ -24,7 +36,9 @@ def eligible_donors(labels):
             continue
         h, w = row["shape"]
         wh = boxes[0, 2:]*[w, h]
-        if np.isfinite(boxes).all() and min(wh) >= 48 and max(wh) >= 96:
+        box = pixel_box(row)
+        if (np.isfinite(boxes).all() and min(wh) >= 48 and max(wh) >= 96
+                and full_object_crop_fits((h, w), box, max_upscale)):
             donors[str(path)] = row
     return [donors[key] for key in sorted(donors)]
 

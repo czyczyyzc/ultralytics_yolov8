@@ -167,6 +167,16 @@ def test_addon_epoch_offset_continues_asset_cycle(tmp_path,monkeypatch):
     assert dataset.epoch==18
 
 
+def test_wrapper_exposes_append_only_dataset_surface(tmp_path,monkeypatch):
+    base,config,_=cache_fixture(tmp_path,monkeypatch)
+    dataset=OnlineReplacementDataset(base,config)
+    assert tuple(dataset.imgsz)==(544,960)
+    assert dataset.augment and not dataset.use_segments
+    assert dataset._imgsz_hw()==(544,960)
+    marker={"value":1}
+    assert dataset.update_labels_info(marker) is marker
+
+
 def test_full_positive_inventory_includes_unsampled_and_large_frames(tmp_path):
     from scripts.anti_uav.prepare_online_gray_replacement import reviewed_frames
     (tmp_path/"coco").mkdir()

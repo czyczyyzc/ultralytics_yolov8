@@ -74,6 +74,8 @@ class P3StudentDistillationLoss:
         p2_cls_weight: float = 0.25,
         p2_box_weight: float = 0.10,
         feature_weight: float = 0.10,
+        feature_min_px: float = 4.0,
+        feature_max_px: float = 16.0,
         tiny_multiplier: float = 1.75,
         localization_weight: float = 0.0,
         localization_min_px: float = 4.0,
@@ -106,6 +108,10 @@ class P3StudentDistillationLoss:
             feature=feature_weight,
         )
         self.temperature = temperature
+        self.feature_min_px = float(feature_min_px)
+        self.feature_max_px = float(feature_max_px)
+        if not 0 <= self.feature_min_px < self.feature_max_px:
+            raise ValueError("Invalid feature distillation target size range")
         self.projection = attach_tiny_feature_projection(model)
         self.student_capture = DetectInputCapture(model.model[-1])
         self.teacher_capture = DetectInputCapture(teacher.model[-1])
@@ -200,7 +206,7 @@ class P3StudentDistillationLoss:
         image_height, image_width = batch["img"].shape[-2:]
         boxes = batch["bboxes"]
         long_edges = torch.maximum(boxes[:, 2] * image_width, boxes[:, 3] * image_height)
-        selected = (long_edges >= 4.0) & (long_edges <= 8.0)
+        selected = (long_edges >= self.feature_min_px) & (long_edges <= self.feature_max_px)
         regions = torch.cat((batch["batch_idx"].view(-1, 1), boxes), dim=1)[selected].detach().cpu().tolist()
         for index, cx, cy, bw, bh in regions:
             x1 = max(int((cx - bw / 2) * width) - 1, 0)
@@ -337,6 +343,28 @@ class TinyAwareAddOnTrainer(FixedShapeGrayAddOnTrainer):
         super()._setup_train(world_size)
         model = de_parallel(self.model)
         model.criterion = TinyAwareAddOnP2DetectionLoss(model, tiny_multiplier=self.tiny_multiplier)
+
+
+class TinyAwareP3Trainer(FixedShapeGrayP3Trainer):
+    """Strengthen the deployable P3 graph before freezing it for Teacher training."""
+
+    tiny_multiplier = 1.85
+    localization_weight = 0.12
+    localization_min_px = 4.0
+    localization_max_px = 960.0
+
+    def _setup_train(self, world_size):
+        if world_size != 1:
+            raise ValueError("Audited P3 exposure sampling is intentionally restricted to one GPU")
+        super()._setup_train(world_size)
+        model = de_parallel(self.model)
+        model.criterion = TinyAwareDetectionLoss(
+            model,
+            tiny_multiplier=self.tiny_multiplier,
+            localization_weight=self.localization_weight,
+            localization_min_px=self.localization_min_px,
+            localization_max_px=self.localization_max_px,
+        )
 
 
 class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):

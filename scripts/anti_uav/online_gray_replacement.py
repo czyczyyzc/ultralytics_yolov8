@@ -117,6 +117,14 @@ class OnlineReplacementDataset:
         self.epoch = self.epoch_offset
         self.labels, self.im_files = base.labels, base.im_files
         self.collate_fn, self.rect, self.mosaic = base.collate_fn, False, False
+        # Expose the YOLODataset surface needed by append-only wrappers such as
+        # OnlineScaleDataset. Native slots still flow through this wrapper, so
+        # cutout replacement and dynamic context crops remain separate views.
+        self.augment = base.augment
+        self.imgsz = getattr(base, "imgsz", base._imgsz_hw())
+        self.use_segments = base.use_segments
+        self.use_keypoints = base.use_keypoints
+        self.use_obb = base.use_obb
         counts = Counter()
         self.occurrences = []
         for row in self.labels:
@@ -145,6 +153,12 @@ class OnlineReplacementDataset:
 
     def close_mosaic(self, hyp):
         self.base.close_mosaic(hyp)
+
+    def _imgsz_hw(self):
+        return self.base._imgsz_hw()
+
+    def update_labels_info(self, label):
+        return self.base.update_labels_info(label)
 
     def __getstate__(self):
         state = self.__dict__.copy()

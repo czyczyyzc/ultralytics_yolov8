@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train a 47-video Teacher, FP32-distilled P3 Student, then short RKNN QAT."""
+"""Train a strong P3, frozen-P3 Teacher, distilled P3 Student, then short RKNN QAT."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from scripts.anti_uav.p3_student_distillation import (  # noqa: E402
     P3QATFineTuneTrainer,
     P3StudentFP32DistillationTrainer,
     TinyAwareAddOnTrainer,
+    TinyAwareP3Trainer,
     copy_teacher_auxiliary,
     export_pure_p3_student,
     export_standard_p3_qat,
@@ -95,9 +96,12 @@ def main() -> None:
     parser.add_argument("--device", default="7")
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--p3-epochs", type=int, default=0,
+                        help="Strengthen the pure-P3 base before freezing it; zero preserves the legacy protocol")
     parser.add_argument("--teacher-epochs", type=int, default=12)
     parser.add_argument("--distill-epochs", type=int, default=15)
     parser.add_argument("--qat-epochs", type=int, default=4)
+    parser.add_argument("--expected-training-videos", type=int, default=None)
     parser.add_argument("--resume", action="store_true", help="Continue after a completed pipeline stage")
     args = parser.parse_args()
 
@@ -127,24 +131,35 @@ def main() -> None:
     if any("Video00004" in Path(path).parts for path in train_paths + val_paths):
         raise ValueError("Video00004 must remain test-only")
 
-    teacher_data = stage_yaml(source, args.run_dir / "configs/teacher.yaml", 0)
-    distill_data = stage_yaml(source, args.run_dir / "configs/distill_fp32.yaml", args.teacher_epochs)
+    manifest_path = args.data.parent / "manifest.json"
+    training_videos = None
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text())
+        training_videos = len(manifest.get("train_video_hashes", [])) or manifest.get("original_gray_training_videos")
+    if args.expected_training_videos is not None and training_videos != args.expected_training_videos:
+        raise ValueError(f"Expected {args.expected_training_videos} training videos, found {training_videos}")
+
+    p3_data = stage_yaml(source, args.run_dir / "configs/p3.yaml", 0)
+    teacher_data = stage_yaml(source, args.run_dir / "configs/teacher.yaml", args.p3_epochs)
+    distill_data = stage_yaml(source, args.run_dir / "configs/distill_fp32.yaml", args.p3_epochs + args.teacher_epochs)
     qat_data = stage_yaml(
         source,
         args.run_dir / "configs/qat.yaml",
-        args.teacher_epochs + args.distill_epochs,
+        args.p3_epochs + args.teacher_epochs + args.distill_epochs,
     )
     protocol = dict(
-        method="47-video P2+P3 Teacher -> FP32 localized P2-to-P3 distillation -> short pure-P3 RKNN QAT",
+        method="strong P3 -> frozen-P3 P2+P3 Teacher -> FP32 P2-to-P3 distillation -> short pure-P3 RKNN QAT",
         data=str(args.data), p3_initial=str(args.p3_initial), input_hw=[544, 960],
-        training_videos=47, batch=args.batch, nbs=128, seed=SEED,
-        epochs=dict(teacher=args.teacher_epochs, distill_fp32=args.distill_epochs, qat=args.qat_epochs),
+        training_videos=training_videos, batch=args.batch, nbs=128, seed=SEED,
+        epochs=dict(p3=args.p3_epochs, teacher=args.teacher_epochs,
+                    distill_fp32=args.distill_epochs, qat=args.qat_epochs),
         tiny_sampling=dict(native_exposure_preserved=True, input_hw=[544, 960], range_px=[4, 8],
-                           expected_batch_mix="~31% tiny positive / ~54% other positive / 15% negative"),
+                           policy="video-balanced interleave; exact audited exposure is unchanged"),
         tiny_loss=dict(multiplier=1.75, applies_to="assigned positive classification, box and DFL only", cap=2.0),
         distillation=dict(auxiliary_weight=.25, p3_cls_weight=.10, p3_dfl_weight=.05,
                           p2_cls_weight=.25, p2_box_weight=.10, feature_weight=.10,
-                          feature_region="4-8 px GT neighborhoods", temperature=2.0),
+                          feature_region="4-16 px GT neighborhoods", temperature=2.0,
+                          localization_range_px=[4, 960]),
         qat=dict(epochs=args.qat_epochs, lr0=1e-5, observer_freeze_epoch=min(3, args.qat_epochs)),
         final_graph="standard YOLOv8n P3-P5; temporary P2 and projection physically removed",
         checkpoint_selection="Video00009: 0.5 F2@0.03 + 0.3 AP50 + 0.2 AP50-95",
@@ -165,35 +180,53 @@ def main() -> None:
         protocol_path.write_text(json.dumps(protocol, indent=2) + "\n")
 
     try:
+        p3_best = args.run_dir / "p3_base/p3/weights/best.pt"
+        if args.p3_epochs:
+            if args.resume and p3_best.is_file():
+                write_status(args.run_dir, "resume_from_completed_p3", best=str(p3_best))
+            else:
+                write_status(args.run_dir, "train_strong_p3", epoch=0)
+                p3 = YOLO(str(args.p3_initial))
+                p3.add_callback("on_fit_epoch_end", lambda trainer: write_status(
+                    args.run_dir, "train_strong_p3", epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
+                ))
+                p3.train(
+                    trainer=TinyAwareP3Trainer,
+                    project=str(args.run_dir / "p3_base"), name="p3", lr0=.0001, warmup_epochs=0,
+                    **common_train(p3_data, args, args.p3_epochs, min(5, args.p3_epochs)),
+                )
+        else:
+            p3_best = args.p3_initial
+
         teacher_best = args.run_dir / "teacher/p2p3/weights/best.pt"
         if args.resume and teacher_best.is_file():
             write_status(args.run_dir, "resume_from_completed_teacher", best=str(teacher_best))
         else:
-            write_status(args.run_dir, "initialize_47_video_teacher")
+            write_status(args.run_dir, "initialize_teacher")
             teacher_init = args.run_dir / "teacher_initialized.pt"
-            teacher, teacher_report = initialize_addon_model(args.p3_initial, DEFAULT_CFG, teacher_init)
+            teacher, teacher_report = initialize_addon_model(p3_best, DEFAULT_CFG, teacher_init)
             (args.run_dir / "audit/teacher_initialization.json").write_text(json.dumps(teacher_report, indent=2) + "\n")
             teacher.add_callback("on_fit_epoch_end", lambda trainer: write_status(
-                args.run_dir, "train_47_video_teacher", epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
+                args.run_dir, "train_teacher", epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
             ))
-            write_status(args.run_dir, "train_47_video_teacher", epoch=0)
+            write_status(args.run_dir, "train_teacher", epoch=0)
             teacher.train(
                 trainer=TinyAwareAddOnTrainer,
                 project=str(args.run_dir / "teacher"), name="p2p3", lr0=.001, warmup_epochs=1,
                 **common_train(teacher_data, args, args.teacher_epochs, min(5, args.teacher_epochs)),
             )
-            frozen = verify_legacy_outputs(YOLO(str(args.p3_initial)).model, YOLO(str(teacher_best)).model)
+            frozen = verify_legacy_outputs(YOLO(str(p3_best)).model, YOLO(str(teacher_best)).model)
             (args.run_dir / "audit/teacher_frozen_p3.json").write_text(json.dumps(frozen, indent=2) + "\n")
 
         write_status(args.run_dir, "initialize_fp32_student")
         student_init = args.run_dir / "student_four_scale_initialized.pt"
-        student, student_report = initialize_addon_model(args.p3_initial, DEFAULT_CFG, student_init)
+        student, student_report = initialize_addon_model(p3_best, DEFAULT_CFG, student_init)
         auxiliary_copy = copy_teacher_auxiliary(YOLO(str(teacher_best)).model, student.model)
         student.model.model[-1].auxiliary_training_only = True
         student.save(student_init)
         student_report["teacher_auxiliary_copy"] = auxiliary_copy
         student_report["post_copy_legacy_regression"] = verify_legacy_outputs(
-            YOLO(str(args.p3_initial)).model, student.model
+            YOLO(str(p3_best)).model, student.model
         )
         (args.run_dir / "audit/student_initialization.json").write_text(json.dumps(student_report, indent=2) + "\n")
 
@@ -201,7 +234,9 @@ def main() -> None:
         P3StudentFP32DistillationTrainer.loss_options = dict(
             auxiliary_weight=.25, p3_cls_weight=.10, p3_dfl_weight=.05,
             p2_cls_weight=.25, p2_box_weight=.10, feature_weight=.10,
-            tiny_multiplier=1.75, temperature=2.0,
+            feature_min_px=4.0, feature_max_px=16.0,
+            tiny_multiplier=1.85, localization_weight=.12,
+            localization_min_px=4.0, localization_max_px=960.0, temperature=2.0,
         )
         student.add_callback("on_fit_epoch_end", lambda trainer: write_status(
             args.run_dir, "distill_fp32_student", epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
@@ -224,6 +259,10 @@ def main() -> None:
 
         write_status(args.run_dir, "qat_p3_student", epoch=0)
         P3QATFineTuneTrainer.observer_freeze_epoch = min(3, args.qat_epochs)
+        P3QATFineTuneTrainer.tiny_multiplier = 1.85
+        P3QATFineTuneTrainer.localization_weight = .08
+        P3QATFineTuneTrainer.localization_min_px = 4.0
+        P3QATFineTuneTrainer.localization_max_px = 960.0
         qat = YOLO(str(args.run_dir / "p3_student_best_fp32.pt"))
         qat.add_callback("on_fit_epoch_end", lambda trainer: write_status(
             args.run_dir, "qat_p3_student", epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
@@ -244,7 +283,9 @@ def main() -> None:
 
         write_status(args.run_dir, "compare_video00009")
         models = {
-            "baseline_qat": args.p3_initial,
+            "initial_p3": args.p3_initial,
+            "strong_p3": p3_best,
+            "teacher_p2p3": teacher_best,
             "new_fp32": args.run_dir / "p3_student_best_fp32.pt",
             "new_qat": args.run_dir / "p3_student_best_qat.pt",
         }

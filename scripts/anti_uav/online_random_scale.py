@@ -9,6 +9,7 @@ import numpy as np
 
 
 AREA_BINS = ((.02, .10), (.10, .25), (.25, .50), (.50, .80), (.80, 1.001))
+DEFAULT_LONG_EDGE_BINS = ((.15, .30, 1.), (.30, .60, 3.), (.60, .80, 1.))
 
 
 def eligible_donors(labels):
@@ -34,7 +35,28 @@ def pixel_box(row):
     return np.array([x-bw/2, y-bh/2, x+bw/2, y+bh/2], dtype=np.float64)
 
 
-def sample_context_geometry(image_hw, box, rng, max_upscale=4., partial_probability=.15, max_attempts=48):
+def _sample_long_edge_fraction(rng, ranges):
+    values = np.asarray(ranges, dtype=np.float64)
+    if values.ndim != 2 or values.shape[1] != 3:
+        raise ValueError("target_long_edge_bins must contain [minimum, maximum, weight] rows")
+    if np.any(values[:, 0] <= 0) or np.any(values[:, 1] > 1) or np.any(values[:, 0] >= values[:, 1]):
+        raise ValueError("Invalid target long-edge interval")
+    if np.any(values[:, 2] <= 0):
+        raise ValueError("Target long-edge weights must be positive")
+    selected = int(rng.choice(len(values), p=values[:, 2] / values[:, 2].sum()))
+    low, high = values[selected, :2]
+    return float(rng.uniform(low, high)), [float(low), float(high)]
+
+
+def sample_context_geometry(
+    image_hw,
+    box,
+    rng,
+    max_upscale=4.,
+    partial_probability=.15,
+    max_attempts=48,
+    target_long_edge_bins=None,
+):
     """Sample integer crop geometry, with a full-object fallback for valid donors."""
     if max_upscale < 1 or not 0 <= partial_probability <= 1:
         raise ValueError("Invalid crop settings")
@@ -63,16 +85,25 @@ def sample_context_geometry(image_hw, box, rng, max_upscale=4., partial_probabil
         low_cw = min_cw if allow_partial else full_min
         min_area = area/(max_cw*round(max_cw/ratio))
         max_area = min(1., area/(low_cw*round(low_cw/ratio)))
-        feasible = [(max(lo, min_area), min(hi, max_area)) for lo, hi in AREA_BINS
-                    if max(lo, min_area) < min(hi, max_area)]
-        if not feasible:
-            feasible = [(min_area, max_area)]
-        # Choose a bin once so failed geometry does not always bias toward smaller sizes.
-        interval = feasible[int(rng.integers(len(feasible)))]
+        if target_long_edge_bins:
+            desired_long_edge, requested_interval = _sample_long_edge_fraction(rng, target_long_edge_bins)
+            interval = None
+        else:
+            feasible = [(max(lo, min_area), min(hi, max_area)) for lo, hi in AREA_BINS
+                        if max(lo, min_area) < min(hi, max_area)]
+            if not feasible:
+                feasible = [(min_area, max_area)]
+            # Choose a bin once so failed geometry does not always bias toward smaller sizes.
+            interval = feasible[int(rng.integers(len(feasible)))]
+            requested_interval = None
         for _ in range(max_attempts):
-            desired = float(np.exp(rng.uniform(np.log(interval[0]), np.log(interval[1]))))
-            cw = int(np.clip(round(np.sqrt(area*ratio/desired)), low_cw, max_cw))
-            if allow_partial:
+            if target_long_edge_bins:
+                source_long_edge = max(bw, bh)
+                cw = int(np.clip(round(source_long_edge / desired_long_edge), low_cw, max_cw))
+            else:
+                desired = float(np.exp(rng.uniform(np.log(interval[0]), np.log(interval[1]))))
+                cw = int(np.clip(round(np.sqrt(area*ratio/desired)), low_cw, max_cw))
+            if allow_partial and not target_long_edge_bins:
                 # After truncation, visible box area is smaller than source GT area.
                 # Explore tighter crops rather than treating source area as visible area.
                 upper = min(max_cw, int(np.ceil(np.sqrt(area*ratio/interval[0]))))
@@ -94,11 +125,18 @@ def sample_context_geometry(image_hw, box, rng, max_upscale=4., partial_probabil
             clipped[[1, 3]] = clipped[[1, 3]].clip(0, ch)
             retained = float(np.prod(clipped[2:]-clipped[:2])/area)
             fraction = float(np.prod(clipped[2:]-clipped[:2])/(cw*ch))
-            if retained < (.6 if allow_partial else .999) or not interval[0]*.99 <= fraction <= interval[1]*1.01:
-                continue
             updated = clipped*[960/cw, 544/ch, 960/cw, 544/ch]
+            long_edge_fraction = float(max(updated[2]-updated[0], updated[3]-updated[1]) / 960.)
+            in_requested_range = (
+                requested_interval[0] * .95 <= long_edge_fraction <= requested_interval[1] * 1.05
+                if requested_interval else interval[0]*.99 <= fraction <= interval[1]*1.01
+            )
+            if retained < (.6 if allow_partial else .999) or not in_requested_range:
+                continue
             return dict(crop_xywh=[ox, oy, cw, ch], output_box=updated.tolist(),
                         area_fraction=fraction, retained_fraction=retained,
+                        long_edge_fraction=long_edge_fraction,
+                        target_long_edge_interval=requested_interval,
                         upscale=max(960/cw, 544/ch), partial=retained < .999,
                         requested_partial=request_partial, geometry_fallback=False)
     # Rejection sampling must never terminate a long run or silently drop its GT.
@@ -110,19 +148,31 @@ def sample_context_geometry(image_hw, box, rng, max_upscale=4., partial_probabil
     ox, oy = (left+right)//2, (top+bottom)//2
     updated = (box-[ox, oy, ox, oy])*[960/cw, 544/ch, 960/cw, 544/ch]
     return dict(crop_xywh=[ox, oy, cw, ch], output_box=updated.tolist(), area_fraction=float(area/(cw*ch)),
+                long_edge_fraction=float(max(updated[2]-updated[0], updated[3]-updated[1]) / 960.),
+                target_long_edge_interval=requested_interval,
                 retained_fraction=1., upscale=max(960/cw, 544/ch), partial=False,
                 requested_partial=request_partial, geometry_fallback=True)
 
 
-def random_context_crop(image, box, rng, max_upscale=4., partial_probability=.15):
+def random_context_crop(
+    image,
+    box,
+    rng,
+    max_upscale=4.,
+    partial_probability=.15,
+    target_long_edge_bins=None,
+):
     """Read native pixels only after selecting and verifying the crop geometry."""
-    meta = sample_context_geometry(image.shape[:2], box, rng, max_upscale, partial_probability)
+    meta = sample_context_geometry(
+        image.shape[:2], box, rng, max_upscale, partial_probability,
+        target_long_edge_bins=target_long_edge_bins,
+    )
     ox, oy, cw, ch = meta["crop_xywh"]
     output = cv2.resize(image[oy:oy+ch, ox:ox+cw], (960, 544), interpolation=cv2.INTER_LINEAR)
     return output, np.asarray(meta["output_box"], dtype=np.float64), meta
 
 
-def gray_capture_jitter(image, rng):
+def gray_capture_jitter(image, rng, motion_blur_probability=.12, local_glare_probability=.12):
     """Mild sensor variation for extra large-object views, not 4px originals."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
     gain, offset = float(rng.uniform(.9, 1.1)), float(rng.uniform(-8, 8))
@@ -131,6 +181,21 @@ def gray_capture_jitter(image, rng):
         gray += rng.normal(0, rng.uniform(.3, 1.5), gray.shape).astype(np.float32)
     if rng.random() < .15:
         gray = cv2.GaussianBlur(gray, (3, 3), float(rng.uniform(.3, .6)))
+    if rng.random() < motion_blur_probability:
+        length = int(rng.integers(3, 10)) | 1
+        kernel = np.zeros((length, length), dtype=np.float32)
+        kernel[length // 2] = 1.0 / length
+        if rng.random() < .5:
+            kernel = kernel.T
+        gray = cv2.filter2D(gray, -1, kernel)
+    if rng.random() < local_glare_probability:
+        height, width = gray.shape
+        center = (int(rng.integers(width)), int(rng.integers(height)))
+        axes = (int(rng.uniform(.08, .25) * width), int(rng.uniform(.08, .3) * height))
+        glare = np.zeros_like(gray, dtype=np.float32)
+        cv2.ellipse(glare, center, axes, float(rng.uniform(0, 180)), 0, 360, float(rng.uniform(20, 70)), -1)
+        glare = cv2.GaussianBlur(glare, (0, 0), max(axes) * .35)
+        gray += glare
     gray = np.clip(gray, 0, 255).astype(np.uint8)
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
@@ -166,6 +231,10 @@ class OnlineScaleDataset:
     def close_mosaic(self, hyp):
         self.base.close_mosaic(hyp)
 
+    def set_epoch(self, epoch):
+        if hasattr(self.base, "set_epoch"):
+            self.base.set_epoch(epoch)
+
     def __getitem__(self, index):
         if index < 0:
             index += len(self)
@@ -179,9 +248,20 @@ class OnlineScaleDataset:
             raise ValueError(f"Source image changed: {row['im_file']}")
         # DataLoader seeds numpy per worker; each visit gets a fresh reproducible draw.
         rng = np.random.default_rng(int(np.random.randint(0, 2**32-1)))
-        image, box, _ = random_context_crop(image, pixel_box(row), rng,
-                                           self.config.get("max_upscale", 4.), self.config.get("partial_probability", .15))
-        image = gray_capture_jitter(image, rng)
+        image, box, _ = random_context_crop(
+            image,
+            pixel_box(row),
+            rng,
+            self.config.get("max_upscale", 4.),
+            self.config.get("partial_probability", .15),
+            self.config.get("target_long_edge_bins"),
+        )
+        image = gray_capture_jitter(
+            image,
+            rng,
+            self.config.get("motion_blur_probability", .12),
+            self.config.get("local_glare_probability", .12),
+        )
         if rng.random() < .5:
             image = np.ascontiguousarray(image[:, ::-1])
             box[[0, 2]] = 960-box[[2, 0]]

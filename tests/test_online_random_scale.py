@@ -76,3 +76,23 @@ def test_fractional_integer_span_regression_seed105():
     assert meta['geometry_fallback'] and not meta['partial']
     assert meta['retained_fraction'] == 1.
     assert np.min(meta['output_box']) >= 0
+
+
+def test_long_edge_targeting_emphasizes_30_to_60_percent():
+    image = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    box = np.array([700., 300., 1020., 580.])
+    ranges = ((.15, .30, 1.), (.30, .60, 3.), (.60, .80, 1.))
+    draws = [
+        random_context_crop(
+            image,
+            box,
+            np.random.default_rng(seed),
+            partial_probability=.2,
+            target_long_edge_bins=ranges,
+        )[2]
+        for seed in range(200)
+    ]
+    assert all(.15 * .95 <= row['long_edge_fraction'] <= .80 * 1.05 for row in draws)
+    middle = sum(.30 * .95 <= row['long_edge_fraction'] <= .60 * 1.05 for row in draws)
+    assert middle > 90
+    assert any(row['partial'] for row in draws)

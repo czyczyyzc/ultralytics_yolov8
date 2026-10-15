@@ -156,7 +156,32 @@ class FixedShapeGrayValidator(GrayDeploymentValidator):
         return stats
 
 
+class BalancedScaleGrayValidator(FixedShapeGrayValidator):
+    """Select checkpoints without trading native tiny recall for zoom performance."""
+
+    def get_stats(self):
+        stats = super().get_stats()
+        tiny_recall = stats.get("native/c0.03/long_4to8px/R", 0.0)
+        zoom_f2 = stats.get("zoom/c0.03/F2", 0.0)
+        zoom_map50 = stats.get("zoom/mAP50", 0.0)
+        tiny_recall = float(tiny_recall) if np.isfinite(tiny_recall) else 0.0
+        zoom_f2 = float(zoom_f2) if np.isfinite(zoom_f2) else 0.0
+        zoom_map50 = float(zoom_map50) if np.isfinite(zoom_map50) else 0.0
+        stats["fitness"] = (
+            0.35 * stats["native/c0.03/F2"]
+            + 0.25 * tiny_recall
+            + 0.15 * stats["native/mAP50"]
+            + 0.10 * stats["native/mAP50-95"]
+            + 0.10 * zoom_f2
+            + 0.05 * zoom_map50
+        )
+        self.metrics.gray_selection = dict(stats)
+        return stats
+
+
 class FixedShapeSelectionMixin:
+    validator_class = FixedShapeGrayValidator
+
     def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
         if mode != "train":
             return super().get_dataloader(dataset_path, batch_size, rank, mode)
@@ -195,7 +220,7 @@ class FixedShapeSelectionMixin:
         self.loss_names = "box_loss", "cls_loss", "dfl_loss"
         args = copy(self.args)
         args.rect, args.conf, args.iou, args.max_det = False, .001, .45, 100
-        return FixedShapeGrayValidator(self.test_loader, save_dir=self.save_dir, args=args, _callbacks=self.callbacks)
+        return self.validator_class(self.test_loader, save_dir=self.save_dir, args=args, _callbacks=self.callbacks)
 
 
 class FixedShapeGrayP3Trainer(FixedShapeSelectionMixin, GrayP3Trainer):

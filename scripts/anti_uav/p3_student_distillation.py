@@ -10,7 +10,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayAddOnTrainer, FixedShapeGrayP3Trainer
+from scripts.anti_uav.gray_deployment_trainer import (
+    BalancedScaleGrayValidator,
+    FixedShapeGrayAddOnTrainer,
+    FixedShapeGrayP3Trainer,
+)
 from scripts.anti_uav.rknn_qat import (
     canonicalize_dfl,
     prepare_rknn_qat,
@@ -76,6 +80,8 @@ class P3StudentDistillationLoss:
         feature_weight: float = 0.10,
         feature_min_px: float = 4.0,
         feature_max_px: float = 16.0,
+        p2_min_px: float = 0.0,
+        p2_max_px: float = 16.0,
         tiny_multiplier: float = 1.75,
         localization_weight: float = 0.0,
         localization_min_px: float = 4.0,
@@ -110,8 +116,12 @@ class P3StudentDistillationLoss:
         self.temperature = temperature
         self.feature_min_px = float(feature_min_px)
         self.feature_max_px = float(feature_max_px)
+        self.p2_min_px = float(p2_min_px)
+        self.p2_max_px = float(p2_max_px)
         if not 0 <= self.feature_min_px < self.feature_max_px:
             raise ValueError("Invalid feature distillation target size range")
+        if not 0 <= self.p2_min_px < self.p2_max_px:
+            raise ValueError("Invalid P2-to-P3 distillation target size range")
         self.projection = attach_tiny_feature_projection(model)
         self.student_capture = DetectInputCapture(model.model[-1])
         self.teacher_capture = DetectInputCapture(teacher.model[-1])
@@ -160,7 +170,35 @@ class P3StudentDistillationLoss:
         signs = distribution.new_tensor((-1.0, -1.0, 1.0, 1.0)).view(1, 4, 1, 1)
         return (center + signs * distance) * float(stride)
 
-    def _p2_to_p3(self, student_p3: torch.Tensor, teacher_p2: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def _target_region_mask(
+        self,
+        batch,
+        height: int,
+        width: int,
+        minimum_px: float,
+        maximum_px: float,
+        padding: int = 1,
+    ) -> torch.Tensor:
+        mask = batch["img"].new_zeros((batch["img"].shape[0], 1, height, width))
+        image_height, image_width = batch["img"].shape[-2:]
+        boxes = batch["bboxes"]
+        long_edges = torch.maximum(boxes[:, 2] * image_width, boxes[:, 3] * image_height)
+        selected = (long_edges >= minimum_px) & (long_edges <= maximum_px)
+        regions = torch.cat((batch["batch_idx"].view(-1, 1), boxes), dim=1)[selected].detach().cpu().tolist()
+        for index, cx, cy, bw, bh in regions:
+            x1 = max(int((cx - bw / 2) * width) - padding, 0)
+            y1 = max(int((cy - bh / 2) * height) - padding, 0)
+            x2 = min(int((cx + bw / 2) * width + 0.9999) + padding, width)
+            y2 = min(int((cy + bh / 2) * height + 0.9999) + padding, height)
+            mask[int(index), :, y1:max(y2, y1 + 1), x1:max(x2, x1 + 1)] = 1
+        return mask
+
+    def _p2_to_p3(
+        self,
+        student_p3: torch.Tensor,
+        teacher_p2: torch.Tensor,
+        batch,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         student_box, student_cls = self._split(student_p3)
         teacher_box, teacher_cls = self._split(teacher_p2)
         _, _, p2_height, p2_width = teacher_p2.shape
@@ -170,7 +208,13 @@ class P3StudentDistillationLoss:
 
         teacher_probability = teacher_cls.detach().sigmoid()
         target_cls = F.max_pool2d(teacher_probability, kernel_size=2, stride=2)
-        cls_weight = target_cls.amax(dim=1, keepdim=True).pow(2)
+        target_mask = self._target_region_mask(
+            batch, p3_height, p3_width, self.p2_min_px, self.p2_max_px, padding=1
+        )
+        if not target_mask.any():
+            zero = student_p3.sum() * 0.0
+            return zero, zero
+        cls_weight = target_cls.amax(dim=1, keepdim=True).pow(2) * target_mask
         cls_loss = self._weighted_mean(
             F.binary_cross_entropy_with_logits(student_cls, target_cls, reduction="none"), cls_weight
         )
@@ -185,7 +229,7 @@ class P3StudentDistillationLoss:
         ).permute(0, 1, 2, 4, 3, 5).reshape(teacher_boxes.shape[0], 4, p3_height, p3_width, 4)
         selected = grouped_confidence.argmax(dim=-1, keepdim=True)
         target_boxes = grouped_boxes.gather(4, selected.expand(-1, 4, -1, -1, -1)).squeeze(4)
-        target_confidence = grouped_confidence.gather(4, selected).squeeze(4).pow(2)
+        target_confidence = grouped_confidence.gather(4, selected).squeeze(4).pow(2) * target_mask
         student_boxes = self._decode_boxes(student_box, stride=8.0)
         box_delta = F.smooth_l1_loss(student_boxes, target_boxes, reduction="none") / 8.0
         box_loss = self._weighted_mean(box_delta, target_confidence)
@@ -201,20 +245,10 @@ class P3StudentDistillationLoss:
         target = F.adaptive_avg_pool2d(teacher_p2, student_p3.shape[-2:])
         target = self.projection(target)
 
-        batch_size, _, height, width = student_p3.shape
-        mask = student_p3.new_zeros((batch_size, 1, height, width))
-        image_height, image_width = batch["img"].shape[-2:]
-        boxes = batch["bboxes"]
-        long_edges = torch.maximum(boxes[:, 2] * image_width, boxes[:, 3] * image_height)
-        selected = (long_edges >= self.feature_min_px) & (long_edges <= self.feature_max_px)
-        regions = torch.cat((batch["batch_idx"].view(-1, 1), boxes), dim=1)[selected].detach().cpu().tolist()
-        for index, cx, cy, bw, bh in regions:
-            x1 = max(int((cx - bw / 2) * width) - 1, 0)
-            y1 = max(int((cy - bh / 2) * height) - 1, 0)
-            x2 = min(int((cx + bw / 2) * width + 0.9999) + 1, width)
-            y2 = min(int((cy + bh / 2) * height + 0.9999) + 1, height)
-            index = int(index)
-            mask[index, :, y1:max(y2, y1 + 1), x1:max(x2, x1 + 1)] = 1
+        _, _, height, width = student_p3.shape
+        mask = self._target_region_mask(
+            batch, height, width, self.feature_min_px, self.feature_max_px, padding=1
+        )
         if not mask.any():
             return student_p3.sum() * 0.0
         student_normalized = F.normalize(student_p3.float(), dim=1)
@@ -245,7 +279,7 @@ class P3StudentDistillationLoss:
             p3_dfl = p3_dfl + self._dfl_kd(student_box, teacher_box, confidence)
         p3_cls = p3_cls / 3.0
         p3_dfl = p3_dfl / 3.0
-        p2_cls, p2_box = self._p2_to_p3(student_raw[1], teacher_raw[0])
+        p2_cls, p2_box = self._p2_to_p3(student_raw[1], teacher_raw[0], batch)
         feature = self._localized_feature_kd(batch)
 
         distillation = (
@@ -332,12 +366,14 @@ class P3StudentFP32DistillationTrainer(P3StudentDistillationTrainer):
     """Distill without fake-quant noise; QAT is a later, short stage."""
 
     enable_qat = False
+    validator_class = BalancedScaleGrayValidator
 
 
 class TinyAwareAddOnTrainer(FixedShapeGrayAddOnTrainer):
     """Train the new Teacher P2 branch with bounded tiny-target weighting."""
 
     tiny_multiplier = 1.75
+    validator_class = BalancedScaleGrayValidator
 
     def _setup_train(self, world_size):
         super()._setup_train(world_size)
@@ -352,6 +388,7 @@ class TinyAwareP3Trainer(FixedShapeGrayP3Trainer):
     localization_weight = 0.12
     localization_min_px = 4.0
     localization_max_px = 960.0
+    validator_class = BalancedScaleGrayValidator
 
     def _setup_train(self, world_size):
         if world_size != 1:
@@ -367,6 +404,86 @@ class TinyAwareP3Trainer(FixedShapeGrayP3Trainer):
         )
 
 
+class P3OutputRetentionLoss:
+    """Keep a QAT student close to its converged FP32 detector outputs."""
+
+    def __init__(
+        self,
+        model: DetectionModel,
+        teacher: DetectionModel,
+        cls_weight: float = 0.20,
+        dfl_weight: float = 0.10,
+        tiny_multiplier: float = 1.9,
+        temperature: float = 2.0,
+    ):
+        self.primary = TinyAwareDetectionLoss(
+            model,
+            tiny_multiplier=tiny_multiplier,
+            localization_weight=0.08,
+            localization_min_px=4.0,
+            localization_max_px=64.0,
+        )
+        self.teacher = teacher
+        self.reg_max = model.model[-1].reg_max
+        self.cls_weight = float(cls_weight)
+        self.dfl_weight = float(dfl_weight)
+        self.temperature = float(temperature)
+
+    def _split(self, raw: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        boundary = self.reg_max * 4
+        return raw[:, :boundary].float(), raw[:, boundary:].float()
+
+    @staticmethod
+    def _weighted_mean(value: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+        while weight.ndim < value.ndim:
+            weight = weight.unsqueeze(1)
+        return (value * weight).sum() / weight.expand_as(value).sum().clamp_min(1e-6)
+
+    def __call__(self, predictions, batch):
+        student_raw = predictions[1] if isinstance(predictions, tuple) else predictions
+        primary_total, primary_items = self.primary(student_raw, batch)
+        with torch.no_grad():
+            teacher_output = self.teacher(batch["img"])
+            teacher_raw = teacher_output[1] if isinstance(teacher_output, tuple) else teacher_output
+        if len(student_raw) != 3 or len(teacher_raw) != 3:
+            raise ValueError("QAT retention requires matching three-scale P3 graphs")
+
+        cls_loss = student_raw[0].new_zeros(())
+        dfl_loss = student_raw[0].new_zeros(())
+        temperature = self.temperature
+        for student_level, teacher_level in zip(student_raw, teacher_raw):
+            student_box, student_cls = self._split(student_level)
+            teacher_box, teacher_cls = self._split(teacher_level)
+            probability = (teacher_cls.detach() / temperature).sigmoid()
+            confidence = teacher_cls.detach().sigmoid().amax(dim=1, keepdim=True).pow(2)
+            cls_delta = F.binary_cross_entropy_with_logits(
+                student_cls / temperature, probability, reduction="none"
+            )
+            cls_loss += self._weighted_mean(cls_delta, confidence) * temperature**2
+
+            batch_size, _, height, width = student_box.shape
+            student_distribution = student_box.view(batch_size, 4, self.reg_max, height, width)
+            teacher_distribution = teacher_box.detach().view(batch_size, 4, self.reg_max, height, width)
+            teacher_probability = (teacher_distribution / temperature).softmax(dim=2)
+            dfl_delta = F.kl_div(
+                (student_distribution / temperature).log_softmax(dim=2),
+                teacher_probability,
+                reduction="none",
+            ).sum(dim=2)
+            dfl_loss += self._weighted_mean(dfl_delta, confidence.squeeze(1)) * temperature**2
+        cls_loss /= 3.0
+        dfl_loss /= 3.0
+
+        batch_size = student_raw[0].shape[0]
+        total = primary_total + batch_size * (
+            self.cls_weight * cls_loss + self.dfl_weight * dfl_loss
+        )
+        items = primary_items.clone()
+        items[1] += self.cls_weight * cls_loss.detach()
+        items[2] += self.dfl_weight * dfl_loss.detach()
+        return total, items
+
+
 class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):
     """Short pure-P3 QAT stage after FP32 distillation has converged."""
 
@@ -374,7 +491,9 @@ class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):
     localization_weight = 0.0
     localization_min_px = 4.0
     localization_max_px = 64.0
+    fake_quant_start_epoch = 0
     observer_freeze_epoch = 3
+    validator_class = BalancedScaleGrayValidator
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         model = super().get_model(cfg=cfg, weights=weights, verbose=verbose)
@@ -400,15 +519,40 @@ class P3QATFineTuneTrainer(FixedShapeGrayP3Trainer):
     def preprocess_batch(self, batch):
         batch = super().preprocess_batch(batch)
         observe = self.epoch < self.observer_freeze_epoch
-        set_rknn_qat(de_parallel(self.model), enabled=True, observer_enabled=observe)
+        enabled = self.epoch >= self.fake_quant_start_epoch
+        set_rknn_qat(de_parallel(self.model), enabled=enabled, observer_enabled=observe)
         if self.ema:
-            set_rknn_qat(self.ema.ema, enabled=True, observer_enabled=False)
+            set_rknn_qat(self.ema.ema, enabled=enabled, observer_enabled=False)
+        if hasattr(self, "teacher"):
+            self.teacher.eval()
         return batch
 
     def optimizer_step(self):
         super().optimizer_step()
         if self.ema:
             sync_rknn_qat_observer_flags(de_parallel(self.model), self.ema.ema)
+
+
+class P3QATRetentionTrainer(P3QATFineTuneTrainer):
+    """Use one observe-only epoch and FP32 output retention during QAT."""
+
+    teacher_weights: Path | None = None
+    fake_quant_start_epoch = 1
+    observer_freeze_epoch = 3
+    retention_options: dict = {}
+
+    def _setup_train(self, world_size):
+        super()._setup_train(world_size)
+        if not self.teacher_weights:
+            raise ValueError("Configure P3QATRetentionTrainer.teacher_weights before training")
+        teacher = YOLO(str(self.teacher_weights)).model.float().to(self.device).eval()
+        canonicalize_dfl(teacher)
+        for parameter in teacher.parameters():
+            parameter.requires_grad_(False)
+        self.teacher = teacher
+        model = de_parallel(self.model)
+        model.criterion = P3OutputRetentionLoss(model, teacher, **self.retention_options)
+        LOGGER.info("Loaded FP32 retention teacher from %s", self.teacher_weights)
 
 
 def copy_teacher_auxiliary(teacher: DetectionModel, student: DetectionModel) -> dict[str, int]:

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import torch
 
 from scripts.anti_uav.p3_student_distillation import (
+    P3OutputRetentionLoss,
     P3StudentDistillationLoss,
     transfer_student_to_p3,
 )
@@ -101,6 +102,18 @@ def test_rknn_qat_wraps_toggles_and_strips_convolutions():
     assert not torch.equal(p3.model[0].conv.weight, original)
 
 
+def test_rknn_qat_observe_only_warmup_preserves_fp32_output():
+    layer = torch.nn.Conv2d(3, 4, 3, padding=1).train()
+    expected_layer = __import__("copy").deepcopy(layer)
+    wrapped = RKNNFakeQuantConv2d.from_conv(layer).train()
+    wrapped.qat_enabled = False
+    wrapped.observer_enabled = True
+    image = torch.rand(2, 3, 16, 16)
+    output = wrapped(image)
+    torch.testing.assert_close(output, expected_layer(image), rtol=0, atol=0)
+    assert bool(wrapped.observer_initialized)
+
+
 def test_canonicalize_dfl_reports_and_repairs_fixed_integral_weights():
     p3, _ = build_pair()
     p3.model[-1].dfl.conv.weight.data[0, 3, 0, 0] = 2.5
@@ -144,6 +157,52 @@ def test_distillation_loss_backpropagates_and_pure_p3_extraction_is_exact():
     assert len(source_raw) == len(target_raw) == 3
     for source_level, target_level in zip(source_raw, target_raw):
         torch.testing.assert_close(source_level, target_level, rtol=0, atol=0)
+
+
+def test_p2_to_p3_distillation_is_limited_to_configured_gt_scale():
+    _, student = build_pair()
+    _, teacher = build_pair()
+    student.args = SimpleNamespace(box=7.5, cls=.5, dfl=1.5)
+    criterion = P3StudentDistillationLoss(student, teacher, p2_min_px=0, p2_max_px=16)
+    channels = student.model[-1].reg_max * 4 + student.model[-1].nc
+    student_p3 = torch.randn(1, channels, 8, 8, requires_grad=True)
+    teacher_p2 = torch.randn(1, channels, 16, 16)
+    image = torch.rand(1, 3, 64, 64)
+
+    large = dict(
+        img=image,
+        batch_idx=torch.tensor([0.0]),
+        bboxes=torch.tensor([[.5, .5, .5, .5]]),
+    )
+    large_cls, large_box = criterion._p2_to_p3(student_p3, teacher_p2, large)
+    assert large_cls == 0 and large_box == 0
+
+    tiny = dict(
+        img=image,
+        batch_idx=torch.tensor([0.0]),
+        bboxes=torch.tensor([[.5, .5, 6 / 64, 6 / 64]]),
+    )
+    tiny_cls, tiny_box = criterion._p2_to_p3(student_p3, teacher_p2, tiny)
+    assert tiny_cls > 0 and tiny_box > 0
+
+
+def test_qat_output_retention_loss_backpropagates_on_pure_p3():
+    student, _ = build_pair()
+    teacher = __import__("copy").deepcopy(student).eval()
+    student.train()
+    student.args = SimpleNamespace(box=7.5, cls=.5, dfl=1.5)
+    criterion = P3OutputRetentionLoss(student, teacher)
+    image = torch.rand(1, 3, 64, 64)
+    batch = dict(
+        img=image,
+        batch_idx=torch.tensor([0.0]),
+        cls=torch.tensor([[0.0]]),
+        bboxes=torch.tensor([[.5, .5, 6 / 64, 6 / 64]]),
+    )
+    loss, items = criterion(student(image), batch)
+    assert torch.isfinite(loss) and items.shape == (3,)
+    loss.backward()
+    assert student.model[0].conv.weight.grad is not None
 
 
 def test_tiny_aware_loss_is_bounded_and_backpropagates():

@@ -69,7 +69,7 @@ class RKNNFakeQuantConv2d(nn.Conv2d):
         target.train(source.training)
         return target
 
-    def _fake_quant_activation(self, value: torch.Tensor) -> torch.Tensor:
+    def _observe_activation(self, value: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         current_min = value.detach().float().amin()
         current_max = value.detach().float().amax()
         if self.training and self.observer_enabled:
@@ -82,9 +82,11 @@ class RKNNFakeQuantConv2d(nn.Conv2d):
                 self.activation_min.mul_(momentum).add_(current_min * (1.0 - momentum))
                 self.activation_max.mul_(momentum).add_(current_max * (1.0 - momentum))
         if not bool(self.observer_initialized):
-            minimum, maximum = current_min, current_max
-        else:
-            minimum, maximum = self.activation_min, self.activation_max
+            return current_min, current_max
+        return self.activation_min, self.activation_max
+
+    def _fake_quant_activation(self, value: torch.Tensor) -> torch.Tensor:
+        minimum, maximum = self._observe_activation(value)
         scale = ((maximum - minimum) / 255.0).clamp_min(1e-8)
         zero_point = (-128.0 - minimum / scale).round().clamp(-128, 127)
         quantized = ((value.float() / scale) + zero_point).round().clamp(-128, 127)
@@ -96,6 +98,11 @@ class RKNNFakeQuantConv2d(nn.Conv2d):
 
     def forward(self, value: torch.Tensor) -> torch.Tensor:
         if not self.qat_enabled:
+            # Collect representative ranges before introducing fake-quant noise.
+            # This lets QAT use an observe-only warmup epoch instead of changing
+            # every activation on the first optimization step.
+            if self.training and self.observer_enabled:
+                self._observe_activation(value)
             return super().forward(value)
         value = self._fake_quant_activation(value)
         return F.conv2d(

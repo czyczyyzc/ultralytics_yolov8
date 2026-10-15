@@ -1,8 +1,11 @@
 import json
 
+import numpy as np
+import pytest
 import yaml
 
-from scripts.anti_uav.run_p3_independent_curriculum_training import stage_yaml
+from scripts.anti_uav.run_p3_independent_curriculum_training import audit_label_caches, stage_yaml
+from ultralytics.data.dataset import DATASET_CACHE_VERSION, load_audited_dataset_cache
 
 
 def test_stage_yaml_rebalances_appended_scale_slots(tmp_path):
@@ -30,3 +33,33 @@ def test_stage_yaml_rebalances_appended_scale_slots(tmp_path):
     assert balanced["online_scale"]["views_per_donor"] == 2
     assert balanced["label_sampling"]["anchor_slots"] == 79
     assert "online_replacement" not in balanced
+
+
+def test_audited_cache_avoids_per_member_metadata_scan(tmp_path):
+    train = tmp_path / "train.txt"
+    val = tmp_path / "val.txt"
+    train.write_text("/dataset/frame_1.jpg\n")
+    val.write_text("/dataset/frame_2.jpg\n")
+    for source, identity in ((train, "train-id"), (val, "val-id")):
+        cache = {
+            "labels": [],
+            "hash": identity,
+            "results": (1, 0, 0, 0, 1),
+            "msgs": [],
+            "version": DATASET_CACHE_VERSION,
+        }
+        with source.with_suffix(".cache").open("wb") as stream:
+            np.save(stream, cache)
+
+    records = audit_label_caches({"train": str(train), "val": str(val)})
+    loaded = load_audited_dataset_cache(
+        train.with_suffix(".cache"), train, {"trusted_label_caches": records}
+    )
+    assert loaded["hash"] == "train-id"
+    assert records[str(train.resolve())]["entries"] == 1
+
+    train.write_text("/dataset/changed.jpg\n")
+    with pytest.raises(ValueError, match="dataset list changed"):
+        load_audited_dataset_cache(
+            train.with_suffix(".cache"), train, {"trusted_label_caches": records}
+        )

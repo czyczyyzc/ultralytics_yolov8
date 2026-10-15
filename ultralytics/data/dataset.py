@@ -1,6 +1,7 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import contextlib
+import hashlib
 import json
 from collections import defaultdict
 from itertools import repeat
@@ -41,6 +42,45 @@ from .utils import (
 
 # Ultralytics dataset *.cache version, >= 1.0.0 for YOLOv8
 DATASET_CACHE_VERSION = "1.0.3"
+
+
+def _sha256_file(path):
+    """Return a streaming SHA256 without issuing metadata requests for every dataset member."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_audited_dataset_cache(cache_path, img_path, data):
+    """Load an explicitly pinned cache after verifying its list, bytes, and internal dataset identity."""
+    records = (data or {}).get("trusted_label_caches") or {}
+    if img_path is None or not records:
+        return None
+
+    source_path = Path(img_path).resolve()
+    record = records.get(str(source_path))
+    if record is None:
+        return None
+
+    cache_path = Path(cache_path).resolve()
+    expected_path = Path(record["path"]).resolve()
+    if cache_path != expected_path:
+        raise ValueError(f"Audited cache path mismatch: expected {expected_path}, got {cache_path}")
+    if _sha256_file(source_path) != record["source_sha256"]:
+        raise ValueError(f"Audited dataset list changed: {source_path}")
+    if _sha256_file(cache_path) != record["cache_sha256"]:
+        raise ValueError(f"Audited label cache changed: {cache_path}")
+
+    cache = load_dataset_cache_file(cache_path)
+    if cache.get("version") != DATASET_CACHE_VERSION:
+        raise ValueError(f"Audited label cache version changed: {cache_path}")
+    if cache.get("hash") != record["dataset_hash"]:
+        raise ValueError(f"Audited dataset identity changed: {cache_path}")
+    if int(cache.get("results", (0, 0, 0, 0, -1))[4]) != int(record["entries"]):
+        raise ValueError(f"Audited dataset entry count changed: {cache_path}")
+    return cache
 
 
 class YOLODataset(BaseDataset):
@@ -140,12 +180,17 @@ class YOLODataset(BaseDataset):
             if img_path is not None and img_path.is_file()
             else Path(self.label_files[0]).parent.with_suffix(".cache")
         )
-        try:
-            cache, exists = load_dataset_cache_file(cache_path), True  # attempt to load a *.cache file
-            assert cache["version"] == DATASET_CACHE_VERSION  # matches current version
-            assert cache["hash"] == get_hash(self.label_files + self.im_files)  # identical hash
-        except (FileNotFoundError, AssertionError, AttributeError):
-            cache, exists = self.cache_labels(cache_path), False  # run cache ops
+        cache = load_audited_dataset_cache(cache_path, img_path, self.data)
+        if cache is not None:
+            exists = True
+            LOGGER.info(f"{self.prefix}Using audited label cache {cache_path}")
+        else:
+            try:
+                cache, exists = load_dataset_cache_file(cache_path), True  # attempt to load a *.cache file
+                assert cache["version"] == DATASET_CACHE_VERSION  # matches current version
+                assert cache["hash"] == get_hash(self.label_files + self.im_files)  # identical hash
+            except (FileNotFoundError, AssertionError, AttributeError):
+                cache, exists = self.cache_labels(cache_path), False  # run cache ops
 
         # Display cache
         nf, nm, ne, nc, n = cache.pop("results")  # found, missing, empty, corrupt, total

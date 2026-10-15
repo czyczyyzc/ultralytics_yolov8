@@ -38,6 +38,8 @@ from scripts.anti_uav.train_frozen_p3_addon_p2 import (  # noqa: E402
     verify_legacy_outputs,
 )
 from ultralytics import YOLO  # noqa: E402
+from ultralytics.data.dataset import DATASET_CACHE_VERSION  # noqa: E402
+from ultralytics.data.utils import load_dataset_cache_file  # noqa: E402
 from ultralytics.utils import SETTINGS  # noqa: E402
 from ultralytics.utils.torch_utils import init_seeds  # noqa: E402
 
@@ -60,6 +62,32 @@ def write_status(run_dir: Path, stage: str, **extra) -> None:
     temporary.write_text(json.dumps(value, indent=2) + "\n")
     temporary.replace(run_dir / "status.json")
     print(json.dumps(value), flush=True)
+
+
+def audit_label_caches(source: dict) -> dict:
+    """Pin train/validation cache snapshots so NFS startup does not stat every image and label."""
+    records = {}
+    for split in ("train", "val"):
+        list_path = Path(source[split]).resolve()
+        if not list_path.is_file():
+            raise ValueError(f"Audited cache mode requires a file list for {split}: {list_path}")
+        cache_path = list_path.with_suffix(".cache")
+        if not cache_path.is_file():
+            raise FileNotFoundError(f"Missing {split} label cache: {cache_path}")
+        cache = load_dataset_cache_file(cache_path)
+        if cache.get("version") != DATASET_CACHE_VERSION:
+            raise ValueError(f"Stale {split} label cache version: {cache_path}")
+        results = cache.get("results")
+        if not results or len(results) != 5:
+            raise ValueError(f"Invalid {split} label cache results: {cache_path}")
+        records[str(list_path)] = {
+            "path": str(cache_path),
+            "source_sha256": sha256(list_path),
+            "cache_sha256": sha256(cache_path),
+            "dataset_hash": str(cache["hash"]),
+            "entries": int(results[4]),
+        }
+    return records
 
 
 def _scale_slots(config: dict | None) -> tuple[int, int]:
@@ -196,6 +224,11 @@ def main() -> None:
     if any("Video00004" in Path(path).parts for path in train_paths + val_paths):
         raise ValueError("Video00004 must remain test-only")
 
+    source["trusted_label_caches"] = audit_label_caches(source)
+    (args.run_dir / "audit/label_caches.json").write_text(
+        json.dumps(source["trusted_label_caches"], indent=2) + "\n"
+    )
+
     manifest = json.loads((args.data.parent / "manifest.json").read_text())
     training_videos = len(manifest.get("train_video_hashes", []))
     if training_videos != args.expected_training_videos:
@@ -234,6 +267,7 @@ def main() -> None:
                           full_map_p3_retention=True, large_targets_use_supervised_loss=True),
         qat=dict(observe_only_epochs=1, fp32_output_retention=True, real_native_only=True),
         checkpoint_selection="balanced native F2 + 4-8px recall + AP + zoom metrics",
+        trusted_label_caches=source["trusted_label_caches"],
         final_graph="standard YOLOv8n P3-P5; all P2/projection modules removed",
         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
     )

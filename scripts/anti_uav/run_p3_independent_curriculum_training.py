@@ -200,6 +200,8 @@ def main() -> None:
         raise FileNotFoundError("Training YAML or standard foundation checkpoint is missing")
     if "approved" in args.foundation.name.lower() or "student" in args.foundation.name.lower():
         raise ValueError("Foundation must not be a previous anti-UAV Student checkpoint")
+    if min(args.foundation_epochs, args.teacher_epochs, args.student_epochs, args.localization_epochs) < 0:
+        raise ValueError("Training epoch counts must be non-negative")
     args.run_dir.mkdir(parents=True, exist_ok=True)
     lock = (args.run_dir / "pipeline.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -243,13 +245,23 @@ def main() -> None:
         source, args.run_dir / "configs/student_fp32.yaml", offsets, args.replacement_probability
     )
     offsets += args.student_epochs
-    localization_data = stage_yaml(
-        source, args.run_dir / "configs/localization.yaml", offsets, args.replacement_probability
-    )
+    localization_data = None
+    if args.localization_epochs:
+        localization_data = stage_yaml(
+            source, args.run_dir / "configs/localization.yaml", offsets, args.replacement_probability
+        )
+
+    stages = [
+        "standard YOLOv8n",
+        "delivery-style P3 foundation",
+        "frozen-P3 P2 Teacher",
+        "FP32 P3 Student distillation",
+    ]
+    if args.localization_epochs:
+        stages.append("FP32 localization refinement")
 
     protocol = dict(
-        method="standard YOLOv8n -> delivery-style P3 foundation -> frozen-P3 P2 Teacher -> "
-               "FP32 P3 Student distillation -> FP32 localization refinement",
+        method=" -> ".join(stages),
         data=str(args.data), foundation=str(args.foundation), foundation_sha256=sha256(args.foundation),
         task_specific_initialization=False, input_hw=[544, 960], training_videos=training_videos,
         batch=args.batch, nbs=128, seed=SEED,
@@ -350,36 +362,41 @@ def main() -> None:
             exports = export_student_pair(student_weights, args.run_dir, "distilled")
             (args.run_dir / "audit/student_exports.json").write_text(json.dumps(exports, indent=2) + "\n")
 
-        localization_weights = args.run_dir / "localization/p3_student/weights"
-        if not (args.resume and (localization_weights / "best.pt").is_file()):
-            localization = YOLO(str(student_weights / "best.pt"))
-            P3StudentFP32DistillationTrainer.teacher_weights = teacher_best.resolve()
-            P3StudentFP32DistillationTrainer.loss_options = dict(
-                auxiliary_weight=.25, p3_cls_weight=.10, p3_dfl_weight=.05,
-                p2_cls_weight=.30, p2_box_weight=.15, feature_weight=.10,
-                p2_min_px=0.0, p2_max_px=16.0, feature_min_px=4.0, feature_max_px=16.0,
-                tiny_multiplier=1.85, localization_weight=.15,
-                localization_min_px=4.0, localization_max_px=64.0, temperature=2.0,
-            )
-            add_status_callback(localization, args.run_dir, "localization_refinement")
-            localization.train(
-                trainer=P3StudentFP32DistillationTrainer,
-                project=str(args.run_dir / "localization"), name="p3_student",
-                lr0=5e-5, warmup_epochs=0,
-                **common_train(localization_data, args, args.localization_epochs),
-            )
-            exports = export_student_pair(localization_weights, args.run_dir, "localization")
-            (args.run_dir / "audit/localization_exports.json").write_text(json.dumps(exports, indent=2) + "\n")
+        if args.localization_epochs:
+            localization_weights = args.run_dir / "localization/p3_student/weights"
+            if not (args.resume and (localization_weights / "best.pt").is_file()):
+                localization = YOLO(str(student_weights / "best.pt"))
+                P3StudentFP32DistillationTrainer.teacher_weights = teacher_best.resolve()
+                P3StudentFP32DistillationTrainer.loss_options = dict(
+                    auxiliary_weight=.25, p3_cls_weight=.10, p3_dfl_weight=.05,
+                    p2_cls_weight=.30, p2_box_weight=.15, feature_weight=.10,
+                    p2_min_px=0.0, p2_max_px=16.0, feature_min_px=4.0, feature_max_px=16.0,
+                    tiny_multiplier=1.85, localization_weight=.15,
+                    localization_min_px=4.0, localization_max_px=64.0, temperature=2.0,
+                )
+                add_status_callback(localization, args.run_dir, "localization_refinement")
+                localization.train(
+                    trainer=P3StudentFP32DistillationTrainer,
+                    project=str(args.run_dir / "localization"), name="p3_student",
+                    lr0=5e-5, warmup_epochs=0,
+                    **common_train(localization_data, args, args.localization_epochs),
+                )
+                exports = export_student_pair(localization_weights, args.run_dir, "localization")
+                (args.run_dir / "audit/localization_exports.json").write_text(
+                    json.dumps(exports, indent=2) + "\n"
+                )
 
         write_status(args.run_dir, "compare_video00009")
         models = {
             "foundation_p3": foundation_best,
             "teacher_p2p3": teacher_best,
             "student_fp32": args.run_dir / "p3_student_distilled_best_fp32.pt",
-            "student_localization_fp32": args.run_dir / "p3_student_localization_best_fp32.pt",
         }
+        if args.localization_epochs:
+            models["student_localization_fp32"] = args.run_dir / "p3_student_localization_best_fp32.pt"
+        evaluation_data = localization_data or student_data
         comparison = {
-            name: validate(path, localization_data, args, args.run_dir / f"audit/video00009_{name}.json")
+            name: validate(path, evaluation_data, args, args.run_dir / f"audit/video00009_{name}.json")
             for name, path in models.items()
         }
         (args.run_dir / "comparison_video00009.json").write_text(json.dumps(comparison, indent=2) + "\n")

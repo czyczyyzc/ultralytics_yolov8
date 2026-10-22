@@ -38,6 +38,8 @@ def read_yolo_row(image_path: str) -> dict:
         shape=image.shape[:2],
         cls=np.asarray([[row[0]] for row in rows], dtype=np.float32),
         bboxes=np.asarray([row[1:] for row in rows], dtype=np.float32).reshape(-1, 4),
+        segments=[],
+        keypoints=None,
         normalized=True,
         bbox_format="xywh",
     )

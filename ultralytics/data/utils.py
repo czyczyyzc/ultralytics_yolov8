@@ -8,6 +8,7 @@ import random
 import subprocess
 import time
 import zipfile
+from collections import Counter
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from tarfile import is_tarfile
@@ -50,7 +51,10 @@ def img2label_paths(img_paths):
 
 def get_hash(paths):
     """Returns a single hash value of a list of paths (files or dirs)."""
-    size = sum(os.path.getsize(p) for p in paths if os.path.exists(p))  # sizes
+    # Repeated sampling lists may contain the same file thousands of times. Stat each
+    # unique path once while preserving the legacy size sum and path-order hash.
+    counts = Counter(paths)
+    size = sum(os.path.getsize(p) * count for p, count in counts.items() if os.path.exists(p))
     h = hashlib.sha256(str(size).encode())  # hash sizes
     h.update("".join(paths).encode())  # hash paths
     return h.hexdigest()  # return hash

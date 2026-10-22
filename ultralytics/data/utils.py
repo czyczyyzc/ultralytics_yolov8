@@ -54,10 +54,21 @@ def get_hash(paths):
     # Repeated sampling lists may contain the same file thousands of times. Stat each
     # unique path once while preserving the legacy size sum and path-order hash.
     counts = Counter(paths)
-    size = sum(os.path.getsize(p) * count for p, count in counts.items() if os.path.exists(p))
+    items = tuple(counts.items())
+    if len(items) > 64:
+        with ThreadPool(min(NUM_THREADS, len(items))) as pool:
+            size = sum(pool.imap_unordered(_weighted_path_size, items, chunksize=64))
+    else:
+        size = sum(_weighted_path_size(item) for item in items)
     h = hashlib.sha256(str(size).encode())  # hash sizes
     h.update("".join(paths).encode())  # hash paths
     return h.hexdigest()  # return hash
+
+
+def _weighted_path_size(item):
+    """Return a path's byte size multiplied by its sampling frequency."""
+    path, count = item
+    return os.path.getsize(path) * count if os.path.exists(path) else 0
 
 
 def exif_size(img: Image.Image):

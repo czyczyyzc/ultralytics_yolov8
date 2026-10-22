@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import gc
 import json
 import os
 from pathlib import Path
@@ -64,6 +65,17 @@ def assert_levels(path: Path, expected: int) -> None:
     detector = YOLO(str(path)).model.model[-1]
     if len(detector.stride) != expected:
         raise ValueError(f"Expected {expected} detector levels in {path}, found {len(detector.stride)}")
+
+
+def clean_validate(model_path: Path, data: Path, args, output: Path) -> dict:
+    """Validate sequential models without retaining multiprocessing DataLoaders."""
+    validation_args = argparse.Namespace(**vars(args))
+    validation_args.workers = 0
+    try:
+        return validate(model_path, data, validation_args, output)
+    finally:
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
 def prepare_data(source_path: Path, run_dir: Path) -> tuple[Path, Path, dict]:
@@ -154,10 +166,10 @@ def main() -> None:
     try:
         status(args.run_dir, "baseline_evaluation")
         baseline = {
-            "teacher_video00009": validate(args.teacher, train_data, args, args.run_dir / "audit/baseline_teacher_video00009.json"),
-            "student_video00009": validate(args.student, train_data, args, args.run_dir / "audit/baseline_student_video00009.json"),
-            "teacher_cross_training_fit": validate(args.teacher, cross_data, args, args.run_dir / "audit/baseline_teacher_cross.json"),
-            "student_cross_training_fit": validate(args.student, cross_data, args, args.run_dir / "audit/baseline_student_cross.json"),
+            "teacher_video00009": clean_validate(args.teacher, train_data, args, args.run_dir / "audit/baseline_teacher_video00009.json"),
+            "student_video00009": clean_validate(args.student, train_data, args, args.run_dir / "audit/baseline_student_video00009.json"),
+            "teacher_cross_training_fit": clean_validate(args.teacher, cross_data, args, args.run_dir / "audit/baseline_teacher_cross.json"),
+            "student_cross_training_fit": clean_validate(args.student, cross_data, args, args.run_dir / "audit/baseline_student_cross.json"),
         }
 
         status(args.run_dir, "teacher_finetune", epoch=0)
@@ -215,10 +227,10 @@ def main() -> None:
 
         status(args.run_dir, "final_evaluation")
         final = {
-            "teacher_video00009": validate(teacher_best, train_data, args, args.run_dir / "audit/final_teacher_video00009.json"),
-            "student_video00009": validate(student_best, train_data, args, args.run_dir / "audit/final_student_video00009.json"),
-            "teacher_cross_training_fit": validate(teacher_best, cross_data, args, args.run_dir / "audit/final_teacher_cross.json"),
-            "student_cross_training_fit": validate(student_best, cross_data, args, args.run_dir / "audit/final_student_cross.json"),
+            "teacher_video00009": clean_validate(teacher_best, train_data, args, args.run_dir / "audit/final_teacher_video00009.json"),
+            "student_video00009": clean_validate(student_best, train_data, args, args.run_dir / "audit/final_student_video00009.json"),
+            "teacher_cross_training_fit": clean_validate(teacher_best, cross_data, args, args.run_dir / "audit/final_teacher_cross.json"),
+            "student_cross_training_fit": clean_validate(student_best, cross_data, args, args.run_dir / "audit/final_student_cross.json"),
         }
         result = dict(baseline=baseline, final=final, teacher=str(teacher_best), student=str(student_best))
         (args.run_dir / "comparison.json").write_text(json.dumps(result, indent=2) + "\n")

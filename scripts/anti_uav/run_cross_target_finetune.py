@@ -9,6 +9,7 @@ import gc
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import time
 
@@ -120,6 +121,7 @@ def main() -> None:
     parser.add_argument("--teacher-epochs", type=int, default=6)
     parser.add_argument("--student-epochs", type=int, default=8)
     parser.add_argument("--expected-training-videos", type=int, default=52)
+    parser.add_argument("--resume", action="store_true", help="Reuse completed baseline audits after a pre-training failure")
     args = parser.parse_args()
 
     args.data = args.data.resolve()
@@ -130,9 +132,11 @@ def main() -> None:
         raise FileNotFoundError("Data or initialization checkpoint is missing")
     if min(args.batch, args.workers, args.teacher_epochs, args.student_epochs) < 1:
         raise ValueError("Batch, workers and epochs must be positive")
-    args.run_dir.mkdir(parents=True, exist_ok=False)
-    (args.run_dir / "configs").mkdir()
-    (args.run_dir / "audit").mkdir()
+    if args.run_dir.exists() and not args.resume:
+        raise FileExistsError(args.run_dir)
+    args.run_dir.mkdir(parents=True, exist_ok=args.resume)
+    (args.run_dir / "configs").mkdir(exist_ok=args.resume)
+    (args.run_dir / "audit").mkdir(exist_ok=args.resume)
     lock = (args.run_dir / "pipeline.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
@@ -164,15 +168,30 @@ def main() -> None:
     (args.run_dir / "protocol.json").write_text(json.dumps(protocol, indent=2) + "\n")
 
     try:
-        status(args.run_dir, "baseline_evaluation")
-        baseline = {
-            "teacher_video00009": clean_validate(args.teacher, train_data, args, args.run_dir / "audit/baseline_teacher_video00009.json"),
-            "student_video00009": clean_validate(args.student, train_data, args, args.run_dir / "audit/baseline_student_video00009.json"),
-            "teacher_cross_training_fit": clean_validate(args.teacher, cross_data, args, args.run_dir / "audit/baseline_teacher_cross.json"),
-            "student_cross_training_fit": clean_validate(args.student, cross_data, args, args.run_dir / "audit/baseline_student_cross.json"),
+        baseline_outputs = {
+            "teacher_video00009": args.run_dir / "audit/baseline_teacher_video00009.json",
+            "student_video00009": args.run_dir / "audit/baseline_student_video00009.json",
+            "teacher_cross_training_fit": args.run_dir / "audit/baseline_teacher_cross.json",
+            "student_cross_training_fit": args.run_dir / "audit/baseline_student_cross.json",
         }
+        if args.resume and all(path.is_file() for path in baseline_outputs.values()):
+            baseline = {name: json.loads(path.read_text()) for name, path in baseline_outputs.items()}
+        else:
+            status(args.run_dir, "baseline_evaluation")
+            baseline = {
+                name: clean_validate(
+                    args.teacher if name.startswith("teacher") else args.student,
+                    cross_data if "cross" in name else train_data,
+                    args,
+                    output,
+                )
+                for name, output in baseline_outputs.items()
+            }
 
         status(args.run_dir, "teacher_finetune", epoch=0)
+        teacher_output = args.run_dir / "teacher/p2p3"
+        if args.resume and teacher_output.exists() and not (teacher_output / "weights/best.pt").is_file():
+            shutil.rmtree(teacher_output)
         FullTeacherFineTuneTrainer.validator_class = FixedShapeGrayValidator
         FullTeacherFineTuneTrainer.tiny_multiplier = 1.5
         FullTeacherFineTuneTrainer.localization_weight = .08

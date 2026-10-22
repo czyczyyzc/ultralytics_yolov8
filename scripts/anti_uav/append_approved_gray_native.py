@@ -64,9 +64,12 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--positive-stride", type=int, default=1)
     p.add_argument("--negative-stride", type=int, default=1)
+    p.add_argument("--positive-repeat", type=int, default=1,
+                   help="Repeat each newly approved positive slot without changing native images")
     p.add_argument("--negative-fraction", type=float, default=.15)
     a = p.parse_args()
-    if a.output.exists() or min(a.positive_stride, a.negative_stride) < 1 or not 0 < a.negative_fraction < 1:
+    if (a.output.exists() or min(a.positive_stride, a.negative_stride, a.positive_repeat) < 1
+            or not 0 < a.negative_fraction < 1):
         raise ValueError("Use a fresh output and positive sample strides")
     cv2.setNumThreads(1)
     source_yaml = a.source / a.source_yaml
@@ -94,7 +97,7 @@ def main():
     append_samples(base, [], val_text.splitlines())
     a.output.mkdir(parents=True)
     (a.output / "snapshot.json").write_bytes(a.snapshot.read_bytes())
-    records, additions, negative_pool, positive_count, negative_count = [], [], [], 0, 0
+    records, additions, added_positives, negative_pool, positive_count, negative_count = [], [], [], [], 0, 0
     for row in rows:
         task = Path(row["task"])
         before = sha256_file(task / "manifest.json")
@@ -110,17 +113,21 @@ def main():
         if not pos:
             raise ValueError(f"No positive sample from new video: {task}")
         additions.extend(map(str, pos + neg))
+        added_positives.extend(map(str, pos))
         negative_pool.extend(map(str, neg))
         positive_count += len(pos)
         negative_count += len(neg)
         records.append(record)
         (a.output / "preparation_progress.json").write_text(json.dumps(records, indent=2) + "\n")
     schedule = append_samples(base, additions, val_text.splitlines())
+    if a.positive_repeat > 1:
+        schedule.extend(sorted(added_positives) * (a.positive_repeat - 1))
     train_file = a.output / "train_hardneg.txt"
     train_file.write_text("\n".join(schedule) + "\n")
     (a.output / "val_monitor.txt").write_text(val_text)
+    positive_exposure = positive_count * a.positive_repeat
     negative_pool, positives, desired_negatives, budget, anchors = expansion_sampling(
-        source, config, base, positive_count, negative_pool, a.negative_fraction)
+        source, config, base, positive_exposure, negative_pool, a.negative_fraction)
     pool_file = a.output / "new_negative_pool.txt"
     pool_file.write_text("\n".join(sorted(negative_pool)) + "\n")
     online_replacement = config.get("online_replacement")
@@ -150,6 +157,7 @@ def main():
                     append_only_positive=positives,
                     negative=negative, append_only_negative_fraction=negative / len(schedule),
                     final_negative_fraction=desired_negatives / (positives + desired_negatives), added_positive_samples=positive_count,
+                    added_positive_exposure=positive_exposure, positive_repeat=a.positive_repeat,
                     added_negative_samples=negative_count, positive_stride=a.positive_stride,
                     negative_stride=a.negative_stride, baseline_prefix_exactly_preserved=True,
                     native_schedule_sha256=sha256_file(train_file), training_started=False,

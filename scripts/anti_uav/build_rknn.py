@@ -17,6 +17,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mean-values", default="0,0,0", help="Comma-separated channel means.")
     parser.add_argument("--std-values", default="255,255,255", help="Comma-separated channel std values.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose RKNN logging.")
+    parser.add_argument("--quantized-dtype", default="w8a8", choices=("w8a8", "w8a16"))
+    parser.add_argument("--quantized-algorithm", default="normal", choices=("normal", "mmse", "kl_divergence", "gdq"))
+    parser.add_argument("--quantized-method", default="channel", choices=("layer", "channel", "group32", "group64"))
     return parser.parse_args()
 
 
@@ -49,6 +52,9 @@ def main() -> None:
         target_platform=args.target,
         mean_values=parse_triplet(args.mean_values),
         std_values=parse_triplet(args.std_values),
+        quantized_dtype=args.quantized_dtype,
+        quantized_algorithm=args.quantized_algorithm,
+        quantized_method=args.quantized_method,
     )
     if ret != 0:
         raise RuntimeError(f"rknn.config failed with code {ret}")

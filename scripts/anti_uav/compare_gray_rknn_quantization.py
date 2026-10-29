@@ -133,7 +133,7 @@ def report(output, result):
     protocol = result["protocol"]
     backends = tuple(result["backends"])
     quantization = "hybrid INT8/FP16" if protocol.get("auto_hybrid") else "INT8"
-    lines = [f"# 44-video detector: FP32 vs {quantization}", "",
+    lines = [f"# Detector: FP32 vs {quantization}", "",
         f"Target: {protocol['target']}; RKNN Toolkit2 {protocol['toolkit_version']} host simulator.",
         "Not a board accuracy or FPS measurement. Tracking is excluded.",
         "Identical validation-loader RGB pixels for all backends: 960x544, padding 114.",
@@ -143,13 +143,13 @@ def report(output, result):
         f"Rebuilt RKNN SHA256 equals delivered artifact: {protocol['rebuilt_matches_delivered']}.",
         "If hashes differ, this measures a rebuild with identical inputs/config, not the delivered binary.", ""]
     for split in (*SPLITS, "pooled_native"):
-        lines += [f"## {split}", "", "| Backend | Conf | P | R | TP | FP | FN | AP50 | AP50-95 | 4-8px R |",
+        lines += [f"## {split}", "", "| Backend | Conf | R | P | TP | FP | FN | AP50 | AP50-95 | 4-8px R |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for conf in (.01, .03, .05):
             for backend in backends:
                 m, q = result["backends"][backend][split], f"native/c{conf:.2f}/"
                 tiny = m.get(q + "long_4to8px/R")
-                lines.append(f"| {backend} | {conf:.2f} | {m[q+'P']:.2%} | {m[q+'R']:.2%} | "
+                lines.append(f"| {backend} | {conf:.2f} | {m[q+'R']:.2%} | {m[q+'P']:.2%} | "
                     f"{m[q+'TP']} | {m[q+'FP']} | {m[q+'FN']} | {m['native/mAP50']:.2%} | "
                     f"{m['native/mAP50-95']:.2%} | {f'{tiny:.2%}' if tiny is not None else 'N/A'} |")
         lines.append("")

@@ -1,4 +1,4 @@
-from scripts.anti_uav.prepare_labeler_training_expansion import frame_plan
+from scripts.anti_uav.prepare_labeler_training_expansion import excluded_calibration_source, frame_plan
 
 
 def row(index, status="confirmed", box=(0, 0, 100, 100)):
@@ -35,3 +35,10 @@ def test_partially_out_of_frame_boxes_clipped_but_invalid_not_negatives():
     plan, excluded = frame_plan([row(0, box=(90, 0, 120, 100)), row(1, box=(150, 0, 160, 100))], 2, 100, 100, True)
     assert plan == {0: [[.95, .5, .1, 1.]]}
     assert excluded["invalid_bbox"] == 1
+
+
+def test_calibration_does_not_confuse_holdout_named_root_with_holdout_images():
+    assert not excluded_calibration_source("/data/strict_holdout_Video00004/images/Video00003/001.jpg", "Video00004")
+    assert excluded_calibration_source("/data/images/Video00004/001.jpg", "Video00004")
+    assert excluded_calibration_source("/data/images/video00009/001.jpg", "Video00009")
+    assert excluded_calibration_source("/data/zoom_val/001.jpg", "zoom_val")

@@ -18,6 +18,7 @@ import numpy as np
 import yaml
 
 from ultralytics.data.utils import img2label_paths
+from scripts.anti_uav.prepare_labeler_training_expansion import excluded_calibration_source
 
 
 CATEGORIES = ("negative", "lt4", "tiny_4to8", "small_8to16", "other")
@@ -194,7 +195,7 @@ def main() -> None:
     source_paths = [Path(line.strip()).expanduser().resolve() for line in train_list.read_text().splitlines() if line.strip()]
     source_paths = list(dict.fromkeys(source_paths))
     excluded = tuple(args.exclude_token)
-    if any(token in str(path) for path in source_paths for token in excluded):
+    if any(excluded_calibration_source(path, token) for path in source_paths for token in excluded):
         raise ValueError(f"Training list contains an excluded evaluation source: {excluded}")
     excluded_lists = [resolve_from_yaml(data["val"], data_path)] if data.get("val") else []
     excluded_lists.extend(path.expanduser().resolve() for path in args.exclude_list)
@@ -275,6 +276,8 @@ def main() -> None:
         samples=len(selected),
         seed=args.seed,
         excluded_tokens=list(excluded),
+        excluded_token_policy="Video00004/Video00009 match exact path components; validation paths also excluded exactly",
+        preparation_script_sha256=sha256(Path(__file__)),
         excluded_lists=[str(path) for path in excluded_lists],
         excluded_images=len(excluded_paths),
         requested_fractions=DEFAULT_FRACTIONS,

@@ -34,6 +34,13 @@ def dump(path, value):
     temporary.replace(path)
 
 
+def excluded_calibration_source(path, token):
+    """Sequence names match components, not a dataset root mentioning its holdout."""
+    if token in {"Video00004", "Video00009"}:
+        return any(part.casefold() == token.casefold() for part in Path(path).parts)
+    return token in str(path)
+
+
 def frame_plan(annotations, frame_count, width, height, approved):
     """Keep all valid box sizes; only reviewed absent labels may supply negatives."""
     grouped = defaultdict(list)

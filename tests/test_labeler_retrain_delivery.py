@@ -1,5 +1,9 @@
 from pathlib import Path
+import tarfile
 
+import pytest
+
+from scripts.anti_uav.fetch_labeler_delivery_when_ready import unpack_verified
 from scripts.anti_uav.run_labeler_retrain_delivery import metric_table, training_command
 
 
@@ -34,3 +38,19 @@ def test_template_clearly_distinguishes_host_checks_from_board_exposure_measurem
     assert "尚未实测 RK3576 FPS" in text
     assert "曝光开始到结果" in text
     assert "--npu-masks 0,1" in text
+
+
+@pytest.mark.parametrize("name,symlink", [("../escape.txt", False), ("package/escape.txt", True)])
+def test_delivery_archive_rejects_path_traversal_and_symlinks(tmp_path, name, symlink):
+    archive = tmp_path / "package.tar.gz"
+    with tarfile.open(archive, "w:gz") as stream:
+        member = tarfile.TarInfo(name)
+        if symlink:
+            member.type = tarfile.SYMTYPE
+            member.linkname = "../../escape.txt"
+        stream.addfile(member)
+    destination = tmp_path / "output"
+    destination.mkdir()
+    with pytest.raises(ValueError):
+        unpack_verified(archive, destination)
+    assert not (tmp_path / "escape.txt").exists()

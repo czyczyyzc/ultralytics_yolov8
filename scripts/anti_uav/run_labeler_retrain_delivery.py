@@ -39,6 +39,22 @@ def metric_table(records):
     return "\n".join(lines)
 
 
+def augmentation_policy(manifest, state):
+    text = "沿用328张候选贴图，在线替换概率0.5，仅对具备安全背景缓存的帧执行。"
+    if state.get("cache_ready"):
+        ready = state["new_ready_backgrounds"]
+        retained = state["added_positive"]-ready
+        text += f"本次新增正样本均已检查：{ready}帧有安全背景缓存，另{retained}帧保留原图和原框，不强制替换。"
+    else:
+        text += "没有背景缓存的新视频使用原图，不宣称新增视频已做全量换贴图。"
+    sampler = manifest.get("sampler_audit", {})
+    if sampler.get("policy") == "balanced_v2":
+        text += (f"采样使用balanced_v2，按增强前960×544长边分类，4–8 px占比约{sampler['tiny_fraction']:.1%}，"
+                 f"负样本约{sampler['negative_fraction']:.1%}；保留原正样本曝光，每张图额外重采样最多"
+                 f"{sampler['max_extra_repeat_per_image']}次。来源按全轮分散排列，不再排空短视频后集中读取长视频。")
+    return text
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data-dir", type=Path, required=True)
@@ -193,7 +209,8 @@ def main():
             DELIVERY_DIR=str(package), TRAINING_DIR=str(train_dir), DATA_DIR=str(a.data_dir),
             MODEL_SHA256=artifact["model_sha256"], PT_SHA256=artifact["source_pt_sha256"],
             ONNX_SHA256=artifact["onnx_sha256"], COMMIT=commit,
-            DATA_POLICY=json.dumps(state, ensure_ascii=False), METRICS=metric_table(metrics))
+            DATA_POLICY=json.dumps(state, ensure_ascii=False), METRICS=metric_table(metrics),
+            AUGMENTATION_POLICY=augmentation_policy(manifest, state))
         document = (ROOT / "scripts/anti_uav/templates/RK3576_LABELER_HANDOVER_ZH.md").read_text()
         for key, value in values.items():
             document = document.replace("{{" + key + "}}", value)

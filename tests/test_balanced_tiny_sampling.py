@@ -67,6 +67,22 @@ def test_repeat_bound_uses_unique_images_not_duplicate_schedule_slots(tmp_path):
         BalancedTinyAwareSampler(data, config, dict(target_tiny_fraction=.30))
 
 
+def test_extra_bound_is_per_image_even_when_native_schedule_has_repeats(tmp_path):
+    data, config = dataset(tmp_path)
+    data.labels[1]['im_file'] = data.labels[0]['im_file']
+    original = Counter(r['im_file'] for r in data.labels if len(r['cls']))
+    sampler = BalancedTinyAwareSampler(data, config)
+    selected = Counter(data.labels[i]['im_file'] for i in sampler if len(data.labels[i]['cls']))
+    assert all(original[p] <= selected[p] <= original[p]+1 for p in original)
+
+
+def test_nearly_full_frame_target_is_retained_once(tmp_path):
+    data, config = dataset(tmp_path)
+    data.labels[200]['bboxes'] = np.array([[.5, .5, .95, .95]], np.float32)
+    sampler = BalancedTinyAwareSampler(data, config)
+    assert Counter(sampler)[200] == 1
+
+
 def test_policy_is_opt_in_and_epochs_are_deterministic(tmp_path):
     data, config = dataset(tmp_path)
     legacy = make_exposure_sampler(data, config, dict(tiny_min_px=4, tiny_max_px=8))

@@ -28,6 +28,14 @@ class AuditDataset:
         return len(self.labels)
 
 
+class ShuffledCategoryProbe(TinyAwareSampler):
+    """Offline counterfactual only; does not alter any trainer's sampler."""
+
+    def _video_round_robin(self, indices, category):
+        rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, category, 31]))
+        return rng.permutation(indices).tolist()
+
+
 def size_category(row):
     if not len(row["cls"]):
         return "negative"
@@ -80,9 +88,10 @@ def best_curve(path):
                 curve=[{k: row[k] for k in keys if k in row} for row in rows])
 
 
-def epoch_statistics(labels, config, baseline, augmentation_index, epoch):
+def epoch_statistics(labels, config, baseline, augmentation_index, epoch, shuffle_probe=False):
     dataset = AuditDataset(labels)
-    sampler = TinyAwareSampler(dataset, config.get("label_sampling"), config["tiny_sampling"], 64, 20261015)
+    sampler_class = ShuffledCategoryProbe if shuffle_probe else TinyAwareSampler
+    sampler = sampler_class(dataset, config.get("label_sampling"), config["tiny_sampling"], 64, 20261015)
     sampler.set_epoch(epoch)
     order = list(sampler)
     categories = [size_category(row) for row in labels]

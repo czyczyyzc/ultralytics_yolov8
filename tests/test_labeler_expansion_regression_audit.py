@@ -1,7 +1,7 @@
 import numpy as np
 
 from scripts.anti_uav.audit_labeler_expansion_regression import (
-    AuditDataset, label_equal, size_category, strip_locations,
+    AuditDataset, ShuffledCategoryProbe, label_equal, size_category, strip_locations,
 )
 from scripts.anti_uav.label_pool_sampling import TinyAwareSampler
 
@@ -44,3 +44,19 @@ def test_changed_existing_bbox_is_not_hidden_by_path_identity():
     b = row('/image.jpg', 7)
     assert label_equal(a, row('/image.jpg', 6))
     assert not label_equal(a, b)
+
+
+def test_ordering_probe_preserves_the_exact_epoch_multiset():
+    labels = [row(f'/rgb/{i}', 32) for i in range(150)]
+    labels += [row(f'/gray/{i}', 32) for i in range(20)]
+    labels += [row(f'/tiny/{i}', 6) for i in range(70)]
+    labels += [row(f'/negative/{i}') for i in range(40)]
+    data = AuditDataset(labels)
+    original = TinyAwareSampler(data, batch_size=16, seed=7)
+    probe = ShuffledCategoryProbe(data, batch_size=16, seed=7)
+    original.set_epoch(3)
+    probe.set_epoch(3)
+    a, b = list(original), list(probe)
+    assert sorted(a) == sorted(b) == list(range(len(labels)))
+    for start in range(0, len(labels), 16):
+        assert sorted(original.categories[a[start:start+16]]) == sorted(probe.categories[b[start:start+16]])

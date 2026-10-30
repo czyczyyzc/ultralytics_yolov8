@@ -191,14 +191,13 @@ class FixedShapeSelectionMixin:
         import torch
         from torch.utils.data import DataLoader
         from ultralytics.data.build import seed_worker
-        from scripts.anti_uav.label_pool_sampling import NativeExposureSampler, TinyAwareSampler, set_native_sampler_epoch
+        from scripts.anti_uav.label_pool_sampling import make_exposure_sampler, set_native_sampler_epoch
         dataset = self.build_dataset(dataset_path, mode, batch_size)
         tiny_config = self.data.get("tiny_sampling")
-        sampler = (
-            TinyAwareSampler(dataset, self.data.get("label_sampling"), tiny_config, batch_size, self.args.seed)
-            if tiny_config
-            else NativeExposureSampler(dataset, self.data.get("label_sampling"), self.args.seed)
-        )
+        sampler = make_exposure_sampler(dataset, self.data.get("label_sampling"), tiny_config, batch_size, self.args.seed)
+        if hasattr(sampler, "audit"):
+            import json
+            (self.save_dir / "sampler_audit.json").write_text(json.dumps(sampler.audit, indent=2)+"\n")
         if set_native_sampler_epoch not in self.callbacks["on_train_epoch_start"]:
             self.callbacks["on_train_epoch_start"].append(set_native_sampler_epoch)
         generator = torch.Generator().manual_seed(self.args.seed)

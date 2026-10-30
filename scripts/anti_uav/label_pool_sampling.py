@@ -1,7 +1,9 @@
 """Preserve audited exposure while building size- and video-balanced epochs."""
 
 from collections import defaultdict, deque
+import math
 from pathlib import Path
+import re
 
 import numpy as np
 
@@ -152,6 +154,139 @@ class TinyAwareSampler:
         if emitted.tolist() != totals.tolist() or sorted(output) != sorted(selected):
             raise AssertionError("Tiny-aware interleave changed the audited epoch exposure")
         return iter(output)
+
+
+def source_video_identity(image):
+    """Resolve flat Anti-UAV filenames instead of merging their rgb directory."""
+    path = Path(image)
+    if "anti_uav300_yolo" in path.parts:
+        match = re.fullmatch(r"(.+)_(?:rgb|ir)_\d+", path.stem, flags=re.IGNORECASE)
+        if not match:
+            raise ValueError(f"Cannot identify flat Anti-UAV source video: {image}")
+        return str(path.parent / match.group(1))
+    return _video_identity(image)
+
+
+def balanced_video_order(indices, video_keys, rng):
+    """Spread each video's exact exposures across the whole epoch, not its prefix."""
+    groups = defaultdict(list)
+    for index in indices:
+        groups[video_keys[index]].append(index)
+    values, priorities = [], []
+    for key in sorted(groups):
+        group = rng.permutation(groups[key])
+        values.append(group)
+        priorities.append((np.arange(len(group), dtype=float) + rng.random()) / len(group))
+    if not values:
+        return []
+    order = np.argsort(np.concatenate(priorities), kind="stable")
+    return np.concatenate(values)[order].tolist()
+
+
+class BalancedTinyAwareSampler(TinyAwareSampler):
+    """Opt-in repair: retain native positives, bound tiny repeats, balance negatives."""
+
+    def __init__(self, dataset, label_config=None, tiny_config=None, batch_size=64, seed=20260915):
+        if not label_config:
+            raise ValueError("balanced_v2 requires an audited rotating negative pool")
+        super().__init__(dataset, label_config, tiny_config, batch_size, seed)
+        config = tiny_config or {}
+        self.video_keys = [source_video_identity(row["im_file"]) for row in dataset.labels]
+        self.tiny_fraction = float(config.get("target_tiny_fraction", .30))
+        self.negative_fraction = float(label_config.get("target_negative_fraction", .15))
+        self.max_extra_repeat = int(config.get("max_extra_repeat_per_image", 1))
+        if not (0 < self.tiny_fraction < 1-self.negative_fraction and 0 < self.negative_fraction < 1):
+            raise ValueError("Invalid tiny/negative fractions")
+        if not 1 <= self.max_extra_repeat <= 3:
+            raise ValueError("Additional per-image repeat bound must be 1..3")
+        native_positive = int((self.categories != 2).sum())
+        native_tiny = int((self.categories == 0).sum())
+        other_positive = native_positive-native_tiny
+        target_tiny = max(native_tiny, math.ceil(
+            self.tiny_fraction*other_positive/(1-self.negative_fraction-self.tiny_fraction)))
+        self.extra_tiny = target_tiny-native_tiny
+        by_path = {}
+        for i in np.flatnonzero(self.categories == 0):
+            by_path.setdefault(dataset.labels[int(i)]["im_file"], int(i))
+        self.extra_candidates = list(by_path.values())
+        if self.extra_tiny > len(self.extra_candidates)*self.max_extra_repeat:
+            raise ValueError("Tiny target cannot be met without exceeding the repeat safety bound")
+        total_negative = int((self.categories == 2).sum())
+        fixed_negative = total_negative-len(self.native.negative_order)
+        desired_negative = round((native_positive+self.extra_tiny)*self.negative_fraction/(1-self.negative_fraction))
+        corrected = dict(label_config, negatives_per_epoch=desired_negative-fixed_negative)
+        self.native = NativeExposureSampler(dataset, corrected, seed)
+        self.audit = dict(policy="balanced_v2", native_positive=native_positive, native_tiny=native_tiny,
+            extra_tiny=self.extra_tiny, epoch_positive=native_positive+self.extra_tiny,
+            epoch_negative=desired_negative, epoch_total=len(self.native)+self.extra_tiny,
+            tiny_fraction=target_tiny/(len(self.native)+self.extra_tiny),
+            negative_fraction=desired_negative/(len(self.native)+self.extra_tiny),
+            max_extra_repeat_per_image=self.max_extra_repeat,
+            exact_native_positive_exposure_preserved=True)
+
+    def __len__(self):
+        return len(self.native)+self.extra_tiny
+
+    def _extra_indices(self):
+        rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, 97]))
+        # Additional exposure is video-balanced, with a hard bound per unique image.
+        groups = defaultdict(list)
+        for i in self.extra_candidates:
+            groups[self.video_keys[i]].extend([i]*self.max_extra_repeat)
+        queues = {key: deque(rng.permutation(values).tolist()) for key, values in sorted(groups.items())}
+        active, result = list(queues), []
+        while active and len(result) < self.extra_tiny:
+            rng.shuffle(active)
+            following = []
+            for key in active:
+                if len(result) == self.extra_tiny:
+                    break
+                result.append(queues[key].popleft())
+                if queues[key]:
+                    following.append(key)
+            active = following
+        if len(result) != self.extra_tiny:
+            raise AssertionError("Insufficient bounded tiny repeat candidates")
+        return result
+
+    def __iter__(self):
+        selected = list(self.native)+self._extra_indices()
+        pools = []
+        for category in range(3):
+            rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, category, 113]))
+            pools.append(balanced_video_order([i for i in selected if self.categories[i] == category],
+                                              self.video_keys, rng))
+        totals = np.array([len(pool) for pool in pools], dtype=np.int64)
+        if not totals.all():
+            raise ValueError("balanced_v2 requires nonempty tiny, ordinary and negative groups")
+        emitted, output = np.zeros(3, dtype=np.int64), []
+        rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, 43]))
+        for start in range(0, len(selected), self.batch_size):
+            size = min(self.batch_size, len(selected)-start)
+            remaining = totals-emitted
+            raw = size*remaining/remaining.sum()
+            take = np.floor(raw).astype(np.int64)
+            for category in np.argsort(-(raw-take))[:size-int(take.sum())]:
+                take[category] += 1
+            batch = []
+            for category in range(3):
+                batch.extend(pools[category][emitted[category]:emitted[category]+take[category]])
+            emitted += take
+            rng.shuffle(batch)
+            output.extend(batch)
+        if emitted.tolist() != totals.tolist() or sorted(output) != sorted(selected):
+            raise AssertionError("balanced_v2 changed intended epoch exposures")
+        return iter(output)
+
+
+def make_exposure_sampler(dataset, label_config=None, tiny_config=None, batch_size=64, seed=20260915):
+    if not tiny_config:
+        return NativeExposureSampler(dataset, label_config, seed)
+    policy = tiny_config.get("policy", "legacy")
+    if policy not in ("legacy", "balanced_v2"):
+        raise ValueError(f"Unknown tiny sampling policy: {policy}")
+    cls = BalancedTinyAwareSampler if policy == "balanced_v2" else TinyAwareSampler
+    return cls(dataset, label_config, tiny_config, batch_size, seed)
 
 
 def set_native_sampler_epoch(trainer):

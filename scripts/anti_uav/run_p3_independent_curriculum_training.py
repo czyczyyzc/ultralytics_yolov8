@@ -105,7 +105,7 @@ def stage_yaml(
 ) -> Path:
     """Build a delivery-style stage with replacement but no appended scale views."""
     data = deepcopy(source)
-    data["tiny_sampling"] = dict(input_hw=[544, 960], tiny_min_px=4.0, tiny_max_px=8.0)
+    data["tiny_sampling"] = dict(data.get("tiny_sampling", {}), input_hw=[544, 960], tiny_min_px=4.0, tiny_max_px=8.0)
     replacement = data.get("online_replacement")
     if not replacement or not 0.0 <= replacement_probability <= 1.0:
         raise ValueError("Delivery-style training requires a valid online replacement configuration")

@@ -119,6 +119,17 @@ def snapshot_tasks(database, video_root, blocked):
         con.close()
 
 
+def restrict_task_scope(items, previous_snapshot):
+    """Refresh the requested videos without silently importing another task."""
+    expected = {x["task_id"]: x["source_sha256"] for x in previous_snapshot["videos"]}
+    selected = [x for x in items if x["task_id"] in expected]
+    if {x["task_id"] for x in selected} != set(expected):
+        raise ValueError("A requested task disappeared or is no longer an eligible published task")
+    if any(x["source_sha256"] != expected[x["task_id"]] for x in selected):
+        raise ValueError("A requested task's source video changed")
+    return selected
+
+
 def extract(item, output):
     import cv2
     import numpy as np
@@ -179,6 +190,7 @@ def main():
     p.add_argument("--video-root", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--task-snapshot", type=Path, help="Refresh only the videos in this previous frozen snapshot")
     a = p.parse_args()
     a.source, a.output = a.source.resolve(), a.output.resolve()
     if a.output.exists() or not 1 <= a.workers <= 16:
@@ -203,6 +215,8 @@ def main():
     validation = Path(config["val"]).read_text().splitlines()
     blocked = set(source["train_video_hashes"]) | {source["test_sha256"], source["validation_sha256"]}
     items = snapshot_tasks(a.database, a.video_root, blocked)
+    if a.task_snapshot:
+        items = restrict_task_scope(items, json.loads(a.task_snapshot.read_text()))
     if not items:
         raise ValueError("No new labelled videos")
     a.output.mkdir(parents=True)
@@ -210,6 +224,9 @@ def main():
         source_database=str(a.database), baseline_manifest=str(a.source / "manifest.json"),
         frame_index_base=0, unreviewed_absent_policy="exclude", uncertain_policy="exclude_entire_frame",
         size_filter=False, source_annotations_modified=False, videos=items)
+    if a.task_snapshot:
+        snapshot.update(requested_task_snapshot=str(a.task_snapshot.resolve()),
+                        requested_task_snapshot_sha256=sha256(a.task_snapshot))
     dump(a.output / "annotation_snapshot.json", snapshot)
     dump(a.output / "status.json", dict(stage="extracting", candidates=len(items)))
     records, additions, added_negatives, added_cache = [], [], [], []

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import re
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -9,7 +10,7 @@ import yaml
 from scripts.anti_uav.prepare_fixedwing_finetune import read_pinned_cache, write_split
 from scripts.anti_uav.prepare_labeler_training_expansion import sha256
 from scripts.anti_uav.run_fixedwing_finetune_delivery import (
-    ROOT, completed_training, make_data, metric_table, release_note, render_handover,
+    ROOT, completed_training, make_data, metric_table, release_note, render_handover, retained_release_eligible,
 )
 
 
@@ -98,3 +99,27 @@ def test_metric_table_recall_first():
     table = metric_table({"fixedwing": m})
     assert table.index("Recall") < table.index("Precision")
     assert "70.00% | 80.00% | 7 | 2 | 3" in table
+
+
+def test_restored_method_has_correct_document_and_final_release_gate():
+    header = (ROOT/"scripts/anti_uav/templates/RK3576_DISTILLED_FINETUNE_HANDOVER_ZH.md").read_text()
+    shared = (ROOT/"scripts/anti_uav/templates/RK3576_LABELER_HANDOVER_ZH.md").read_text().split("## 5. 模型与图像协议")[1]
+    values = {key: "verified-value" for key in re.findall(r"\{\{(\w+)\}\}", header+shared)}
+    document = render_handover(values, method_id="continued_frozen_teacher_student_v1")
+    assert "180,264" in document and "0.12" in document
+    assert "没有重新训练 Teacher" not in document
+    old = {"pooled_native": {"native/c0.03/R": .77}, "Video00004_test": {"native/c0.03/R": .99}}
+    assert retained_release_eligible(old, old)
+    bad = dict(old, Video00004_test={"native/c0.03/R": .5})
+    assert not retained_release_eligible(old, bad)
+
+
+def test_fetch_stops_without_publishing_a_quality_rejected_package(tmp_path, monkeypatch):
+    from scripts.anti_uav import fetch_labeler_delivery_when_ready as fetch
+    state = dict(stage="quality_review_required", reason="old-scene regression")
+    monkeypatch.setattr(fetch.subprocess, "run", lambda *args, **kw: SimpleNamespace(stdout=json.dumps(state)))
+    monkeypatch.setattr(fetch.sys, "argv", ["fetch", "--host", "server", "--workflow", "/run/status.json",
+        "--expected-archive", "/delivery/model.tar.gz", "--destination", str(tmp_path/"delivery"),
+        "--status-dir", str(tmp_path/"status")])
+    fetch.main()
+    assert json.loads((tmp_path/"status/fetch_status.json").read_text())["stage"] == "remote_quality_review_required"

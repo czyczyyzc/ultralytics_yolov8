@@ -58,6 +58,9 @@ def main():
             if record["stage"] == "failed":
                 dump(a.status_dir / "fetch_status.json", dict(stage="remote_failed", remote=record))
                 return
+            if record["stage"] == "quality_review_required":
+                dump(a.status_dir / "fetch_status.json", dict(stage="remote_quality_review_required", remote=record))
+                return
             if record["stage"] == "complete":
                 if record["archive"] != a.expected_archive:
                     raise ValueError("Completed archive does not match the requested experiment")

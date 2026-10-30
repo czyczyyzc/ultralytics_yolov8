@@ -63,8 +63,15 @@ def release_note(comparison):
             "请先核对以下取舍，不应作为原通用模型的无条件替代；独立固定翼精度和板端性能仍待验收。")
 
 
-def render_handover(values, root=ROOT):
-    header = (root/"scripts/anti_uav/templates/RK3576_FIXEDWING_FINETUNE_HANDOVER_ZH.md").read_text()
+def retained_release_eligible(old, new):
+    return (new["pooled_native"]["native/c0.03/R"] >= old["pooled_native"]["native/c0.03/R"]-.03
+        and new["Video00004_test"]["native/c0.03/R"] >= old["Video00004_test"]["native/c0.03/R"]-.05)
+
+
+def render_handover(values, root=ROOT, method_id=None):
+    name = ("RK3576_DISTILLED_FINETUNE_HANDOVER_ZH.md" if method_id == "continued_frozen_teacher_student_v1"
+            else "RK3576_FIXEDWING_FINETUNE_HANDOVER_ZH.md")
+    header = (root/"scripts/anti_uav/templates"/name).read_text()
     shared = (root/"scripts/anti_uav/templates/RK3576_LABELER_HANDOVER_ZH.md").read_text()
     marker = "## 5. 模型与图像协议"
     if shared.count(marker) != 1:
@@ -145,6 +152,7 @@ def main():
     try:
         status("waiting_for_8epoch_finetune")
         initial_protocol = json.loads((a.training_run/"protocol.json").read_text())
+        continued = initial_protocol.get("method_id") == "continued_frozen_teacher_student_v1"
         baseline = Path(initial_protocol["initial_student"])
         if initial_protocol["epochs"] != 8 or sha256(baseline) != initial_protocol["initial_student_sha256"]:
             raise ValueError("Unexpected fine-tune protocol or changed initial model")
@@ -168,6 +176,10 @@ def main():
             time.sleep(30)
         if any(sha256(path) != digest for path, digest in pins.items()):
             raise ValueError("Pinned fine-tune inputs changed while waiting")
+        if continued and not comparison["ready_for_quantization_review"]:
+            status("quality_review_required", reason="Restored distillation did not pass hard old-scene retention and new-fit improvement gates; no replacement delivery produced",
+                   comparison=str(a.training_run/"comparison.json"))
+            return
         status("waiting_for_gpu_release")
         deadline = time.monotonic()+1800
         while True:
@@ -186,6 +198,14 @@ def main():
         execute("10_retained_pair_evaluation", [sys.executable, "-u",
             str(ROOT/"scripts/anti_uav/evaluate_expanded_checkpoint_pair.py"), "--models", str(work/"models.json"),
             "--validation-data", str(native_data), "--output", str(work/"evaluation"), "--device", a.device])
+        retained_metrics = json.loads((work/"evaluation/results.json").read_text())
+        if continued:
+            old = retained_metrics["old52_student"]["splits"]
+            new = retained_metrics["fixedwing_finetuned_student"]["splits"]
+            if not retained_release_eligible(old, new):
+                status("quality_review_required", reason="Final retained-set acceptance failed; do not silently replace the old general model",
+                       comparison=str(work/"evaluation/results.json"))
+                return
         execute("11_new_video_full_fit", [sys.executable, "-u", str(Path(__file__).resolve()),
             "--evaluate-fit", str(full_fit), "--models", str(work/"models.json"),
             "--output", str(work/"new21_full_fit.json"), "--device", a.device])
@@ -246,6 +266,12 @@ def main():
             "metadata/workflow_protocol.json": work/"protocol.json"}
         for relative, path in sources.items():
             shutil.copy2(path, package/relative)
+        if continued:
+            for name in ("initial_state_verification", "student_reconstruction_probe", "teacher_frozen_p3",
+                         "teacher_checkpoint_selection", "student_checkpoint_selection"):
+                path = a.training_run/"audit"/(name+".json")
+                if path.exists():
+                    shutil.copy2(path, package/"metadata"/path.name)
         shutil.copytree(smoke, package/"metadata/quantization_check",
             ignore=shutil.ignore_patterns("*.rknn", "metrics"))
         shutil.copytree(work/"logs", package/"metadata/logs")
@@ -262,7 +288,7 @@ def main():
             FIT_METRICS=metric_table({k: v["metrics"] for k, v in fit.items()}), RELEASE_NOTE=release_note(comparison),
             QUANT_NATIVE_METRICS=metric_table({k: v["pooled_native"] for k, v in quantization["backends"].items()}),
             QUANT_FIT_METRICS=metric_table({k: v["new21_training_fit_monitor"] for k, v in quantization["backends"].items()}))
-        document = render_handover(values)
+        document = render_handover(values, method_id=initial_protocol.get("method_id"))
         for name in ("DEPLOYMENT_HANDOVER_ZH.md", "README.md"):
             (package/name).write_text(document)
         artifact = dict(training_run=str(a.training_run), delivery_dir=str(package),

@@ -191,6 +191,7 @@ def main() -> None:
     parser.add_argument("--replacement-probability", type=float, default=0.5)
     parser.add_argument("--expected-training-videos", type=int, default=50)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--foundation-only", action="store_true", help="Validate the repaired foundation before training Teacher/Student")
     args = parser.parse_args()
 
     args.data = args.data.resolve()
@@ -282,6 +283,8 @@ def main() -> None:
                               localization_weight=0.15, localization_range_px=[4, 64]),
         ),
         qat=False,
+        sampling_policy=source.get("tiny_sampling", {"policy": "legacy"}),
+        execution_scope="foundation_only" if args.foundation_only else "full_curriculum",
         checkpoint_selection="Video00009: 0.5 F2@0.03 + 0.3 AP50 + 0.2 AP50-95",
         trusted_label_caches=source["trusted_label_caches"],
         final_graph="standard YOLOv8n P3-P5; all P2/projection modules removed",
@@ -293,6 +296,8 @@ def main() -> None:
         for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation"):
             if previous.get(key) != protocol.get(key):
                 raise ValueError(f"Resume protocol mismatch for {key}")
+        if "sampling_policy" in previous and previous["sampling_policy"] != protocol["sampling_policy"]:
+            raise ValueError("Resume protocol mismatch for sampling_policy")
     else:
         protocol_path.write_text(json.dumps(protocol, indent=2) + "\n")
 
@@ -312,6 +317,13 @@ def main() -> None:
                 lr0=.001, warmup_epochs=1,
                 **common_train(foundation_data, args, args.foundation_epochs),
             )
+
+        if args.foundation_only:
+            metrics_path = args.run_dir / "audit/video00009_foundation_p3.json"
+            metrics = validate(foundation_best, foundation_data, args, metrics_path)
+            write_status(args.run_dir, "foundation_complete", foundation_best=str(foundation_best),
+                         metrics=str(metrics_path), fitness=metrics["fitness"], teacher_student_started=False)
+            return
 
         teacher_best = args.run_dir / "teacher/p2p3/weights/best.pt"
         if not (args.resume and teacher_best.is_file()):

@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.anti_uav.evaluate_p3_gray_pair import PairValidator, pool_native
 from scripts.anti_uav.rknn_qat import canonicalize_dfl
 from scripts.anti_uav.rknn_simulator_video_clip import decode_boxes
+from scripts.anti_uav.prepare_fixedwing_finetune import read_pinned_cache
 from scripts.anti_uav.run_native_pool_comparison import HOLDOUT, clean
 from ultralytics import YOLO
 from ultralytics.utils import SETTINGS
@@ -33,6 +34,7 @@ SPLITS = {
 }
 EXPECTED = {"Video00004_test": (2359, 448), "Video00009_selection_subset": (1421, 797)}
 BACKENDS = ("pt_fp32", "onnx_fp32", "rknn_int8_simulator")
+NATIVE_SPLITS = ("Video00004_test", "Video00009_selection_subset")
 
 
 def greedy_nms(boxes, scores, iou_threshold, max_det):
@@ -142,6 +144,9 @@ def report(output, result):
         "Native frames only: zoom validation views excluded. Pooled AP is globally recomputed.",
         f"Rebuilt RKNN SHA256 equals delivered artifact: {protocol['rebuilt_matches_delivered']}.",
         "If hashes differ, this measures a rebuild with identical inputs/config, not the delivered binary.", ""]
+    if "new21_training_fit_monitor" in result["protocol"]["datasets"]:
+        lines += ["The new-video monitor overlaps model training and is NOT an independent test.",
+                  "It is excluded from calibration and from pooled_native (Video00004+Video00009 only).", ""]
     for split in (*SPLITS, "pooled_native"):
         lines += [f"## {split}", "", "| Backend | Conf | R | P | TP | FP | FN | AP50 | AP50-95 | 4-8px R |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
@@ -266,7 +271,17 @@ def main():
     parser.add_argument("--limit-per-split", type=int, default=0, help="Smoke only; 0 evaluates all native frames")
     parser.add_argument("--shards", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--adaptation-data", type=Path,
+                        help="Optional audited new-video training-fit monitor; excluded from pooled_native")
     args = parser.parse_args()
+    if args.adaptation_data:
+        if args.shards != 1 or args.merge_shards:
+            parser.error("Additional adaptation monitoring is not supported with sharding")
+        config = yaml.safe_load(args.adaptation_data.read_text())
+        cache = read_pinned_cache(config["val"], config)
+        SPLITS["new21_training_fit_monitor"] = args.adaptation_data
+        EXPECTED["new21_training_fit_monitor"] = (len(cache["labels"]),
+                                                 sum(len(x["cls"]) for x in cache["labels"]))
     if args.merge_shards:
         merge_shards(args.output, args.merge_shards)
         return
@@ -332,9 +347,12 @@ def main():
             protocol["datasets"][split] = dict(config=str(config_path), source_list=str(listing),
                 source_list_sha256=sha256(listing), evaluated_frames=len(native),
                 evaluated_list_sha256=sha256(listing_out))
-        if set(manifests["Video00004_test"].read_text().splitlines()) & set(
-                manifests["Video00009_selection_subset"].read_text().splitlines()):
-            raise ValueError("Duplicate frames across splits")
+        seen = set()
+        for listing in manifests.values():
+            paths = set(listing.read_text().splitlines())
+            if seen & paths:
+                raise ValueError("Duplicate frames across splits")
+            seen.update(paths)
         write_json(args.output / "protocol.json", protocol)
         status("build_quantized_simulator")
         runtime = RKNN(verbose=False)
@@ -418,8 +436,9 @@ def main():
                 if args.shards == 1 and not args.limit_per_split and coverage != EXPECTED[split]:
                     raise ValueError(f"Frames/GT changed for {split}: {coverage}")
                 result["backends"][backend][split] = metrics
-                entries[backend].append(dict(metrics=metrics, arrays=validator.metrics.native_pr_arrays,
-                    scales=validator.metrics.native_scale_counts))
+                if split in NATIVE_SPLITS:
+                    entries[backend].append(dict(metrics=metrics, arrays=validator.metrics.native_pr_arrays,
+                        scales=validator.metrics.native_scale_counts))
                 np.savez_compressed(args.output / f"{split}_{backend}_pr.npz", **validator.metrics.native_pr_arrays,
                     prediction_frame_index=np.concatenate(pred_frames[backend]),
                     target_frame_index=np.concatenate(target_frames))

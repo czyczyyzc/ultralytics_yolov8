@@ -100,7 +100,7 @@ def main():
         protocol = dict(method="supervised pure-P3 fine-tune from delivered old52 Student + stratified old replay",
             initial_student=str(args.student), initial_student_sha256=sha256(args.student),
             data=str(data), dataset=audit, input_hw=[544, 960], epochs=args.epochs, batch=args.batch,
-            learning_rate=args.lr, qat=False, auxiliary_p2=False, distillation=False,
+            learning_rate=args.lr, warmup_epochs=0., qat=False, auxiliary_p2=False, distillation=False,
             candidate_selection="equal native Video00009 validation and new-video adaptation-fit fitness; penalize native Recall loss>3pp or tiny Recall loss>5pp",
             adaptation_fit_is_independent_test=False, inference_graph="unchanged pure P3-P5",
             git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip())
@@ -114,7 +114,7 @@ def main():
         training.update(save_period=1, seed=20261030)
         status("finetuning_p3", epoch=0, epochs=args.epochs)
         model.train(trainer=TinyAwareP3Trainer, project=str(args.run_dir/"training"), name="p3",
-            lr0=args.lr, warmup_epochs=.5, **training)
+            lr0=args.lr, warmup_epochs=0., **training)
         best = args.run_dir/"training/p3/weights/best.pt"
         output = args.run_dir/"p3_student_fixedwing_best_fp32.pt"
         shutil.copy2(best, output)

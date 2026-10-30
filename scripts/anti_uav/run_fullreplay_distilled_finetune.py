@@ -64,9 +64,11 @@ def safe_metrics(metrics):
             for key, value in metrics.items()}
 
 
-def prepare_data(source, old_data, output):
+def prepare_data(source, old_data, output, old_cache_pins):
     full = yaml.safe_load((source/"train_online_gray_monitor.yaml").read_text())
     old = yaml.safe_load((old_data/"train_online_gray_monitor.yaml").read_text())
+    # Old source YAML predates pinned caches; use the immutable original run's audit.
+    old = dict(old, trusted_label_caches=old_cache_pins)
     expanded = read_pinned_cache(full["train"], full)
     original = read_pinned_cache(old["train"], old)
     audit = verify_full_replay(original["labels"], expanded["labels"])
@@ -137,7 +139,8 @@ def main():
             raise RuntimeError("Selected GPU is not idle; no sharing/preemption attempted")
         status("verifying_full_legacy_replay")
         old_protocol = json.loads((a.old_run/"protocol.json").read_text())
-        teacher_data, student_data, audit = prepare_data(a.data_dir, Path(old_protocol["data"]).parent, a.run_dir/"data")
+        teacher_data, student_data, audit = prepare_data(a.data_dir, Path(old_protocol["data"]).parent,
+            a.run_dir/"data", old_protocol["trusted_label_caches"])
         import torch
         from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayValidator
         from scripts.anti_uav.p3_student_distillation import P3StudentFP32DistillationTrainer, TinyAwareAddOnTrainer

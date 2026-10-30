@@ -41,6 +41,9 @@ def matched_ground_truth(iou):
 
 
 class GrayDeploymentValidator(DetectionValidator):
+    def image_group(self, image):
+        return "zoom" if "/zoom_val/" in image else "native"
+
     def init_metrics(self, model):
         super().init_metrics(model)
         self.fixed = defaultdict(Counter)
@@ -50,7 +53,7 @@ class GrayDeploymentValidator(DetectionValidator):
     def update_metrics(self, preds, batch):
         super().update_metrics(preds, batch)
         for si, pred in enumerate(preds):
-            group = "zoom" if "/zoom_val/" in batch["im_file"][si] else "native"
+            group = self.image_group(batch["im_file"][si])
             prepared = self._prepare_batch(si, batch)
             boxes, classes = prepared["bbox"], prepared["cls"]
             masks = scale_masks(boxes.cpu().numpy(), prepared["ori_shape"], prepared["imgsz"])

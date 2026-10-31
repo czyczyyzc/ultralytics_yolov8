@@ -1,0 +1,37 @@
+# Data-only restoration of the 52-video recipe at commit 2ef62da.
+# Deploy beside the frozen 73-video manifest as train_legacy52_gray_monitor.yaml.
+# Keep all native positives and inherited repeats; do not add tiny quotas or reorder sources.
+# Use the unchanged 30/12/15 curriculum, batch 64, seed 20261015 and no QAT.
+path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030
+train: /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030/train_hardneg.txt
+val: /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030/val_monitor.txt
+names:
+  0: drone
+label_sampling:
+  negative_pool: /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030/negative_pool.txt
+  negative_pool_count: 73623
+  negatives_per_epoch: 22789
+  anchor_slots: 217883
+  target_negative_fraction: 0.15
+online_replacement:
+  cache: /mnt/andrew/anti_uav_model_refinement/data/real_gray_background_balanced73_repair_20261030
+  replacement_probability: 0.5
+  seed: 20260918
+  epoch_offset: 0
+trusted_label_caches:
+  /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030/train_hardneg.txt:
+    path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030/train_hardneg.cache
+    source_sha256: 54e855a9140d5892ab9a4ac4e64141ef10eca124824c57d520f91eef122c7769
+    cache_sha256: 834f05b34a5338dbb2315917f4508fca80ec6bdee85892f39e7f233f27e2e42d
+    dataset_hash: 1673a183003aa436837e37767fe54160524449d65828da89ddfcf350640ff04c
+    entries: 291506
+  /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030/val_monitor.txt:
+    path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_online_balanced73_repair_20261030/val_monitor.cache
+    source_sha256: 1257014083d92661a9e07944e2b2bd7c8c56e1cb341ea4a9890990f6d579b2fb
+    cache_sha256: 47df18ce7d80c29e60613349ba4c5aed3820de402c8deee7e664b6ff4fada9d3
+    dataset_hash: c56b0ab80d6c2ae3869eb6f02c21779414c0d1977c8921a815b792e37bfc5b5e
+    entries: 1485
+tiny_sampling:
+  input_hw: [544, 960]
+  tiny_min_px: 4.0
+  tiny_max_px: 8.0

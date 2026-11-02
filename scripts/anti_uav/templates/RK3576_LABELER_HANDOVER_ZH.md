@@ -6,6 +6,8 @@
 
 本交付为 **{{TRAINING_VIDEOS}} 视频重新训练的纯 P3 Student**，输入 `960×544`，RK3576 专用 `W8A8 INT8`，配套原生 C++ 因果 Dist 关联及质量门控 GMC。
 
+Student best为第 **{{BEST_EPOCH}}** 轮。{{RELEASE_NOTE}}
+
 - 从公开 `yolov8n.pt` 起步，不依赖旧项目 Student 初始化。
 - P3 foundation 30 epochs → 冻结 P3、训练 Add-on P2 Teacher 12 epochs → 从本轮 P3 foundation 初始化并蒸馏 Student 15 epochs。
 - 训练期辅助 P2 和投影模块在导出时物理移除。部署仅 P3/P4/P5，stride 为 8/16/32，不计算 P2。
@@ -26,6 +28,12 @@
 
 ```text
 {{TRAINING_DIR}}
+```
+
+源FP32权重：
+
+```text
+{{SOURCE_PT}}
 ```
 
 服务器数据目录：
@@ -58,6 +66,8 @@
 
 {{AUGMENTATION_POLICY}}
 
+实际训练采样与增强以 `metadata/training_protocol.json`、`metadata/training_configs/` 和 `metadata/effective_data_recipe.json` 为准。`metadata/data_manifest.json` 保留物理数据准备快照，其中历史采样审计字段不一定代表本轮实际使用的训练配置。
+
 无额外大尺度视图、无新增面积过滤，小框和占满画面的大框均保留。贴图安全门控仅决定是否替换外观，不会删除原始训练框。
 
 ## 4. 旧新性能对比
@@ -69,6 +79,8 @@
 详细分尺度、分阈值及单视频结果见 `metadata/fp32_comparison.json`。新增固定翼等视频已加入训练，不能将其训练来源拟合表现称为独立测试精度。
 
 量化仿真结果见 `metadata/quantization_smoke/results.json` 和 `REPORT.md`：同帧对比 FP32、ONNX 与 RKNN INT8，每段抽取 100 帧，共 200 帧。这是量化冒烟检查，不是全量精度或板端性能；少量样本的指标变化不能替代真机完整评测。
+
+本包交付的是评测中重建并实际运行的二进制，见 `metadata/quantization_smoke/delivered_binary.json`。量化记录中的 `rebuilt_matches_delivered` 是历史字段名，比较的是重建文件与评测输入参考文件，而不是与最终交付文件比较；最终交付文件必须与 `evaluated_sha256` 一致。
 
 ## 5. 模型与图像协议
 

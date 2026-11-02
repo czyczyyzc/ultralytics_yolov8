@@ -142,8 +142,9 @@ def report(output, result):
         "Common NMS IoU .45, max_det 100; fixed metrics conf .01/.03/.05; AP floor .001.",
         "Video00004 is held-out test; Video00009 selected checkpoints and is NOT independent test.",
         "Native frames only: zoom validation views excluded. Pooled AP is globally recomputed.",
-        f"Rebuilt RKNN SHA256 equals delivered artifact: {protocol['rebuilt_matches_delivered']}.",
-        "If hashes differ, this measures a rebuild with identical inputs/config, not the delivered binary.", ""]
+        f"Rebuilt RKNN SHA256 equals supplied reference artifact: {protocol['rebuilt_matches_delivered']}.",
+        "If hashes differ, this evaluates rebuilt_for_simulator.rknn, not the supplied reference file.",
+        "A delivery package must separately identify whether it ships this evaluated rebuilt binary.", ""]
     if "new21_training_fit_monitor" in result["protocol"]["datasets"]:
         lines += ["The new-video monitor overlaps model training and is NOT an independent test.",
                   "It is excluded from calibration and from pooled_native (Video00004+Video00009 only).", ""]

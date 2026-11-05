@@ -38,7 +38,7 @@ from scripts.anti_uav.train_frozen_p3_addon_p2 import (  # noqa: E402
     verify_legacy_outputs,
 )
 from ultralytics import YOLO  # noqa: E402
-from ultralytics.data.dataset import DATASET_CACHE_VERSION  # noqa: E402
+from ultralytics.data.dataset import DATASET_CACHE_VERSION, load_audited_dataset_cache  # noqa: E402
 from ultralytics.data.utils import load_dataset_cache_file  # noqa: E402
 from ultralytics.utils import SETTINGS  # noqa: E402
 from ultralytics.utils.torch_utils import init_seeds  # noqa: E402
@@ -74,7 +74,9 @@ def audit_label_caches(source: dict) -> dict:
         cache_path = list_path.with_suffix(".cache")
         if not cache_path.is_file():
             raise FileNotFoundError(f"Missing {split} label cache: {cache_path}")
-        cache = load_dataset_cache_file(cache_path)
+        cache = load_audited_dataset_cache(cache_path, list_path, source)
+        if cache is None:
+            cache = load_dataset_cache_file(cache_path)
         if cache.get("version") != DATASET_CACHE_VERSION:
             raise ValueError(f"Stale {split} label cache version: {cache_path}")
         results = cache.get("results")

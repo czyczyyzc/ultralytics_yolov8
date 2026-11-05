@@ -63,3 +63,19 @@ def test_audited_cache_avoids_per_member_metadata_scan(tmp_path):
         load_audited_dataset_cache(
             train.with_suffix(".cache"), train, {"trusted_label_caches": records}
         )
+
+
+def test_curriculum_does_not_reapprove_changed_pinned_cache(tmp_path):
+    train, val = tmp_path / "train.txt", tmp_path / "val.txt"
+    for listing in (train, val):
+        listing.write_text("/dataset/image.jpg\n")
+        with listing.with_suffix(".cache").open("wb") as stream:
+            np.save(stream, dict(labels=[], hash="original", results=(1, 0, 0, 0, 1),
+                                 msgs=[], version=DATASET_CACHE_VERSION))
+    source = dict(train=str(train), val=str(val))
+    source["trusted_label_caches"] = audit_label_caches(source)
+    with train.with_suffix(".cache").open("wb") as stream:
+        np.save(stream, dict(labels=[], hash="changed", results=(1, 0, 0, 0, 1),
+                             msgs=[], version=DATASET_CACHE_VERSION))
+    with pytest.raises(ValueError, match="dataset cache changed"):
+        audit_label_caches(source)

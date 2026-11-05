@@ -6,6 +6,50 @@
 
 47 服务器工作目录：`/mnt/chenziye/datasets/anti_uav/public_research_20261105/`。
 
+## 本轮实际接入
+
+2026-11-05 已完成可获取数据的下载或已有副本复核、转换、GT 抽查及精确像素去重，并于 18:23 在 GPU 6 开始独立研究训练。GPU 6 按用户已许可的共享方式使用，没有停止其他人的任务。当前尚无本轮最终精度结论。
+
+| 数据源 | 去重后新增训练正样本 |
+| --- | ---: |
+| DUT Anti-UAV | 5,193 |
+| Halmstad 可见光 DRONE | 27,031 |
+| UAVSwarm 人工 GT | 6,834 |
+| 合计 | 39,058 |
+
+转换清单共有 39,082 个 train 条目，其中 DUT 3 张空标注不作为正样本或负样本，另有 21 张精确像素重复图像排除。Halmstad 另有 9 段时间戳预检未通过，暂不接入；这不等于已证明其 GT 错位。UAVSwarm 第 18 序列的 84 帧因已报告的标注对应问题隔离，原始数据仍完整保留。以上均不改写来源标注。
+
+每轮正样本从 189,137 增至 228,195，负样本为 40,270，总计 268,465 张，负样本比例约 15%。候选清单包含 333,290 项，负样本仍从原审核池轮换，不是每轮把候选池全部取完。69 视频基线原正样本及固定负样本曝光保留，轮换负样本预算随新增正样本增加。
+
+数据及训练路径：
+
+```text
+公共原始数据及审计：
+/mnt/chenziye/datasets/anti_uav/public_research_20261105/
+
+DUT / Halmstad 转换清单：
+/mnt/chenziye/datasets/anti_uav/public_research_20261105/public_uav_yolo/manifest.jsonl
+
+UAVSwarm 原始数据：
+/mnt/chenziye/datasets/anti_uav/public_research_20261105/raw_uavswarm/
+
+UAVSwarm 转换清单：
+/mnt/chenziye/datasets/anti_uav/public_research_20261105/uavswarm_yolo/manifest.jsonl
+
+混合训练数据：
+/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_public_research_20261105/
+
+混合训练配置：
+/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_public_research_20261105/train_public_gray_monitor.yaml
+
+混合训练输出：
+/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved69_public_uav_research_20261105/
+```
+
+训练代码已本地 push，并由服务器 pull 同一版本。训练启动代码 commit 为 `0760aae`。56 项公共数据专项测试及 3 项缓存交接专项测试通过；这不是声明整个仓库测试全部通过。
+
+完成后的模型位于混合训练输出目录下：`foundation/p3/weights/best.pt`、`teacher/p2p3/weights/best.pt`、`p3_student_distilled_best_fp32.pt`。这些是训练完成后的产物路径，不表示启动时已经存在。
+
 | 数据源 | 官方入口 | 接入原则 |
 | --- | --- | --- |
 | DUT Anti-UAV | https://github.com/wangdongdut/DUT-Anti-UAV | 复核已有原始数据；只用官方 detection train 训练，val/test 不进入训练。Tracking 部分不擅自改为训练集。 |
@@ -49,3 +93,9 @@
 训练目录的 `launch.json`、`protocol.json`、`research_status.json`、`status.json`、`training.log` 记录启动命令、方法、阶段和逐批进度。训练完成后才会生成 `comparison/results.json`，包含两组各三阶段模型在原 Video00004/Video00009 协议上的检测对照及合并指标；合并结果包含选模验证视频，不应称为纯独立测试集结果。
 
 服务器 GitHub SSH 若不可达，仍使用本地 git push 后传输同一 commit 的 bundle，由服务器 git pull --ff-only 同步，不用散拷源代码替代版本同步。
+
+## 检查图
+
+本地检查图与本文档同目录：`public_dut_halmstad_gt_preview.jpg`、`uavswarm_human_gt_contact_sheet.jpg`。
+
+UAVSwarm 抽查了 21 个不同帧，并对小目标放大和第 71 序列连续帧作了检查；抽查通过不等于所有标注经过逐帧人工复审。服务器对应检查图及审查记录在工作目录的 `uavswarm_visual_qa/`。

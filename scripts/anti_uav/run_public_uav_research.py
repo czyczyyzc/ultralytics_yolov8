@@ -105,6 +105,20 @@ def completed_manifest(path):
     return summary
 
 
+def positive_candidates(records):
+    candidates, excluded = [], []
+    for row in records:
+        if row["split"] != "train":
+            continue
+        if type(row.get("boxes")) is not int or row["boxes"] < 0:
+            raise ValueError("Public manifest must declare its valid box count")
+        if row["boxes"] == 0:
+            excluded.append(dict(image=row["image"], reason="no_positive_gt_not_assumed_negative"))
+        else:
+            candidates.append(row)
+    return candidates, excluded
+
+
 def bind_control(args):
     import yaml
     control = json.loads((args.baseline_run / "protocol.json").read_text())
@@ -143,11 +157,11 @@ def prepare(args):
     heldout = [x["image"] for x in records if x["split"] != "train"]
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         protected_hashes = {x[0] for x in pool.map(inspect_image, sorted(protected | set(heldout)))}
-    candidates = [x for x in records if x["split"] == "train"]
+    candidates, excluded = positive_candidates(records)
     images = [x["image"] for x in candidates]
     if len(set(images)) != len(images) or set(images) & set(base):
         raise ValueError("Public manifest contains repeated or native image paths")
-    accepted, labels, excluded, seen = [], [], [], set()
+    accepted, labels, seen = [], [], set()
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         for row, (identity, shape) in zip(candidates, pool.map(inspect_image, images)):
             if identity in protected_hashes or identity in seen:
@@ -155,6 +169,8 @@ def prepare(args):
                 continue
             seen.add(identity)
             boxes = np.asarray(read_positive_label(row["label"]), dtype=np.float32)
+            if len(boxes) != row["boxes"]:
+                raise ValueError("Public label count differs from its manifest")
             accepted.append(dict(row, pixel_sha256=identity))
             labels.append(dict(im_file=row["image"], shape=shape, cls=boxes[:, :1],
                 bboxes=boxes[:, 1:], segments=[], keypoints=None, normalized=True, bbox_format="xywh"))

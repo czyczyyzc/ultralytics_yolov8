@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.anti_uav.run_public_uav_research import (
-    bind_control, check_groups, completed_manifest, read_positive_label, sampling_extension,
+    bind_control, check_groups, completed_manifest, positive_candidates, read_positive_label, sampling_extension,
 )
 
 
@@ -86,6 +86,16 @@ def test_other_native69_data_cannot_be_called_the_control(tmp_path):
         bind_control(SimpleNamespace(baseline_run=tmp_path, baseline_yaml=tmp_path / "other.yaml"))
 
 
+def test_empty_public_labels_are_excluded_not_negative():
+    positive = dict(split="train", boxes=1, image="a")
+    empty = dict(split="train", boxes=0, image="b")
+    candidates, excluded = positive_candidates([positive, empty])
+    assert candidates == [positive]
+    assert excluded == [dict(image="b", reason="no_positive_gt_not_assumed_negative")]
+    with pytest.raises(ValueError, match="box count"):
+        positive_candidates([dict(split="train", image="unknown")])
+
+
 def test_prepare_preserves_native_repeats_and_excludes_heldout_pixels(tmp_path, monkeypatch):
     import json
     from types import SimpleNamespace
@@ -128,7 +138,7 @@ def test_prepare_preserves_native_repeats_and_excludes_heldout_pixels(tmp_path, 
     monkeypatch.setattr(run_native_pool_comparison, "HOLDOUT", test_yaml)
     label = tmp_path / "public.txt"
     label.write_text("0 .5 .5 .1 .1\n")
-    records = [dict(dataset="dut", split=split, group=str(i), image=image, label=str(label))
+    records = [dict(dataset="dut", split=split, group=str(i), image=image, label=str(label), boxes=1)
                for i, (split, image) in enumerate([("train", added), ("train", duplicate), ("val", public_val)])]
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text("\n".join(json.dumps(x) for x in records) + "\n")

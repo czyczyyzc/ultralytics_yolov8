@@ -291,6 +291,9 @@ def main():
     parser.add_argument("--gpus", type=int, nargs="+", default=[6])
     parser.add_argument("--allow-shared-gpu", action="store_true")
     args = parser.parse_args()
+    for key in ("baseline_yaml", "baseline_run", "data_output", "run_dir"):
+        setattr(args, key, getattr(args, key).resolve())
+    args.public_manifest = [x.resolve() for x in args.public_manifest]
     if args.workers < 1:
         parser.error("workers must be positive")
     args.run_dir.mkdir(parents=True, exist_ok=False)

@@ -79,3 +79,11 @@ def test_curriculum_does_not_reapprove_changed_pinned_cache(tmp_path):
                              msgs=[], version=DATASET_CACHE_VERSION))
     with pytest.raises(ValueError, match="dataset cache changed"):
         audit_label_caches(source)
+
+
+def test_curriculum_rejects_missing_pin_in_existing_pin_map(tmp_path):
+    listing = tmp_path / "train.txt"
+    listing.write_text("/dataset/image.jpg\n")
+    listing.with_suffix(".cache").write_bytes(b"must not be unpickled")
+    with pytest.raises(ValueError, match="Missing audited cache pin"):
+        audit_label_caches(dict(train=str(listing), val=str(listing), trusted_label_caches={"wrong-key": {}}))

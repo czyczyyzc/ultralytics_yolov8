@@ -74,6 +74,8 @@ def audit_label_caches(source: dict) -> dict:
         cache_path = list_path.with_suffix(".cache")
         if not cache_path.is_file():
             raise FileNotFoundError(f"Missing {split} label cache: {cache_path}")
+        if source.get("trusted_label_caches") and str(list_path) not in source["trusted_label_caches"]:
+            raise ValueError(f"Missing audited cache pin for {split}: {list_path}")
         cache = load_audited_dataset_cache(cache_path, list_path, source)
         if cache is None:
             cache = load_dataset_cache_file(cache_path)

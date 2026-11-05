@@ -7,7 +7,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.anti_uav.run_approved_data_only_refresh import (
-    choose_idle_gpu, recipe_difference, select_approved_additions, verify_frozen_scope,
+    choose_idle_gpu, comparison_group_names, prepared_extension_items, recipe_difference,
+    select_approved_additions, verify_frozen_scope,
 )
 
 
@@ -83,3 +84,38 @@ def test_explicit_sharing_selects_least_used_allowed_gpu():
 
 def test_sharing_does_not_accept_heavily_occupied_devices():
     assert choose_idle_gpu("2, 20000, 35\n6, 40000, 29\n", [2, 6], True) is None
+
+
+def test_prepared_extension_reuses_only_unchanged_reviewed_data():
+    prepared = dict(train_video_hashes=["old", "a"])
+    assert prepared_extension_items(BASE, prepared, [task("a")],
+                                     [task("a"), task("b")]) == [task("b")]
+
+
+def test_prepared_extension_rejects_removed_baseline():
+    with pytest.raises(ValueError, match="baseline/approved split"):
+        prepared_extension_items(BASE, dict(train_video_hashes=["a"]),
+                                 [task("a")], [task("a"), task("b")])
+
+
+def test_prepared_extension_rejects_unapproved_extra_source():
+    with pytest.raises(ValueError, match="baseline/approved split"):
+        prepared_extension_items(BASE, dict(train_video_hashes=["old", "pending"]),
+                                 [task("pending")], [task("a"), task("b")])
+
+
+def test_prepared_extension_rejects_newer_annotations():
+    with pytest.raises(ValueError, match="annotations changed"):
+        prepared_extension_items(BASE, dict(train_video_hashes=["old", "a"]),
+                                 [task("a")], [task("a", revision=4, approved_revision=4), task("b")])
+
+
+def test_prepared_extension_requires_full_inherited_snapshot():
+    with pytest.raises(ValueError, match="cover all inherited"):
+        prepared_extension_items(BASE, dict(train_video_hashes=["old", "a"]),
+                                 [], [task("a"), task("b")])
+
+
+def test_comparison_labels_follow_actual_video_count():
+    assert comparison_group_names(67) == ("old52", "previous73", "approved67")
+    assert comparison_group_names(69) == ("old52", "previous73", "approved69")

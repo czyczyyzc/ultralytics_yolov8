@@ -48,6 +48,25 @@ def verify_frozen_scope(expected, actual):
         raise ValueError("Approved annotations changed while preparing the snapshot")
 
 
+def prepared_extension_items(baseline, prepared, inherited_items, approved):
+    """Reuse data bytes only if their reviewed annotations and split are unchanged."""
+    original = set(baseline["train_video_hashes"])
+    prepared_hashes = set(prepared["train_video_hashes"])
+    approved_hashes = {x["source_sha256"] for x in approved}
+    if not original <= prepared_hashes <= original | approved_hashes:
+        raise ValueError("Prepared data does not preserve the baseline/approved split")
+    inherited_hashes = prepared_hashes - original
+    if {x["source_sha256"] for x in inherited_items} != inherited_hashes:
+        raise ValueError("Prepared annotations do not cover all inherited additions")
+    verify_frozen_scope(inherited_items,
+                        [x for x in approved if x["source_sha256"] in inherited_hashes])
+    return [x for x in approved if x["source_sha256"] not in prepared_hashes]
+
+
+def comparison_group_names(training_videos):
+    return "old52", "previous73", f"approved{training_videos}"
+
+
 def recipe_difference(reference, candidate):
     keys = ("method", "foundation_sha256", "task_specific_initialization", "input_hw",
             "batch", "nbs", "seed", "epochs", "augmentation", "distillation", "qat",
@@ -87,7 +106,8 @@ def compare_models(run, reference, previous, device, output):
     torch.backends.cudnn.allow_tf32 = False
     protocol = json.loads((run / "protocol.json").read_text())
     models = {}
-    for prefix, folder in (("old52", reference), ("previous73", previous), ("approved67", run)):
+    for prefix, folder in zip(comparison_group_names(protocol["training_videos"]),
+                              (reference, previous, run)):
         for stage, subpath in (
             ("p3_initial", "foundation/p3/weights/best.pt"),
             ("p2p3_teacher", "teacher/p2p3/weights/best.pt"),
@@ -155,10 +175,16 @@ def main():
                    help="Explicitly permit sharing an allowed A100 80GB with at most 16 GiB already used")
     p.add_argument("--resume-preparation", action="store_true",
                    help="Reuse completed data/background preparation; never resume partially trained weights")
+    p.add_argument("--reuse-prepared-data", type=Path,
+                   help="Append only missing sources to unchanged, already prepared training data")
+    p.add_argument("--reuse-prepared-run", type=Path,
+                   help="Read data/cache provenance from this run; no trained weights are reused")
     args = p.parse_args()
     import yaml
     from scripts.anti_uav.prepare_labeler_training_expansion import snapshot_tasks
 
+    if bool(args.reuse_prepared_data) != bool(args.reuse_prepared_run):
+        raise ValueError("Provide both prepared data and its provenance run")
     run = args.run_dir.resolve()
     if args.resume_preparation and (not run.is_dir() or (run / "protocol.json").exists()):
         raise ValueError("Preparation reuse requires an existing run with no training protocol yet")
@@ -198,6 +224,20 @@ def main():
                                               baseline, args.expected_additions)
             dump(scope, dict(videos=items,
                  heldout_sha256=[baseline["test_sha256"], baseline["validation_sha256"]]))
+        preparation_data, preparation_run = args.baseline_data, args.baseline_run
+        extraction_items = items
+        if args.reuse_prepared_data:
+            preparation_data, preparation_run = args.reuse_prepared_data, args.reuse_prepared_run
+            prepared = json.loads((preparation_data / "manifest.json").read_text())
+            inherited = json.loads((preparation_data / "annotation_snapshot.json").read_text())["videos"]
+            prepared_protocol = json.loads((preparation_run / "protocol.json").read_text())
+            if recipe_difference(reference, prepared_protocol):
+                raise ValueError("Prepared data provenance used a different training recipe")
+            extraction_items = prepared_extension_items(baseline, prepared, inherited, items)
+            if not extraction_items:
+                raise ValueError("No missing approved sources to append")
+        extraction_scope = run / "audit/extraction_scope.json"
+        dump(extraction_scope, dict(videos=extraction_items))
         dump(run / "refresh_plan.json", dict(source_data=str(args.baseline_data),
             baseline_training_videos=52, new_approved_videos=len(items),
             training_videos=52 + len(items), validation_videos=1,
@@ -205,19 +245,27 @@ def main():
             epochs=reference["epochs"], augmentation=reference["augmentation"], qat=False,
             old_samples_and_repetitions_preserved=True, existing_jobs_stopped=False,
             preparation_reused=args.resume_preparation, shared_gpu_authorized=args.allow_shared_gpu,
+            reused_prepared_data=str(args.reuse_prepared_data) if args.reuse_prepared_data else None,
+            reused_prepared_weights=False, newly_decoded_videos=len(extraction_items),
             data_output=str(args.data_output), background_output=str(args.cache_output),
             git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()))
         if not args.resume_preparation:
             command("prepare_data", [sys.executable, "-u", ROOT / "scripts/anti_uav/prepare_labeler_training_expansion.py",
-                "--source", args.baseline_data, "--baseline-protocol", args.baseline_run / "protocol.json",
+                "--source", preparation_data, "--baseline-protocol", preparation_run / "protocol.json",
                 "--database", args.database, "--video-root", args.video_root, "--output", args.data_output,
-                "--workers", args.extraction_workers, "--task-snapshot", scope])
+                "--workers", args.extraction_workers, "--task-snapshot", extraction_scope])
         elif json.loads((args.data_output / "status.json").read_text())["stage"] != "complete":
             raise ValueError("Cannot reuse incomplete data preparation")
         frozen = json.loads((args.data_output / "annotation_snapshot.json").read_text())
-        verify_frozen_scope(items, frozen["videos"])
+        verify_frozen_scope(extraction_items, frozen["videos"])
+        manifest = json.loads((args.data_output / "manifest.json").read_text())
+        if set(manifest["train_video_hashes"]) != set(baseline["train_video_hashes"]) | {x["source_sha256"] for x in items}:
+            raise ValueError("Prepared training sources differ from the exact approved target split")
         config = yaml.safe_load((args.data_output / "train_online_gray_monitor.yaml").read_text())
         old_cache = Path(config["online_replacement"]["cache"])
+        if args.reuse_prepared_run:
+            actual_data = Path(json.loads((preparation_run / "protocol.json").read_text())["data"])
+            old_cache = Path(yaml.safe_load(actual_data.read_text())["online_replacement"]["cache"])
         if not args.resume_preparation:
             command("prepare_backgrounds", [sys.executable, "-u", ROOT / "scripts/anti_uav/prepare_snapshot_replacement_cache.py",
                 "--data-dir", args.data_output, "--previous-cache", old_cache,
@@ -234,8 +282,9 @@ def main():
             raise ValueError("The legacy 328-asset catalog changed")
         if any(index["images"].get(path) != info for path, info in old_index["images"].items()):
             raise ValueError("An existing augmentation cache entry changed")
-        coverage = Counter(info["video_sha256"] for path, info in index["images"].items()
-                           if path.startswith(str(args.data_output / "images/labeler_snapshot") + "/"))
+        approved_hashes = {x["source_sha256"] for x in items}
+        coverage = Counter(info["video_sha256"] for info in index["images"].values()
+                           if info["video_sha256"] in approved_hashes)
         dump(run / "audit/new_augmentation_coverage.json", dict(asset_count=328, probability=.5,
             videos=[dict(name=x.get("original_path") or x["name"], sha256=x["source_sha256"],
                          safe_cached_positive_frames=coverage[x["source_sha256"]]) for x in items],

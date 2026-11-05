@@ -75,3 +75,11 @@ def test_idle_gpu_selection_never_shares_memory():
     text = "0, 0, 0\n2, 1200, 0\n6, 0, 0\n"
     assert choose_idle_gpu(text, [2, 6]) == 6
     assert choose_idle_gpu("2, 0, 90\n6, 500, 0\n", [2, 6]) is None
+
+
+def test_explicit_sharing_selects_least_used_allowed_gpu():
+    assert choose_idle_gpu("0, 0, 0\n2, 5182, 35\n6, 4749, 29\n", [2, 6], True) == 6
+
+
+def test_sharing_does_not_accept_heavily_occupied_devices():
+    assert choose_idle_gpu("2, 20000, 35\n6, 40000, 29\n", [2, 6], True) is None

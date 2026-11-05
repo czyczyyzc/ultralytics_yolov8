@@ -56,11 +56,16 @@ def recipe_difference(reference, candidate):
             for key in keys if reference.get(key) != candidate.get(key)}
 
 
-def choose_idle_gpu(text, allowed):
+def choose_idle_gpu(text, allowed, allow_shared=False):
+    candidates = []
     for row in text.splitlines():
         index, memory, utilization = map(int, row.split(","))
         if index in allowed and memory <= 64 and utilization == 0:
             return index
+        if index in allowed and memory <= 16384:
+            candidates.append((memory, index))
+    if allow_shared and candidates:
+        return min(candidates)[1]
     return None
 
 
@@ -146,14 +151,20 @@ def main():
     p.add_argument("--gpus", type=int, nargs="+", default=[2, 6])
     p.add_argument("--extraction-workers", type=int, default=8)
     p.add_argument("--background-workers", type=int, default=32)
+    p.add_argument("--allow-shared-gpu", action="store_true",
+                   help="Explicitly permit sharing an allowed A100 80GB with at most 16 GiB already used")
+    p.add_argument("--resume-preparation", action="store_true",
+                   help="Reuse completed data/background preparation; never resume partially trained weights")
     args = p.parse_args()
     import yaml
     from scripts.anti_uav.prepare_labeler_training_expansion import snapshot_tasks
 
     run = args.run_dir.resolve()
-    run.mkdir(exist_ok=False)
-    (run / "logs").mkdir()
-    (run / "audit").mkdir()
+    if args.resume_preparation and (not run.is_dir() or (run / "protocol.json").exists()):
+        raise ValueError("Preparation reuse requires an existing run with no training protocol yet")
+    run.mkdir(exist_ok=args.resume_preparation)
+    (run / "logs").mkdir(exist_ok=args.resume_preparation)
+    (run / "audit").mkdir(exist_ok=args.resume_preparation)
     lock = (run / "refresh.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
@@ -178,29 +189,45 @@ def main():
         if sha256(reference["foundation"]) != reference["foundation_sha256"]:
             raise ValueError("Public YOLOv8n initialization changed")
         blocked = set(baseline["train_video_hashes"]) | {baseline["test_sha256"], baseline["validation_sha256"]}
-        items = select_approved_additions(snapshot_tasks(args.database, args.video_root, blocked),
-                                          baseline, args.expected_additions)
-        dump(run / "audit/requested_approved_scope.json", dict(videos=items,
-             heldout_sha256=[baseline["test_sha256"], baseline["validation_sha256"]]))
+        scope = run / "audit/requested_approved_scope.json"
+        if args.resume_preparation:
+            items = select_approved_additions(json.loads(scope.read_text())["videos"],
+                                             baseline, args.expected_additions)
+        else:
+            items = select_approved_additions(snapshot_tasks(args.database, args.video_root, blocked),
+                                              baseline, args.expected_additions)
+            dump(scope, dict(videos=items,
+                 heldout_sha256=[baseline["test_sha256"], baseline["validation_sha256"]]))
         dump(run / "refresh_plan.json", dict(source_data=str(args.baseline_data),
             baseline_training_videos=52, new_approved_videos=len(items),
             training_videos=52 + len(items), validation_videos=1,
             validation_name="Video00009", test_name="Video00004", batch=64, seed=20261015,
             epochs=reference["epochs"], augmentation=reference["augmentation"], qat=False,
             old_samples_and_repetitions_preserved=True, existing_jobs_stopped=False,
+            preparation_reused=args.resume_preparation, shared_gpu_authorized=args.allow_shared_gpu,
             data_output=str(args.data_output), background_output=str(args.cache_output),
             git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()))
-        command("prepare_data", [sys.executable, "-u", ROOT / "scripts/anti_uav/prepare_labeler_training_expansion.py",
-            "--source", args.baseline_data, "--baseline-protocol", args.baseline_run / "protocol.json",
-            "--database", args.database, "--video-root", args.video_root, "--output", args.data_output,
-            "--workers", args.extraction_workers, "--task-snapshot", run / "audit/requested_approved_scope.json"])
+        if not args.resume_preparation:
+            command("prepare_data", [sys.executable, "-u", ROOT / "scripts/anti_uav/prepare_labeler_training_expansion.py",
+                "--source", args.baseline_data, "--baseline-protocol", args.baseline_run / "protocol.json",
+                "--database", args.database, "--video-root", args.video_root, "--output", args.data_output,
+                "--workers", args.extraction_workers, "--task-snapshot", scope])
+        elif json.loads((args.data_output / "status.json").read_text())["stage"] != "complete":
+            raise ValueError("Cannot reuse incomplete data preparation")
         frozen = json.loads((args.data_output / "annotation_snapshot.json").read_text())
         verify_frozen_scope(items, frozen["videos"])
         config = yaml.safe_load((args.data_output / "train_online_gray_monitor.yaml").read_text())
         old_cache = Path(config["online_replacement"]["cache"])
-        command("prepare_backgrounds", [sys.executable, "-u", ROOT / "scripts/anti_uav/prepare_snapshot_replacement_cache.py",
-            "--data-dir", args.data_output, "--previous-cache", old_cache,
-            "--output", args.cache_output, "--workers", args.background_workers])
+        if not args.resume_preparation:
+            command("prepare_backgrounds", [sys.executable, "-u", ROOT / "scripts/anti_uav/prepare_snapshot_replacement_cache.py",
+                "--data-dir", args.data_output, "--previous-cache", old_cache,
+                "--output", args.cache_output, "--workers", args.background_workers])
+        summary = json.loads((args.cache_output / "summary.json").read_text())
+        plan = json.loads((args.cache_output / "plan.json").read_text())
+        if summary["stage"] != "complete" or sha256(args.cache_output / "index.json") != summary["index_sha256"]:
+            raise ValueError("Background cache is incomplete or changed")
+        if any(sha256(path) != digest for path, digest in plan["protected_inputs"].items()):
+            raise ValueError("A frozen preparation input changed")
         old_index = json.loads((old_cache / "index.json").read_text())
         index = json.loads((args.cache_output / "index.json").read_text())
         if len(index["asset_ids"]) != 328 or old_index["asset_ids"] != index["asset_ids"]:
@@ -215,7 +242,10 @@ def main():
             unsafe_or_uncached_frames_retained_as_original=True))
         status("verify_augmentation")
         from scripts.anti_uav.verify_snapshot_replacement_cache import verify_cache
-        verify_cache(args.cache_output, args.data_output, run / "audit/replacement_preview")
+        preview = run / "audit/replacement_preview"
+        if preview.exists():
+            preview = run / f"audit/replacement_preview_{os.getpid()}"
+        verify_cache(args.cache_output, args.data_output, preview)
         config["online_replacement"]["cache"] = str(args.cache_output)
         # This contains size definitions only, deliberately no new batch quotas/repeats.
         config["tiny_sampling"] = dict(input_hw=[544, 960], tiny_min_px=4.0, tiny_max_px=8.0)
@@ -224,11 +254,14 @@ def main():
         while True:
             usage = subprocess.check_output(["nvidia-smi", "--query-gpu=index,memory.used,utilization.gpu",
                         "--format=csv,noheader,nounits"], text=True)
-            device = choose_idle_gpu(usage, args.gpus)
+            device = choose_idle_gpu(usage, args.gpus, args.allow_shared_gpu)
             if device is not None:
                 break
             status("waiting_for_idle_gpu", allowed=args.gpus)
             time.sleep(60)
+        dump(run / "audit/gpu_launch_policy.json", dict(device=device,
+            shared_gpu_authorized=args.allow_shared_gpu, other_processes_stopped=False,
+            usage_before_launch=usage))
         command("training", [sys.executable, "-u", ROOT / "scripts/anti_uav/run_p3_independent_curriculum_training.py",
             "--data", data_yaml, "--foundation", reference["foundation"], "--run-dir", run,
             "--device", device, "--batch", "64", "--workers", "16", "--foundation-epochs", "30",

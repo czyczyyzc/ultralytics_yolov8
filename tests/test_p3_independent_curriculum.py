@@ -77,7 +77,7 @@ def test_curriculum_does_not_reapprove_changed_pinned_cache(tmp_path):
     with train.with_suffix(".cache").open("wb") as stream:
         np.save(stream, dict(labels=[], hash="changed", results=(1, 0, 0, 0, 1),
                              msgs=[], version=DATASET_CACHE_VERSION))
-    with pytest.raises(ValueError, match="dataset cache changed"):
+    with pytest.raises(ValueError, match="label cache changed"):
         audit_label_caches(source)
 
 

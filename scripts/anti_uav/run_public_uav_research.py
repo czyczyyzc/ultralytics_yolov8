@@ -139,6 +139,49 @@ def reviewed_negative_records(path, training_hashes, snapshot_sha256):
     return rows
 
 
+def fixedwing_holdouts(records):
+    result=[]
+    for row in records:
+        if row["split"] not in {"val","test"} or not row.get("boxes"):
+            continue
+        types=row.get("aircraft_types") or row.get("source_classes") or [row.get("source_class","")]
+        if types and {str(x).casefold() for x in types}=={"airplane"}:
+            result.append(row)
+    return result
+
+
+def build_fixedwing_holdout(records, config, version, output):
+    import numpy as np
+    import yaml
+    rows=fixedwing_holdouts(records)
+    if not rows:return
+    seen,selected,labels=set(),[],[]
+    for row in rows:
+        identity,shape=inspect_image(row["image"])
+        if identity in seen:continue
+        seen.add(identity)
+        boxes=np.asarray(read_positive_label(row["label"]),dtype=np.float32)
+        if len(boxes)!=row["boxes"]:raise ValueError("Fixed-wing holdout labels changed")
+        selected.append(row)
+        labels.append(dict(im_file=row["image"],shape=shape,cls=boxes[:,:1],bboxes=boxes[:,1:],
+            segments=[],keypoints=None,normalized=True,bbox_format="xywh"))
+    listing=output/'fixedwing_public_holdout.txt'
+    listing.write_text('\n'.join(row['image'] for row in selected)+'\n')
+    labels.sort(key=lambda row:row['im_file'])
+    cache=dict(labels=labels,hash=sha256(listing),version=version,results=(len(labels),0,0,0,len(labels)),msgs=[])
+    with listing.with_suffix('.cache').open('wb') as stream:np.save(stream,cache,allow_pickle=True)
+    evaluation=deepcopy(config);evaluation['val']=str(listing)
+    evaluation['trusted_label_caches'][str(listing)]=dict(path=str(listing.with_suffix('.cache')),
+        source_sha256=sha256(listing),cache_sha256=sha256(listing.with_suffix('.cache')),
+        dataset_hash=cache['hash'],entries=len(labels))
+    (output/'fixedwing_public_holdout.yaml').write_text(yaml.safe_dump(evaluation,sort_keys=False))
+    dump(output/'fixedwing_public_holdout_protocol.json',dict(frames=len(labels),
+        gt=sum(len(row['cls']) for row in labels),selection_used=False,positive_only=True,
+        source_types=['airplane'],official_or_whole_video_heldouts=True,
+        limitation='Positive-frame subset, not full-video background FP or guaranteed cross-dataset/scene independence',
+        listing_sha256=sha256(listing),records=selected))
+
+
 def bind_control(args):
     import yaml
     control = json.loads((args.baseline_run / "protocol.json").read_text())
@@ -297,6 +340,7 @@ def prepare(args):
         pins[str(listing)] = dict(path=str(listing.with_suffix(".cache")), source_sha256=sha256(listing),
             cache_sha256=sha256(listing.with_suffix(".cache")), dataset_hash=str(cached["hash"]), entries=len(cached["labels"]))
     config["trusted_label_caches"] = pins
+    build_fixedwing_holdout(records,config,cache['version'],args.data_output)
     output = args.data_output / "train_public_gray_monitor.yaml"
     output.write_text(yaml.safe_dump(config, sort_keys=False))
     manifest = dict(base_manifest, schema="anti_uav.public_research.v1", source_dataset=str(args.baseline_yaml.parent),
@@ -391,6 +435,18 @@ def compare(args, device):
             pooled, arrays = pool_native(entries)
             result[name]["splits"]["pooled"] = pooled
             np.savez_compressed(output / (name+"_pooled.npz"), **arrays)
+            external=args.data_output/'fixedwing_public_holdout.yaml'
+            if external.exists():
+                expected=json.loads((args.data_output/'fixedwing_public_holdout_protocol.json').read_text())
+                model=YOLO(str(weights))
+                metrics=model.val(data=str(external),validator=PairValidator,imgsz=[544,960],rect=False,
+                    device=str(device),batch=32,workers=4,conf=.001,iou=.45,max_det=100,half=False,
+                    plots=False,verbose=False,project=str(output/'val'),name=name+'_fixedwing_public')
+                native={k:v for k,v in clean(metrics.gray_selection).items() if k.startswith('native/')}
+                if (native['native/c0.03/FRAMES'],native['native/c0.03/TP']+native['native/c0.03/FN']) != (expected['frames'],expected['gt']):
+                    raise ValueError('External fixed-wing holdout coverage changed')
+                result[name]['splits']['external_fixedwing_positive_holdout']=native
+                del model;torch.cuda.empty_cache()
             if sha256(weights) != identity:
                 raise ValueError("A checkpoint changed while evaluating")
             dump(output / "results.json", result)

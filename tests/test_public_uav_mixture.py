@@ -9,6 +9,7 @@ from scripts.anti_uav.run_public_uav_research import (
     bind_control, check_groups, completed_manifest, positive_candidates, read_positive_label, sampling_extension,
     replacement_view,
     reviewed_negative_records,
+    fixedwing_holdouts,
 )
 
 
@@ -137,6 +138,16 @@ def test_only_frozen_reviewed_absent_frames_enter_negative_supplement(tmp_path):
         write(dict(row,**change))
         with pytest.raises(ValueError,match='Unreviewed'):
             reviewed_negative_records(manifest,{'training'},'snapshot')
+
+
+def test_secondary_fixedwing_holdout_never_uses_training_or_guessed_classes():
+    rows=[dict(split='val',boxes=1,source_class='AIRPLANE'),
+          dict(split='test',boxes=2,aircraft_types=['airplane','airplane']),
+          dict(split='train',boxes=1,source_class='AIRPLANE'),
+          dict(split='val',boxes=1,source_class='HELICOPTER'),
+          dict(split='val',boxes=1,source_classes=['AIRPLANE','DRONE']),
+          dict(split='val',boxes=1,source='plane_in_filename.jpg')]
+    assert fixedwing_holdouts(rows)==rows[:2]
 
 
 def test_prepare_preserves_native_repeats_and_excludes_heldout_pixels(tmp_path, monkeypatch):

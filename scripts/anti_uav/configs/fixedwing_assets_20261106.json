@@ -1,0 +1,6 @@
+{
+  "expected_inputs": 38,
+  "segment_input_ids": ["1", "2", "3", "4", "5", "6", "7", "8", "14", "15", "20", "22", "24", "35", "36", "37", "38"],
+  "roi": {"4": [0, 0.48, 1, 1], "5": [0, 0.43, 1, 1]},
+  "policy": "Probe full-aircraft candidates, then publish only visually accepted alpha cutouts. No RGB generation, no accessory removal by guessing, no source-catalog overwrite. Other images are parts, closeups, cropped or disassembled aircraft."
+}

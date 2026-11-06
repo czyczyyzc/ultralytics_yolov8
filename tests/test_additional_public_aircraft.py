@@ -369,3 +369,96 @@ def test_aod_holdout_bird_and_unknown_duplicate_are_audited_before_filtering(tmp
     assert {p["source"].name for p in plans} == {"pilot-safe-unsplash_jpg.rf.a.jpg", "pilot-val-unsplash_jpg.rf.a.jpg"}
     assert any(b["reason"] == "cross_split_source_or_duplicate_group" and "pilot-a" in b["source"] for b in bad)
     assert len(provenance) == 4
+
+
+def aod_train_only_splits():
+    return dict(
+        train=[("yt-0BFf4YWpzHM-0001_jpg.rf.a.jpg", [annotation(1, (-1, 2, 1.25, .5))], 40),
+               ("yt-5KOIhxSH7lw-0001_jpg.rf.a.jpg", [annotation(3)], 50),
+               ("yt-vpQEQ81cfoA-0001_jpg.rf.a.jpg", [annotation(4)], 60),
+               ("V_AIRPLANE_01111_001_png_jpg.rf.a.jpg", [annotation(1)], 70),
+               ("unknown-drone_jpg.rf.a.jpg", [annotation(3)], 80),
+               ("pilot-bird-unsplash_jpg.rf.a.jpg", [annotation(2)], 90),
+               ("pilot-mixed-unsplash_jpg.rf.a.jpg", [annotation(1), annotation(2)], 100),
+               ("pilot-empty-unsplash_jpg.rf.a.jpg", [], 110),
+               ("pilot-ignored-unsplash_jpg.rf.a.jpg", [annotation(4, ignore=1)], 120)],
+        valid=[("yt-0BFf4YWpzHM-0002_jpg.rf.b.jpg", [annotation(1)], 130),
+               ("pilot-val-unsplash_jpg.rf.b.jpg", [annotation(4)], 40)],
+        test=[("yt-5KOIhxSH7lw-0002_jpg.rf.b.jpg", [annotation(3)], 140),
+              ("V_DRONE_002112_206_png_jpg.rf.b.jpg", [annotation(3)], 150)])
+
+
+def test_aod_train_only_retains_official_train_without_reassigning_holdouts(tmp_path, monkeypatch):
+    raw = make_aod_raw(tmp_path, monkeypatch, aod_train_only_splits())
+    bad, provenance, audit = [], [], {}
+    plans = ingest.plan_aod(raw, 8, bad, provenance, train_only=True, audit=audit)
+    assert len(plans) == 3
+    assert {p["split"] for p in plans} == {"train"}
+    assert {p["official_split"] for p in plans} == {"train"}
+    assert all(p["evaluation_allowed"] is False for p in plans)
+    assert all(p["source"].parent.name == "train" for p in plans)
+    assert {t for p in plans for t in p["aircraft_types"]} == {"airplane", "drone", "helicopter"}
+    assert sum(p["clipped_boxes"] for p in plans) == 1
+    assert all("V_" not in p["source"].name for p in plans)
+    assert len(audit["unused_holdout_images"]) == 4
+    assert {r["official_split"] for r in audit["unused_holdout_images"]} == {"valid", "test"}
+    assert all(r["training_allowed"] is False and r["evaluation_allowed"] is False for r in audit["unused_holdout_images"])
+    assert audit["retained_train_shared_holdout_group_frames"] == 2
+    assert audit["retained_train_shared_holdout_hash_frames"] == 1
+    assert sum(r["reason"] == "aod_train_only_official_holdout_unused" for r in bad) == 4
+    assert sum(r["reason"] == "bird_or_unknown_class_excluded_whole_frame" for r in bad) == 2
+
+
+def test_aod_explicit_train_only_does_not_change_default_quarantine(tmp_path, monkeypatch):
+    raw = make_aod_raw(tmp_path, monkeypatch, aod_train_only_splits())
+    strict = ingest.plan_aod(raw, 8, [], [])
+    train_only = ingest.plan_aod(raw, 8, [], [], train_only=True)
+    strict_train = {p["source"].name for p in strict if p["split"] == "train"}
+    assert strict_train == {"yt-vpQEQ81cfoA-0001_jpg.rf.a.jpg"}
+    assert len(train_only) == 3 and all(p["split"] == "train" for p in train_only)
+    assert strict == ingest.plan_aod(raw, 8, [], [], train_only=False)
+    assert all("aod_split_policy" not in p for p in strict)
+
+
+def test_aod_train_only_cli_protects_holdout_metadata_and_disclaims_evaluation(tmp_path, ample_disk, monkeypatch):
+    raw = make_aod_raw(tmp_path, monkeypatch, aod_train_only_splits())
+    out = tmp_path / "train_only_export"
+    assert ingest.main(["--raw-root", str(raw), "--output", str(out), "--datasets", "aod4",
+                        "--aod-train-only", "--research-authorized", "--workers", "8"]) == 0
+    summary = json.loads((out / "summary.json").read_text())
+    rows = [json.loads(line) for line in (out / "manifest.jsonl").read_text().splitlines()]
+    assert summary["complete"] is True
+    assert summary["manifest_sha256"] == ingest.sha256(out / "manifest.jsonl")
+    assert summary["counts"]["aod4"] == {
+        "train": {"images": 3, "boxes": 3}, "val": {"images": 0, "boxes": 0}, "test": {"images": 0, "boxes": 0}}
+    policy = summary["aod_policy"]
+    assert policy["mode"] == "official_train_only" and policy["source_group_quarantine"] is False
+    assert policy["official_split_reassigned"] is False
+    assert policy["official_video_split_independence_claimed"] is False
+    assert policy["aod_performance_claim_allowed"] is False and policy["evaluation_allowed"] is False
+    assert summary["leak_audit"]["scope"] == "exported_manifest_only_not_upstream_official_splits"
+    protected = policy["protected_holdout_manifest"]
+    assert protected["images"] == 4 and protected["official_split_counts"] == {"valid": 2, "test": 2}
+    assert ingest.sha256(protected["path"]) == protected["sha256"]
+    protected_rows = [json.loads(line) for line in Path(protected["path"]).read_text().splitlines()]
+    assert all(row["raw_image_sha256"] == ingest.sha256(row["source"]) for row in protected_rows)
+    for split in ("val", "test"):
+        assert not list((out / "images" / split).iterdir())
+        assert not list((out / "labels" / split).iterdir())
+    assert all(Path(row["image"]).is_symlink() for row in rows)
+    assert all(row["evaluation_allowed"] is False and row["official_split"] == "train" for row in rows)
+
+
+@pytest.mark.parametrize("change", [dict(split="val"), dict(official_split="test"), dict(evaluation_allowed=True)])
+def test_aod_train_only_manifest_rejects_holdout_or_evaluation_permission(change):
+    row = dict(dataset="aod4", split="train", official_split="train", evaluation_allowed=False)
+    row.update(change)
+    with pytest.raises(ingest.UnsafeData, match="no_evaluation"):
+        ingest.audit_manifest([row], aod_train_only=True)
+
+
+def test_aod_train_only_flag_requires_aod_dataset_before_creating_output(tmp_path):
+    with pytest.raises(ValueError, match="requires aod4"):
+        ingest.prepare(tmp_path / "raw", tmp_path / "never", datasets=["purdue_uav"],
+                       aod_train_only=True, research_authorized=True)
+    assert not (tmp_path / "never").exists()

@@ -7,6 +7,11 @@ Usage (NEW output only):
     --output /path/to/new/additional_aircraft --research-authorized --workers 8
 For the audited raw tree use --datasets purdue_uav: AOD4's source-video groups
 cross official splits, and no aircraft positives survived strict isolation.
+Alternatively, explicitly opt into --aod-train-only to retain verified official
+TRAIN positives only. AOD valid/test are never exported, reassigned or evaluated
+in that mode. Upstream frame sampling is NOT an independent video split; no AOD
+performance claim is permitted. Unused holdout SHA metadata is protected, but
+shared upstream source groups do not quarantine official train in this opt-in.
 Place official Video_Annotation-v2.zip in purdue_uav/archives (or supply
 --purdue-refined-archive). The pinned refined release is preferred; if absent,
 --allow-original-purdue-gt is an explicit, documented research-only fallback.
@@ -282,7 +287,7 @@ def purge_split_conflicts(plans):
         for p in plans if p["group"] in bad]
 
 
-def plan_aod(raw, workers, excluded, provenance):
+def plan_aod(raw, workers, excluded, provenance, train_only=False, audit=None):
     import cv2
 
     root = raw / "aod4/extracted/aod4_inner/AOD 4"
@@ -315,14 +320,20 @@ def plan_aod(raw, workers, excluded, provenance):
                                annotation_sha256=sha256(path), images=count, annotations=len(ids)))
         for info in images:
             group = None
+            eligible_split = not train_only or source_split == "train"
             try:
                 group = aod_source_group(info)
             except (UnsafeData, TypeError, AttributeError) as exc:
-                excluded.append(dict(source=str(image_dir / str(info.get("file_name"))), reason=str(exc)))
+                if eligible_split:
+                    excluded.append(dict(source=str(image_dir / str(info.get("file_name"))), reason=str(exc)))
             source = safe_child(image_dir, info["file_name"])
             identities.append(dict(source=source, group=group or "unresolved:" + str(source),
-                                   split="val" if source_split == "valid" else source_split))
-            if group is not None:
+                                   split="val" if source_split == "valid" else source_split,
+                                   official_split=source_split))
+            if not eligible_split:
+                excluded.append(dict(source=str(source), official_split=source_split,
+                                     reason="aod_train_only_official_holdout_unused"))
+            elif group is not None:
                 jobs.append((source_split, info, by_image[info["id"]], image_dir, cats, group))
 
     def identity_hash(p):
@@ -333,8 +344,26 @@ def plan_aod(raw, workers, excluded, provenance):
     # could otherwise retain an exact copy under a different source identity.
     with ThreadPoolExecutor(max_workers=workers) as pool:
         identities = list(pool.map(identity_hash, identities))
-    identities, bad = purge_split_conflicts(identities)
-    excluded.extend(bad)
+    heldout_groups, heldout_hashes = set(), set()
+    if train_only:
+        unused = [p for p in identities if p["official_split"] != "train"]
+        heldout_groups = {p["group"] for p in unused}
+        heldout_hashes = {p["raw_image_sha256"] for p in unused}
+        if audit is not None:
+            source_splits, content_splits = defaultdict(set), defaultdict(set)
+            for p in identities:
+                source_splits[p["group"]].add(p["official_split"])
+                content_splits[p["raw_image_sha256"]].add(p["official_split"])
+            audit.update(unused_holdout_images=[
+                dict(dataset="aod4", source=str(p["source"]), official_split=p["official_split"],
+                     group=p["group"], raw_image_sha256=p["raw_image_sha256"],
+                     training_allowed=False, evaluation_allowed=False) for p in unused],
+                official_source_groups_crossing_splits=sum(len(s) > 1 for s in source_splits.values()),
+                official_raw_hashes_crossing_splits=sum(len(s) > 1 for s in content_splits.values()))
+        identities = [p for p in identities if p["official_split"] == "train"]
+    else:
+        identities, bad = purge_split_conflicts(identities)
+        excluded.extend(bad)
     accepted_sources = {str(p["source"]) for p in identities}
     kept_jobs = []
     for job in jobs:
@@ -384,7 +413,13 @@ def plan_aod(raw, workers, excluded, provenance):
         if reason:
             excluded.append(dict(source=str(p["source"]), reason=reason))
         else:
+            if train_only:
+                p.update(official_split="train", aod_split_policy="official_train_only_frame_sampling",
+                         evaluation_allowed=False)
             good.append(p)
+    if train_only and audit is not None:
+        audit.update(retained_train_shared_holdout_group_frames=sum(p["group"] in heldout_groups for p in good),
+                     retained_train_shared_holdout_hash_frames=sum(p["raw_image_sha256"] in heldout_hashes for p in good))
     return good
 
 
@@ -618,9 +653,13 @@ def export_purdue(plan, output, disk):
                       positive_frames=len(rows), alignment_verified=True)
 
 
-def audit_manifest(rows):
+def audit_manifest(rows, aod_train_only=False):
     groups, content, paths = {}, {}, set()
     for row in rows:
+        if aod_train_only and row["dataset"] == "aod4" and (
+            row["split"] != "train" or row.get("official_split") != "train" or row.get("evaluation_allowed") is not False
+        ):
+            raise UnsafeData("aod_train_only_requires_official_train_and_no_evaluation")
         if row["split"] not in SPLITS or type(row["boxes"]) is not int or row["boxes"] <= 0:
             raise UnsafeData("invalid_split_or_nonpositive_manifest_row")
         for table, key in ((groups, (row["dataset"], row["group"])),
@@ -640,13 +679,15 @@ def audit_manifest(rows):
 
 
 def prepare(raw_root, output, datasets=("aod4", "purdue_uav"), workers=8, reserve_gib=40, research_authorized=False,
-            purdue_refined_archive=None, allow_original_purdue_gt=False):
+            purdue_refined_archive=None, allow_original_purdue_gt=False, aod_train_only=False):
     if not research_authorized:
         raise UnsafeData("explicit_--research-authorized_required")
     if workers not in (8, 16) or not datasets or len(set(datasets)) != len(datasets) or not set(datasets) <= {"aod4", "purdue_uav"}:
         raise ValueError("use unique supported datasets and workers 8 or 16")
     if not math.isfinite(reserve_gib) or reserve_gib < 40:
         raise ValueError("reserve_gib must be >= 40")
+    if aod_train_only and "aod4" not in datasets:
+        raise ValueError("--aod-train-only requires aod4 in --datasets")
     raw, output = Path(raw_root).resolve(), Path(output).resolve()
     if output.is_relative_to(raw) or raw.is_relative_to(output):
         raise UnsafeData("output_must_not_overlap_raw_root")
@@ -660,6 +701,20 @@ def prepare(raw_root, output, datasets=("aod4", "purdue_uav"), workers=8, reserv
                                 "AOD4 ambiguous/video-family and cross-split groups excluded, not reassigned",
                                 "Purdue refined v2 preferred; original fallback requires explicit operator flag; positive-only export"],
                    provenance=[], excluded_records=[], video_alignment=[])
+    summary["aod_policy"] = dict(mode="official_train_only" if aod_train_only else "strict_source_group_quarantine",
+                               official_split_reassigned=False, source_group_quarantine=not aod_train_only,
+                               official_video_split_independence_claimed=False)
+    if aod_train_only:
+        summary["aod_policy"].update(evaluation_allowed=False, exported_official_splits=["train"],
+                                   sampling_unit="official_frames_not_independent_videos",
+                                   official_val_test_used_for_training=False,
+                                   official_val_test_used_for_evaluation=False,
+                                   aod_performance_claim_allowed=False)
+        summary["limitations"][1] = (
+            "AOD4 explicit official-train-only frame sampling; shared upstream groups/hashes may overlap unused "
+            "official valid/test. No independent video split, AOD evaluation or AOD performance claim. "
+            "V_* and other unresolved source identities remain excluded; external evaluation independence is not established here."
+        )
 
     def save():
         temp = output / "summary.json.tmp"
@@ -680,12 +735,26 @@ def prepare(raw_root, output, datasets=("aod4", "purdue_uav"), workers=8, reserv
             for kind in ("images", "labels"):
                 (output / kind / split).mkdir(parents=True)
         excluded, provenance = summary["excluded_records"], summary["provenance"]
-        aod = plan_aod(raw, workers, excluded, provenance) if "aod4" in datasets else []
+        protected_holdouts = []
+        if aod_train_only:
+            aod = plan_aod(raw, workers, excluded, provenance, train_only=True, audit=summary["aod_policy"])
+            protected_holdouts = summary["aod_policy"].pop("unused_holdout_images", [])
+        else:
+            aod = plan_aod(raw, workers, excluded, provenance) if "aod4" in datasets else []
         if "aod4" in datasets and not aod:
+            if aod_train_only:
+                raise UnsafeData("aod4_no_verified_official_train_positive_frames")
             raise UnsafeData("aod4_blocked_no_leak_free_positive_frames; run --datasets purdue_uav independently")
         purdue = plan_purdue(raw, workers, excluded, provenance, purdue_refined_archive,
                              allow_original_purdue_gt) if "purdue_uav" in datasets else []
         save()
+        if aod_train_only:
+            protected = output / "aod_unused_official_holdouts.jsonl"
+            disk.write(protected, "".join(json.dumps(p, sort_keys=True) + "\n" for p in protected_holdouts).encode())
+            summary["aod_policy"]["protected_holdout_manifest"] = dict(
+                path=str(protected), sha256=sha256(protected), images=len(protected_holdouts),
+                official_split_counts=dict(Counter(p["official_split"] for p in protected_holdouts)))
+            save()
         rows = []
         with ThreadPoolExecutor(max_workers=workers) as pool:
             rows.extend(pool.map(lambda p: emit_frame(p, output, disk, p["xyxy"]), aod))
@@ -695,7 +764,8 @@ def prepare(raw_root, output, datasets=("aod4", "purdue_uav"), workers=8, reserv
         if not rows or any(not any(r["dataset"] == d for r in rows) for d in datasets):
             raise UnsafeData("requested_dataset_has_no_verified_positive_frames")
         rows.sort(key=lambda r: (r["dataset"], r["split"], r["group"], r.get("frame_index", -1), r["source"]))
-        summary["leak_audit"] = audit_manifest(rows)
+        summary["leak_audit"] = audit_manifest(rows, aod_train_only=aod_train_only)
+        summary["leak_audit"]["scope"] = "exported_manifest_only_not_upstream_official_splits"
         summary["counts"] = {d: {s: dict(images=sum(r["dataset"] == d and r["split"] == s for r in rows),
                                            boxes=sum(r["boxes"] for r in rows if r["dataset"] == d and r["split"] == s))
                                      for s in SPLITS} for d in datasets}
@@ -723,6 +793,7 @@ def main(argv=None):
     parser.add_argument("--workers", type=int, choices=(8, 16), default=8)
     parser.add_argument("--reserve-gib", type=float, default=40)
     parser.add_argument("--research-authorized", action="store_true")
+    parser.add_argument("--aod-train-only", action="store_true", help="Explicit official AOD4 train frames only; no AOD evaluation or independent-video split claim; keep default strict mode otherwise")
     parser.add_argument("--purdue-refined-archive", type=Path, help="Preferred pinned official Video_Annotation-v2.zip; read in place, no extraction")
     parser.add_argument("--allow-original-purdue-gt", action="store_true", help="Explicit research fallback ONLY when refined archive is absent locally")
     args = parser.parse_args(argv)

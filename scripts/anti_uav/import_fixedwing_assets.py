@@ -137,6 +137,7 @@ def publish(args):
     args.output.mkdir(parents=True)
     (args.output/"cutouts").mkdir()
     rows, seen_ids, old_hashes = [], set(), set()
+    source_catalogs, old_source_hashes = {}, set()
     for row in old["records"]:
         source = args.base_catalog.parent/row["cutout"]
         if digest(source) != row["cutout_sha256"]:
@@ -145,6 +146,13 @@ def publish(args):
         if row["id"] in seen_ids:
             raise ValueError("Duplicate old ID")
         seen_ids.add(row["id"]);old_hashes.add(row["cutout_sha256"])
+        if row.get("source_catalog"):
+            catalog = row["source_catalog"]
+            if catalog not in source_catalogs:
+                source_catalogs[catalog] = {r["id"]:r for r in json.loads(Path(catalog).read_text())["records"]}
+            original = source_catalogs[catalog][row["id"]]
+            if original.get("embedded_sha256"):
+                old_source_hashes.add(original["embedded_sha256"])
         rel = f"cutouts/{row['id']}.png"
         shutil.copy2(source,args.output/rel)
         rows.append(dict(row,cutout=rel))
@@ -155,7 +163,7 @@ def publish(args):
         if digest(source) != row["cutout_sha256"]:
             raise ValueError("Candidate changed")
         alpha_eligible(source)
-        if row["cutout_sha256"] in hashes:
+        if row["cutout_sha256"] in hashes or row.get("source_sha256") in old_source_hashes:
             duplicate.append(key);continue
         if row["id"] in seen_ids:
             raise ValueError("New asset ID overlaps old catalog")
@@ -167,6 +175,13 @@ def publish(args):
             commercial_rights_review_pending=True)
         rows.append(published);added.append(published)
     rows.sort(key=lambda r:int(r["id"]))
+    unique, aliases = {}, {}
+    for row in rows:
+        identity = row["cutout_sha256"]
+        if identity not in unique:
+            unique[identity] = row
+            aliases[row["id"]] = []
+        aliases[unique[identity]["id"]].append(row["id"])
     summary=dict(original_entries=len(old["records"]),original_unique_png_sha256=len(old_hashes),
         accepted_new_entries=len(added),merged_entries=len(rows),merged_unique_png_sha256=len(hashes),
         new_model_count=len({r["model"] for r in added}),new_models=dict(Counter(r["model"] for r in added)),
@@ -174,6 +189,8 @@ def publish(args):
         base_catalog_sha256=config["base_catalog_sha256"],base_catalog_unchanged=True,
         existing_training_configuration_changed=False,review=review)
     dump(args.output/"catalog.json",dict(records=rows,summary=summary,production_qualification=False))
+    dump(args.output/"catalog_unique.json",dict(records=list(unique.values()),
+        duplicate_id_aliases=aliases,source_catalog="catalog.json",production_qualification=False))
     dump(args.output/"summary.json",summary)
     dump(args.output/"new_assets.json",dict(records=added))
     shutil.copy2(args.review,args.output/"visual_review.json")

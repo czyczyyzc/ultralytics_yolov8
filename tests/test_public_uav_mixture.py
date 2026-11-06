@@ -7,6 +7,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.anti_uav.run_public_uav_research import (
     bind_control, check_groups, completed_manifest, positive_candidates, read_positive_label, sampling_extension,
+    replacement_view,
+    reviewed_negative_records,
 )
 
 
@@ -94,6 +96,47 @@ def test_empty_public_labels_are_excluded_not_negative():
     assert excluded == [dict(image="b", reason="no_positive_gt_not_assumed_negative")]
     with pytest.raises(ValueError, match="box count"):
         positive_candidates([dict(split="train", image="unknown")])
+
+
+def test_asset_only_view_cannot_change_background_images(tmp_path):
+    import json
+    from scripts.anti_uav.run_public_uav_research import sha256
+    roots=[tmp_path/'old',tmp_path/'new']
+    for root in roots:
+        root.mkdir()
+        png=root/'cutout.png';png.write_bytes(b'validated by publisher')
+        catalog=root/'catalog.json'
+        catalog.write_text(json.dumps(dict(records=[dict(id='1',cutout='cutout.png',cutout_sha256=sha256(png))])))
+        index=root/'index.json'
+        index.write_text(json.dumps(dict(images={},heldout_sha256=['test'],catalog=str(catalog),catalog_sha256=sha256(catalog),asset_ids=['1'])))
+        (root/'summary.json').write_text(json.dumps(dict(stage='complete',is_smoke_subset=False,index_sha256=sha256(index),asset_count=1)))
+    assert replacement_view(*roots)['backgrounds_unchanged']
+    index=roots[1]/'index.json';value=json.loads(index.read_text());value['heldout_sha256']=[]
+    index.write_text(json.dumps(value))
+    summary=roots[1]/'summary.json';value=json.loads(summary.read_text());value['index_sha256']=sha256(index);summary.write_text(json.dumps(value))
+    with pytest.raises(ValueError,match='background scope'):
+        replacement_view(*roots)
+
+
+def test_only_frozen_reviewed_absent_frames_enter_negative_supplement(tmp_path):
+    import json
+    from scripts.anti_uav.run_public_uav_research import sha256
+    label=tmp_path/'zero.txt';label.write_text('')
+    manifest=tmp_path/'manifest.jsonl'
+    row=dict(raw_video_sha256='training',frame_index=2,split='train',boxes=0,
+        status='approved',reviewed_status='absent',revision=3,approved_revision=3,
+        snapshot_sha256='snapshot',image='new.png',label=str(label))
+    def write(value):
+        manifest.write_text(json.dumps(value)+'\n')
+        (tmp_path/'summary.json').write_text(json.dumps(dict(complete=True,
+            manifest_sha256=sha256(manifest),source_snapshot_sha256='snapshot')))
+    write(row)
+    assert reviewed_negative_records(manifest,{'training'},'snapshot')==[row]
+    for change in [dict(status='submitted'),dict(reviewed_status='uncertain'),dict(boxes=1),
+                   dict(raw_video_sha256='heldout'),dict(revision=4)]:
+        write(dict(row,**change))
+        with pytest.raises(ValueError,match='Unreviewed'):
+            reviewed_negative_records(manifest,{'training'},'snapshot')
 
 
 def test_prepare_preserves_native_repeats_and_excludes_heldout_pixels(tmp_path, monkeypatch):

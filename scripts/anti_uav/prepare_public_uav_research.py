@@ -32,6 +32,7 @@ from pathlib import Path, PurePosixPath
 
 DUT_COUNTS = {"train": 5200, "val": 2600, "test": 2200}
 HALMSTAD_COUNTS = {"DRONE": 114, "AIRPLANE": 59, "BIRD": 51, "HELICOPTER": 61}
+HALMSTAD_CLASSES = ("DRONE", "AIRPLANE", "HELICOPTER")
 HALMSTAD_DIR = "DroneDetectionThesis-Drone-detection-dataset-e7a6eaf"
 FIELDS = ("Time", "AIRPLANE", "BIRD", "DRONE", "HELICOPTER")
 VIDEO_NAME = re.compile(r"V_(DRONE|AIRPLANE|BIRD|HELICOPTER)_\d{3}\.mp4\Z")
@@ -148,13 +149,26 @@ def _matrix(element):
     return int(flags[0]), tuple(int(x) for x in c[1].as_array()), c
 
 
-def parse_halmstad_tree(tops, frame_count, fps):
+def validate_halmstad_classes(allowed_classes):
+    """Birds can never be opted in, including through the Python API."""
+    if isinstance(allowed_classes, str):
+        raise ValueError("halmstad_classes_must_be_a_nonempty_aircraft_list")
+    classes = tuple(allowed_classes)
+    if not classes or any(name not in HALMSTAD_CLASSES for name in classes):
+        raise ValueError("halmstad_classes_must_be_a_nonempty_aircraft_list")
+    return tuple(name for name in HALMSTAD_CLASSES if name in classes)
+
+
+def parse_halmstad_tree(tops, frame_count, fps, allowed_classes=("DRONE",), *, return_source_classes=False):
     """Only the firsthand-verified R2020a named struct format is accepted.
 
     The table stores frame-major rows with five fields, including Time. Boxes
     are MATLAB column-major Nx4 doubles. This supports ALL boxes, not just N=1.
-    Unknown nonempty classes invalidate the whole clip, never produce negatives.
+    Disallowed nonempty classes invalidate the whole clip, never negatives.
+    Nonzero timestamp origins remain quarantined: observing a one-frame offset
+    alone does not establish annotation/video alignment.
     """
+    allowed_classes = validate_halmstad_classes(allowed_classes)
     if frame_count < 1 or not math.isfinite(fps) or fps <= 0:
         raise BadRecord("invalid_video_metadata")
     tables, timestamps = [], []
@@ -193,7 +207,7 @@ def parse_halmstad_tree(tops, frame_count, fps):
     cells = tables[0]
     if len(cells) != frame_count * len(FIELDS):
         raise BadRecord("label_table_cell_count_mismatch")
-    frames = []
+    frames, frame_classes = [], []
     first_time_reference = None
     for index in range(frame_count):
         row = cells[index * len(FIELDS):(index + 1) * len(FIELDS)]
@@ -207,35 +221,56 @@ def parse_halmstad_tree(tops, frame_count, fps):
             first_time_reference = reference[4]
         if reference[4] != first_time_reference + index:
             raise BadRecord("nonsequential_row_timestamp_reference")
-        boxes = []
+        boxes, source_classes = [], []
         for name, cell in zip(FIELDS[1:], row[1:]):
             kind, dims, c = _matrix(cell)
+            if kind == 2:
+                # Verified in visible V_AIRPLANE_002 frame 263: one Position
+                # box plus a UUID, NOT a generic struct/size-based fallback.
+                if (dims != (1, 1) or len(c) != 7 or c[3].type_id != 5 or
+                        tuple(c[3].as_array()) != (10,) or c[4].type_id != 1 or
+                        c[4].payload != b"Position\0\0LabelUIDs\0"):
+                    raise BadRecord("unsupported_label_struct")
+                uid_kind, uid_dims, uid = _matrix(c[6])
+                if (uid_kind != 4 or uid_dims != (1, 36) or len(uid) != 4 or uid[3].type_id != 16 or
+                        not re.fullmatch(rb"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", uid[3].payload)):
+                    raise BadRecord("unsupported_label_uid")
+                kind, dims, c = _matrix(c[5])
+                if dims != (1, 4):
+                    raise BadRecord("unsupported_label_struct_position")
             if kind != 6:
                 raise BadRecord("nonnumeric_label_cell")
             if dims == (0, 0) and len(c) == 4 and c[3].type_id == 9 and not c[3].payload:
                 continue
             if len(dims) != 2 or dims[0] < 1 or dims[1] != 4 or len(c) != 4 or c[3].type_id != 9:
                 raise BadRecord("unsupported_label_cell_shape")
-            if name != "DRONE":
-                raise BadRecord("non_drone_object_in_drone_clip")
+            if name not in allowed_classes:
+                reason = "non_drone_object_in_drone_clip" if allowed_classes == ("DRONE",) else "disallowed_halmstad_object_class"
+                raise BadRecord(reason + ": " + name)
             values = c[3].as_array()
             n = dims[0]
             if len(values) != n * 4:
                 raise BadRecord("label_payload_size_mismatch")
             boxes.extend(tuple(float(values[j * n + i]) for j in range(4)) for i in range(n))
+            source_classes.extend([name] * n)
         # Empty/None is unlabeled, NEVER a negative.
         frames.append(tuple(boxes) if boxes else None)
+        frame_classes.append(tuple(source_classes))
+    if return_source_classes:
+        return frames, timestamps[0], frame_classes
     return frames, timestamps[0]
 
 
-def load_halmstad(path, frame_count, fps):
+def load_halmstad(path, frame_count, fps, allowed_classes=("DRONE",), *, return_source_classes=False):
+    allowed_classes = validate_halmstad_classes(allowed_classes)
     from scipy.io import loadmat
     from mcos_decoder import MatStream
 
     raw = loadmat(str(path))
     if "__function_workspace__" not in raw:
         raise BadRecord("not_mcos_groundtruth")
-    return parse_halmstad_tree(MatStream(raw["__function_workspace__"].tobytes(), skip_header=8).walk(), frame_count, fps)
+    return parse_halmstad_tree(MatStream(raw["__function_workspace__"].tobytes(), skip_header=8).walk(),
+                               frame_count, fps, allowed_classes, return_source_classes=return_source_classes)
 
 
 def audit_archive(path, extracted, keep):
@@ -320,15 +355,22 @@ def export_dut(job, output, disk):
                    coordinates="dut_published_xyxy_no_origin_shift_clip_to_image"), None
 
 
-def export_halmstad(plan, output, disk):
+def export_halmstad(plan, output, disk, allowed_classes=("DRONE",)):
     import cv2
 
+    allowed_classes = validate_halmstad_classes(allowed_classes)
     video, annotation, digest, count, fps, width, height = plan
     group, split = "halmstad/" + digest, stable_split(digest)
     rows, bad, created = [], [], []
     cap = None
+    match = VIDEO_NAME.fullmatch(video.name)
+    source_class = match[1] if match else None
     try:
-        frames, times = load_halmstad(annotation, count, fps)
+        if source_class not in allowed_classes:
+            raise BadRecord("excluded_or_unknown_clip_class_not_negative")
+        frames, times, frame_classes = load_halmstad(annotation, count, fps, allowed_classes, return_source_classes=True)
+        if len(frames) != count or len(times) != count or len(frame_classes) != count:
+            raise BadRecord("label_frame_metadata_count_mismatch")
         ann_sha = sha256(annotation)
         cap = cv2.VideoCapture(str(video))
         if not cap.isOpened():
@@ -337,14 +379,19 @@ def export_halmstad(plan, output, disk):
             ok, pixels = cap.read()
             if not ok or pixels is None or pixels.shape[:2] != (height, width):
                 raise BadRecord("sequential_decode_failed_at_frame_" + str(index + 1))
-            if raw_boxes is None:
+            if not raw_boxes:
                 bad.append(dict(dataset="halmstad", source=str(video), original_frame_number=index + 1,
+                                source_class=source_class,
                                 reason="unlabeled_frame_not_negative"))
                 continue
+            classes = frame_classes[index]
+            if len(classes) != len(raw_boxes) or any(name not in allowed_classes for name in classes):
+                raise BadRecord("invalid_box_source_classes")
             try:
                 converted = [matlab_xywh(b, width, height) for b in raw_boxes]
             except BadRecord as exc:
-                bad.append(dict(dataset="halmstad", source=str(video), original_frame_number=index + 1, reason=str(exc)))
+                bad.append(dict(dataset="halmstad", source=str(video), original_frame_number=index + 1,
+                                source_class=source_class, source_classes=sorted(set(classes)), reason=str(exc)))
                 continue
             boxes = [b for b, changed in converted]
             name = "halmstad_" + video.stem + "_" + digest[:16] + "_" + f"{index + 1:08d}"
@@ -360,6 +407,8 @@ def export_halmstad(plan, output, disk):
             rows.append(_record("halmstad", split, group, video, image, label, boxes,
                                 original_frame_number=index + 1, raw_video_sha256=digest,
                                 annotation=str(annotation.resolve()), annotation_sha256=ann_sha,
+                                source_class=source_class, source_classes=sorted(set(classes)),
+                                box_source_classes=classes,
                                 timestamp_ms=times[index], raw_boxes_matlab_xywh=raw_boxes,
                                 width=width, height=height, jpeg_quality=95,
                                 clipped_boxes=sum(changed for b, changed in converted),
@@ -372,6 +421,7 @@ def export_halmstad(plan, output, disk):
         for path in created:
             path.unlink(missing_ok=True)
         return [], [dict(dataset="halmstad", source=str(video), group=group,
+                         source_class=source_class,
                          reason="quarantined_whole_clip: " + str(exc))]
     finally:
         if cap is not None:
@@ -396,9 +446,11 @@ def audit_manifest(rows):
             "scope": "group_and_raw_video_hash; DUT official content duplicates reported separately, not resplit"}
 
 
-def prepare(raw_root, output, datasets=("dut", "halmstad"), workers=2, halmstad_decoder_target=None):
+def prepare(raw_root, output, datasets=("dut", "halmstad"), workers=2, halmstad_decoder_target=None,
+            halmstad_classes=("DRONE",)):
     if workers < 1 or workers > 8 or not datasets or not set(datasets) <= {"dut", "halmstad"}:
         raise ValueError("workers_must_be_1_to_8_and_datasets_dut_or_halmstad")
+    allowed_classes = validate_halmstad_classes(halmstad_classes)
     raw_root, output = check_paths(Path(raw_root), Path(output))
     if halmstad_decoder_target:
         sys.path.insert(0, str(Path(halmstad_decoder_target).resolve()))
@@ -420,7 +472,9 @@ def prepare(raw_root, output, datasets=("dut", "halmstad"), workers=2, halmstad_
                    licenses={"dut": {"repository_license": "Apache-2.0", "dataset_rights": "not independently cleared",
                                       "source": "https://github.com/wangdongdut/DUT-Anti-UAV"},
                              "halmstad": {"license": "CC0-1.0", "source": "https://github.com/DroneDetectionThesis/Drone-detection-dataset"}},
-                   policy={"use": "research_only_not_a_commercial_rights_clearance", "halmstad_classes": ["DRONE"],
+                   policy={"use": "research_only_not_a_commercial_rights_clearance", "halmstad_classes": list(allowed_classes),
+                           "halmstad_modality": "visible_only", "halmstad_positive_class_id": 0,
+                           "birds": "excluded_never_negative", "halmstad_timestamp_origin_ms": 0,
                            "negative_aircraft": False, "sampling": "none", "halmstad_validation": "sha256_content_hash_20_percent_v1",
                            "frame_number_base": 1, "jpeg_quality": 95, "dut_splits": "official_unchanged"})
 
@@ -479,8 +533,11 @@ def prepare(raw_root, output, datasets=("dut", "halmstad"), workers=2, halmstad_
                 raise BadRecord("halmstad_archive_member_count_mismatch")
             summary["archives"].append(archive)
             for video in videos:
-                if not video.name.startswith("V_DRONE_"):
-                    excluded.append(dict(source=str(video), reason="non_drone_clip_excluded_not_negative"))
+                source_class = VIDEO_NAME.fullmatch(video.name)[1]
+                if source_class not in allowed_classes:
+                    excluded.append(dict(source=str(video), source_class=source_class,
+                                         reason="non_drone_clip_excluded_not_negative" if allowed_classes == ("DRONE",)
+                                         else "unselected_class_excluded_not_negative"))
                     continue
                 digest = sha256(video)
                 if digest in seen:
@@ -512,7 +569,7 @@ def prepare(raw_root, output, datasets=("dut", "halmstad"), workers=2, halmstad_
                     rows.append(row)
                 if bad:
                     summary["bad_records"].append(bad)
-            for clip_rows, bad in pool.map(lambda plan: export_halmstad(plan, output, disk), plans):
+            for clip_rows, bad in pool.map(lambda plan: export_halmstad(plan, output, disk, allowed_classes), plans):
                 rows.extend(clip_rows)
                 summary["bad_records"].extend(bad)
         rows.sort(key=lambda row: (row["dataset"], row["split"], row["group"], row.get("original_frame_number", 0)))
@@ -546,6 +603,8 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workers", type=int, choices=range(1, 9), default=2)
     parser.add_argument("--halmstad-decoder-target", type=Path)
+    parser.add_argument("--halmstad-classes", nargs="+", choices=HALMSTAD_CLASSES, default=["DRONE"],
+                        help="Visible-light positive aircraft classes mapped to class 0; use AIRPLANE HELICOPTER for an incremental export.")
     parser.add_argument("--datasets", nargs="+", choices=("dut", "halmstad"), default=["dut", "halmstad"])
     args = parser.parse_args(argv)
     try:

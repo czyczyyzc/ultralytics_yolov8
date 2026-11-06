@@ -119,6 +119,26 @@ def positive_candidates(records):
     return candidates, excluded
 
 
+def reviewed_negative_records(path, training_hashes, snapshot_sha256):
+    summary = completed_manifest(path)
+    if summary.get("source_snapshot_sha256") != snapshot_sha256:
+        raise ValueError("Negative supplement uses a different approved snapshot")
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    identities, paths = set(), set()
+    for row in rows:
+        digest = row.get("raw_video_sha256", row.get("source_sha256"))
+        identity = digest, row.get("frame_index")
+        if (digest not in training_hashes or row.get("split") != "train" or row.get("boxes") != 0
+                or row.get("status") != "approved" or row.get("reviewed_status") != "absent"
+                or row.get("revision") is None or row.get("revision") != row.get("approved_revision")
+                or row.get("snapshot_sha256") != snapshot_sha256):
+            raise ValueError("Unreviewed, heldout, or positive frame in negative supplement")
+        if identity in identities or row["image"] in paths or Path(row["label"]).read_text().strip():
+            raise ValueError("Duplicate or nonempty negative label")
+        identities.add(identity); paths.add(row["image"])
+    return rows
+
+
 def bind_control(args):
     import yaml
     control = json.loads((args.baseline_run / "protocol.json").read_text())
@@ -128,6 +148,39 @@ def bind_control(args):
     if source.get("trusted_label_caches") != control["trusted_label_caches"]:
         raise ValueError("Baseline cache pins differ from the control run")
     return control
+
+
+def replacement_view(source, replacement):
+    """An asset-only view may change the catalog, never the reviewed backgrounds."""
+    views = []
+    for root in (Path(source), Path(replacement)):
+        summary = json.loads((root / "summary.json").read_text())
+        if summary.get("stage") != "complete" or summary.get("is_smoke_subset"):
+            raise ValueError("Replacement background cache is incomplete")
+        if sha256(root / "index.json") != summary["index_sha256"]:
+            raise ValueError("Replacement index changed")
+        index = json.loads((root / "index.json").read_text())
+        if sha256(index["catalog"]) != index["catalog_sha256"]:
+            raise ValueError("Replacement catalog changed")
+        catalog = json.loads(Path(index["catalog"]).read_text())
+        ids = [r["id"] for r in sorted(catalog["records"], key=lambda r: int(r["id"])) if r["id"] not in {"24", "25"}]
+        if ids != index["asset_ids"] or len(ids) != summary["asset_count"]:
+            raise ValueError("Replacement asset identities differ")
+        for row in catalog["records"]:
+            if row["id"] in {"24", "25"}:
+                continue
+            if sha256(Path(index["catalog"]).parent / row["cutout"]) != row["cutout_sha256"]:
+                raise ValueError("Replacement asset bytes changed")
+        views.append((root, index, summary))
+    (old_root, old, _), (new_root, new, new_summary) = views
+    if old["images"] != new["images"] or old["heldout_sha256"] != new["heldout_sha256"]:
+        raise ValueError("An asset-only view changed its reviewed image/background scope")
+    for pack in {r["pack"] for r in old["images"].values()}:
+        if (old_root / pack).resolve() != (new_root / pack).resolve():
+            raise ValueError("An asset-only view changed a background pack")
+    return dict(source_cache=str(old_root), cache=str(new_root), asset_count=new_summary["asset_count"],
+        catalog=new["catalog"], catalog_sha256=new["catalog_sha256"],
+        index_sha256=sha256(new_root / "index.json"), backgrounds_unchanged=True)
 
 
 def prepare(args):
@@ -148,6 +201,23 @@ def prepare(args):
     protected = set(val_text.splitlines())
     protected.update(Path(yaml.safe_load(HOLDOUT.read_text())["val"]).read_text().splitlines())
     records, public_sources = [], []
+    negative_manifest = getattr(args, "reviewed_negative_manifest", None)
+    negative_identity = sha256(negative_manifest) if negative_manifest else None
+    negative_rows = []
+    negative_cache = []
+    if negative_manifest:
+        audit = json.loads(args.approved_audit.read_text())
+        negative_rows = reviewed_negative_records(negative_manifest,
+            set(base_manifest["train_video_hashes"]), audit["snapshot_sha256"])
+        if set(row["image"] for row in negative_rows) & (set(base) | protected):
+            raise ValueError("New reviewed negatives overlap native data or holdouts")
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            for row, (_, shape) in zip(negative_rows, pool.map(inspect_image, [r["image"] for r in negative_rows])):
+                if tuple(shape) != (row["height"], row["width"]):
+                    raise ValueError("Reviewed negative image geometry changed")
+                negative_cache.append(dict(im_file=row["image"], shape=shape,
+                    cls=np.empty((0,1),dtype=np.float32), bboxes=np.empty((0,4),dtype=np.float32),
+                    segments=[], keypoints=None, normalized=True, bbox_format="xywh"))
     for manifest in args.public_manifest:
         completed_manifest(manifest)
         entries = [json.loads(line) for line in manifest.read_text().splitlines()]
@@ -176,14 +246,22 @@ def prepare(args):
                 bboxes=boxes[:, 1:], segments=[], keypoints=None, normalized=True, bbox_format="xywh"))
     if not accepted:
         raise ValueError("No safe public training positives remain")
-    config, exposure = sampling_extension(source, len(base), len(accepted))
+    extended = deepcopy(source)
+    if negative_rows:
+        old_pool = Path(source["label_sampling"]["negative_pool"]).read_text().splitlines()
+        if len(set(old_pool)) != len(old_pool) or len(old_pool) != source["label_sampling"]["negative_pool_count"]:
+            raise ValueError("Reviewed negative pool changed")
+        pool = args.data_output/"negative_pool.txt"
+        pool.write_text("\n".join(old_pool+[r["image"] for r in negative_rows])+"\n")
+        extended["label_sampling"].update(negative_pool=str(pool), negative_pool_count=len(old_pool)+len(negative_rows))
+    config, exposure = sampling_extension(extended, len(base)+len(negative_rows), len(accepted))
     if (exposure["native_positive"], exposure["native_negative"]) != (
             base_manifest["epoch_positive"], base_manifest["epoch_negative"]):
         raise ValueError("Native exposure counts differ from the frozen manifest")
     # Keep the exact repeated native prefix, not merely the same set of files.
     train = args.data_output / "train_public.txt"
     val = args.data_output / "val_monitor.txt"
-    train.write_text("\n".join(base + [row["image"] for row in accepted]) + "\n")
+    train.write_text("\n".join(base + [row["image"] for row in negative_rows] + [row["image"] for row in accepted]) + "\n")
     val.write_text(val_text)
     base_cache_path = Path(source["train"]).with_suffix(".cache")
     pinned = source["trusted_label_caches"][str(Path(source["train"]))]
@@ -192,7 +270,7 @@ def prepare(args):
     cache = np.load(base_cache_path, allow_pickle=True).item()
     if Counter(x["im_file"] for x in cache["labels"]) != Counter(base):
         raise ValueError("Native cache does not preserve the repeated image schedule")
-    cache["labels"] = sorted(cache["labels"] + labels, key=lambda row: row["im_file"])
+    cache["labels"] = sorted(cache["labels"] + negative_cache + labels, key=lambda row: row["im_file"])
     count = len(cache["labels"])
     cache.update(hash=hashlib.sha256((sha256(base_cache_path)+sha256(train)+json.dumps(public_sources)).encode()).hexdigest(),
         results=(count, 0, sum(not len(x["cls"]) for x in cache["labels"]), 0, count), msgs=[])
@@ -205,8 +283,14 @@ def prepare(args):
         raise ValueError("Native validation cache/list changed")
     if any(sha256(row["path"]) != row["sha256"] for row in public_sources):
         raise ValueError("A public manifest changed during preparation")
+    if negative_manifest and sha256(negative_manifest) != negative_identity:
+        raise ValueError("Reviewed negative manifest changed during preparation")
     shutil.copy2(val_source.with_suffix(".cache"), val.with_suffix(".cache"))
     config.update(path=str(args.data_output), train=str(train), val=str(val))
+    asset_view = None
+    if getattr(args, "background_cache", None):
+        asset_view = replacement_view(source["online_replacement"]["cache"], args.background_cache)
+        config["online_replacement"] = dict(config["online_replacement"], cache=str(args.background_cache))
     pins = {}
     for listing in (train, val):
         cached = np.load(listing.with_suffix(".cache"), allow_pickle=True).item()
@@ -217,16 +301,33 @@ def prepare(args):
     output.write_text(yaml.safe_dump(config, sort_keys=False))
     manifest = dict(base_manifest, schema="anti_uav.public_research.v1", source_dataset=str(args.baseline_yaml.parent),
         public_sources=public_sources, public_training_images=len(accepted), **exposure,
+        append_only_entries=count, candidate_entries=count, append_only_positive=exposure["epoch_positive"],
+        negative=sum(not len(row["cls"]) for row in cache["labels"]), final_entries=exposure["epoch_slots"],
+        final_negative_fraction=exposure["negative_fraction"],
+        additional_negatives_per_epoch=config["label_sampling"]["negatives_per_epoch"],
+        native_schedule_sha256=sha256(train), validation_schedule_sha256=sha256(val),
         research_only=True, commercial_clearance=False, native_prefix_preserved=True,
         source_train_sha256=sha256(source["train"]), source_validation_sha256=sha256(source["val"]),
         external_splits_not_used_for_selection=True,
+        augmentation_assets=asset_view,
+        additional_reviewed_negative_images=len(negative_rows),
+        reviewed_negative_manifest=str(negative_manifest) if negative_manifest else None,
+        reviewed_negative_manifest_sha256=negative_identity,
         deduplication="Exact decoded pixels against public heldouts, native validation/test, and public train; not perceptual/near-duplicate deduplication")
+    if getattr(args,"approved_audit",None):
+        approval=json.loads(args.approved_audit.read_text())
+        manifest["current_approved_scope"]=dict(snapshot=approval["snapshot_path"],sha256=approval["snapshot_sha256"],
+            captured_at=approval["captured_at"],approved_training_videos=approval["approved_training_videos"],
+            historical_sources=approval["legacy_training_videos"])
     dump(args.data_output / "manifest.json", manifest)
     dump(args.data_output / "public_accepted.json", accepted)
     dump(args.data_output / "public_excluded.json", excluded)
     dump(args.data_output / "summary.json", dict(stage="complete", **exposure,
         dataset_counts=dict(Counter(x["dataset"] for x in accepted)), excluded=len(excluded),
+        additional_reviewed_negative_images=len(negative_rows),
         research_only=True, config=str(output)))
+    if asset_view:
+        dump(args.data_output / "augmentation_assets.json", asset_view)
     return output
 
 
@@ -260,7 +361,11 @@ def compare(args, device):
     splits = {"Video00004": HOLDOUT, "Video00009": args.baseline_yaml}
     counts = {"Video00004": (2359, 448), "Video00009": (1421, 797)}
     result = {}
-    for arm, folder in (("native69", args.baseline_run), ("native69_public", args.run_dir)):
+    arms = [("native69", args.baseline_run)]
+    if getattr(args, "previous_public_run", None):
+        arms.append(("public_drone_328assets", args.previous_public_run))
+    arms.append(("all_aircraft_342assets" if getattr(args, "background_cache", None) else "native69_public", args.run_dir))
+    for arm, folder in arms:
         for stage, relative in (("p3_initial", "foundation/p3/weights/best.pt"),
                                 ("teacher", "teacher/p2p3/weights/best.pt"),
                                 ("student", "p3_student_distilled_best_fp32.pt")):
@@ -291,7 +396,8 @@ def compare(args, device):
             dump(output / "results.json", result)
     dump(output / "protocol.json", dict(research_only=True, conf=.03, iou=.5, nms_iou=.45,
         precision="FP32", input_hw=[544, 960], tracker=False,
-        pooled_contains_selection_validation=True, train_recipe_changes={},
+        pooled_contains_selection_validation=True, core_training_recipe_changes={},
+        intentional_changes=["public_training_data", "augmentation_asset_catalog"] if getattr(args,"background_cache",None) else ["public_training_data"],
         splits={k: dict(yaml=str(v), yaml_sha256=sha256(v),
                         list_sha256=sha256(yaml.safe_load(v.read_text())["val"])) for k, v in splits.items()}))
 
@@ -306,18 +412,39 @@ def main():
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--gpus", type=int, nargs="+", default=[6])
     parser.add_argument("--allow-shared-gpu", action="store_true")
+    parser.add_argument("--background-cache", type=Path,
+                        help="Audited asset-only view; original image/background scope must be unchanged")
+    parser.add_argument("--previous-public-run", type=Path,
+                        help="Completed prior public-data experiment for a three-arm comparison")
+    parser.add_argument("--approved-audit", type=Path,
+                        help="Completed current-approval/cache audit; pins the approved snapshot and reused labels")
+    parser.add_argument("--reviewed-negative-manifest",type=Path,
+                        help="Append missing reviewed-absent frames to the rotating pool, not fixed anchors")
     args = parser.parse_args()
-    for key in ("baseline_yaml", "baseline_run", "data_output", "run_dir"):
-        setattr(args, key, getattr(args, key).resolve())
+    for key,value in vars(args).items():
+        if isinstance(value,Path):setattr(args,key,value.resolve())
     args.public_manifest = [x.resolve() for x in args.public_manifest]
     if args.workers < 1:
         parser.error("workers must be positive")
+    if args.reviewed_negative_manifest and not args.approved_audit:
+        parser.error("Reviewed negative supplementation requires --approved-audit")
     args.run_dir.mkdir(parents=True, exist_ok=False)
     lock = (args.run_dir / "research.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     try:
         dump(args.run_dir / "research_status.json", dict(stage="preparing", research_only=True, pid=os.getpid()))
         control = bind_control(args)
+        if args.approved_audit:
+            approval = json.loads(args.approved_audit.read_text())
+            if approval.get("complete") is not True or approval.get("all_current_approved_training_sources_covered") is not True:
+                raise ValueError("Current approved data audit is incomplete")
+            import yaml
+            native_source = yaml.safe_load(args.baseline_yaml.read_text())
+            if (approval["source_train_sha256"] != sha256(native_source["train"]) or
+                    approval["source_cache_sha256"] != sha256(Path(native_source["train"]).with_suffix(".cache")) or
+                    approval["snapshot_sha256"] != sha256(approval["snapshot_path"])):
+                raise ValueError("Approved snapshot or audited native data changed")
+            dump(args.run_dir / "approved_audit.json", dict(path=str(args.approved_audit),sha256=sha256(args.approved_audit),audit=approval))
         data = prepare(args)
         from scripts.anti_uav.run_approved_data_only_refresh import choose_idle_gpu
         if sha256(control["foundation"]) != control["foundation_sha256"]:

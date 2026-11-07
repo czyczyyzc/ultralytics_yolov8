@@ -20,3 +20,17 @@ def test_photo_staging_preserves_bytes_and_surface_metadata(tmp_path):
     assert (output / 'inputs/beluga/01.png').read_bytes() == photo.read_bytes()
     with pytest.raises(FileExistsError):
         stage(plan, output)
+
+
+def test_reviewed_support_polygon_cannot_change_protected_aircraft():
+    import numpy as np
+    from scripts.anti_uav.import_fixedwing_assets import reviewed_alpha_cleanup
+    original = np.full((12, 16), 255, np.uint8)
+    polygon = [[0, 0], [5, 0], [0, 5]]
+    result = reviewed_alpha_cleanup(original, [], [[8, 8, 15, 12]], [polygon])
+    assert result[1, 1] == 0 and result[9, 9] == 255
+    assert (original == 255).all()
+    with pytest.raises(ValueError, match='protected'):
+        reviewed_alpha_cleanup(original, [], [[0, 0, 3, 3]], [polygon])
+    with pytest.raises(ValueError, match='polygon'):
+        reviewed_alpha_cleanup(original, [], [], [[[0, 0], [20, 0], [0, 5]]])

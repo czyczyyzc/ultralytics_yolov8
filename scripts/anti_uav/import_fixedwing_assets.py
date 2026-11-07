@@ -54,8 +54,8 @@ def source_provenance(path, source):
     return result
 
 
-def reviewed_alpha_cleanup(alpha, erase_boxes, protected_boxes):
-    """Apply explicit reviewed HUD exclusions, never reconstruct hidden RGB."""
+def reviewed_alpha_cleanup(alpha, erase_boxes, protected_boxes, erase_polygons=()):
+    """Apply reviewed non-aircraft exclusions without reconstructing hidden RGB."""
     result = alpha.copy()
     height, width = alpha.shape
     for box in [*erase_boxes, *protected_boxes]:
@@ -64,6 +64,14 @@ def reviewed_alpha_cleanup(alpha, erase_boxes, protected_boxes):
             raise ValueError("Invalid reviewed alpha rectangle")
     for x0, y0, x1, y1 in erase_boxes:
         result[y0:y1, x0:x1] = 0
+    if erase_polygons:
+        import cv2
+        for polygon in erase_polygons:
+            if (len(polygon) < 3 or any(len(point) != 2 for point in polygon)
+                    or any(not isinstance(x, int) for point in polygon for x in point)
+                    or any(not (0 <= x < width and 0 <= y < height) for x, y in polygon)):
+                raise ValueError("Invalid reviewed alpha polygon")
+            cv2.fillPoly(result, [np.asarray(polygon, dtype=np.int32)], 0)
     for x0, y0, x1, y1 in protected_boxes:
         if not np.array_equal(alpha[y0:y1, x0:x1], result[y0:y1, x0:x1]):
             raise ValueError("HUD exclusion overlaps protected aircraft alpha")
@@ -129,7 +137,8 @@ def segment(args):
         alpha[y0:y1,x0:x1] = np.asarray(small.resize(crop.size, Image.Resampling.BILINEAR))
         exclusions = rules.get("reviewed_alpha_erase_xyxy", {}).get(item["input_id"], [])
         protected = rules.get("protected_aircraft_xyxy", {}).get(item["input_id"], [])
-        alpha = reviewed_alpha_cleanup(alpha, exclusions, protected)
+        polygons = rules.get("reviewed_alpha_erase_polygons", {}).get(item["input_id"], [])
+        alpha = reviewed_alpha_cleanup(alpha, exclusions, protected, polygons)
         rgba, bounds, quality = pack_alpha(np.asarray(image),alpha)
         aid = str(offset+int(item["input_id"]))
         row = dict(item, id=aid, model=rules.get("model_names", {}).get(item["input_id"], item["model"]),
@@ -138,8 +147,9 @@ def segment(args):
             cutout=f"cutouts/{aid}.png", mask=f"masks/{aid}.png", preview=f"previews/{aid}.jpg",
             bounds=bounds, quality=quality, roi=roi, source_relative=item["relative"],
             source_sha256=item["sha256"], status="candidate_requires_visual_review")
-        if exclusions:
+        if exclusions or polygons:
             row["reviewed_alpha_erase_xyxy"] = exclusions
+            row["reviewed_alpha_erase_polygons"] = polygons
             row["protected_aircraft_xyxy"] = protected
         if provenance:
             origin = provenance[item["relative"]]

@@ -1,0 +1,27 @@
+{
+  "expected_inputs": 13,
+  "segment_input_ids": ["1", "2", "3", "4", "5", "6", "7", "13"],
+  "roi": {"13": [0.19, 0.02, 0.94, 0.98]},
+  "model_names": {
+    "1": "ATOMRC Beluga / supplied photos",
+    "2": "ATOMRC Beluga / supplied photos",
+    "3": "ATOMRC Beluga / supplied photos",
+    "4": "ATOMRC Beluga / supplied photos",
+    "5": "ATOMRC Beluga / supplied photos",
+    "6": "ATOMRC Beluga / supplied photos",
+    "7": "ATOMRC Beluga / supplied photos",
+    "13": "ATOMRC Beluga / supplied photos"
+  },
+  "reviewed_alpha_erase_polygons": {
+    "13": [
+      [[570, 220], [693, 220], [679, 282], [570, 282]],
+      [[475, 605], [650, 605], [646, 682], [475, 682]],
+      [[906, 640], [1050, 640], [1050, 715], [889, 715]],
+      [[850, 893], [890, 893], [890, 940], [839, 940]]
+    ]
+  },
+  "protected_aircraft_xyxy": {
+    "13": [[700, 310, 1170, 400], [735, 100, 825, 180], [710, 460, 850, 570], [700, 750, 800, 950]]
+  },
+  "policy": "Explicit stand exclusions annotated in original displayed pixel coordinates. Preserve protected aircraft alpha and all RGB. Do not fill occlusions, paint shadows or invent underside textures. The source already shows the belly because the aircraft was physically inverted; no flip or homography is applied. Upper/side photos remain their true visible surface."
+}

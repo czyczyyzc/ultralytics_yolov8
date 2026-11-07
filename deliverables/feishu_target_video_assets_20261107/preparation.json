@@ -1,0 +1,29 @@
+{
+  "complete": true,
+  "data": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_fixedquota_assets361_20261107/train_fixed_gray.yaml",
+  "data_sha256": "7671a91752b661faa146f774d994ed91e8ab87b7b9ae8e0b27fcf17375952dfc",
+  "source_run": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_gray_fixedquota_assets354_beluga8_20261107",
+  "source_yaml_sha256": "1ca788caaffe45ead64b7a2d25c25f0834571712d92d4ca6ffcd733b2b214cbd",
+  "catalog": "/mnt/andrew/anti_uav_model_refinement/data/fixedwing_asset_catalog_feishu7_20261107/catalog.json",
+  "catalog_sha256": "7d678f06bf625e950b4f76fd20d18572eb99a121975c13505c72cc3a3cba148c",
+  "cache": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_background_approved74_assets361_20261107",
+  "index_sha256": "cf40f23a4d8023c55c6661e88f7115b1ab7fb28e7ed14d1e71ee4600dc4eb641",
+  "asset_count": 361,
+  "added_asset_ids": [
+    "432",
+    "439",
+    "442",
+    "449",
+    "464",
+    "473",
+    "475"
+  ],
+  "backgrounds": 58466,
+  "backgrounds_unchanged": true,
+  "foundation": "/mnt/chenziye/codes/ultralytics_yolov8/yolov8n.pt",
+  "foundation_sha256": "f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36",
+  "training_videos": 74,
+  "input_color": "gray3",
+  "training_slots_and_sampling_unchanged": true,
+  "old_weights_not_used": true
+}

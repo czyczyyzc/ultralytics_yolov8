@@ -1,5 +1,7 @@
 # 靶机照片贴图补充
 
+状态更新（2026-11-07 17:33:16，Asia/Shanghai）：本文记录的 354 条贴图训练已按用户要求停止，日志、权重保留。新增四段实拍视频的素材经去吊线、逐张验收后，合并为 361 条贴图库，改由 `/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_gray_fixedquota_assets361_feishu7_20261107/` 从公开权重重训。以下 354 条轮次的启动信息仅作历史记录。新批次说明见 [去线靶机素材说明](/Users/czyczyyzc/Documents/codes/ultralytics_yolov8/deliverables/feishu_target_video_assets_20261107/README_ZH.md)。
+
 ## 可见表面与视角
 
 13 张原图全部冻结保存。最后四张照片虽然由相机从上方拍摄，但飞机本身已经翻过来，露出的是机腹；可以作为真实机腹素材，不需要做“俯拍变仰拍”的生成式处理。第 1 张产品图也是真实可见的机腹方向。

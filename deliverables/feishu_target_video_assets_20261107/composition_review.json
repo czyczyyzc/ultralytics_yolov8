@@ -1,0 +1,26 @@
+{
+  "accepted": true,
+  "catalog_sha256": "7d678f06bf625e950b4f76fd20d18572eb99a121975c13505c72cc3a3cba148c",
+  "composition_qa_sha256": "aaa44c3592e36894e2dddce750f472e4ca8dfcaeed6ffc755ed02bb30534b3da",
+  "reviewer": "assistant_visual_inspection",
+  "accepted_asset_ids": ["432", "439", "442", "449", "464", "473", "475"],
+  "automated_cases_passed": 21,
+  "visual_scope": [
+    "All seven individual cutout checker/dark previews inspected.",
+    "All seven medium composites inspected on composition_contact_sheet.jpg.",
+    "Full-size asset_475_large.jpg and asset_449_tiny.jpg inspected."
+  ],
+  "checks": [
+    "Original RGB is unchanged; only alpha is subtracted to remove support structures.",
+    "Every new asset composes at tiny, medium and large source-pixel scales with updated bbox.",
+    "Composition leaves source images and pixels outside the edit mask unchanged.",
+    "No obvious external suspension line or ceiling fixture remains in the accepted cutout previews.",
+    "No heldout Video00004/Video00009 source is used for these assets or backgrounds."
+  ],
+  "limitations": [
+    "Not a pixel-perfect guarantee at every support contact point or all possible backgrounds.",
+    "No detector accuracy claim before the restarted training and evaluation complete.",
+    "Rejected candidates 483, 486 and 495 remain outside the published catalog."
+  ],
+  "user_restart_authorization": "After whole-batch acceptance, stop the 74-video plus 354-entry run and restart from public weights with the merged library."
+}

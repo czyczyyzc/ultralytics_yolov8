@@ -1,0 +1,54 @@
+{
+  "policy": "fixed_domain_v1",
+  "batch_size": 64,
+  "batch_quotas": {
+    "gray_tiny": 19,
+    "gray_sub4": 3,
+    "gray_other": 16,
+    "antiuav": 7,
+    "public": 9,
+    "negative": 10
+  },
+  "epoch_slots": 357376,
+  "batches": 5584,
+  "native_positive_floor": 192399,
+  "epoch_group_slots": {
+    "gray_tiny": 106096,
+    "gray_sub4": 16752,
+    "gray_other": 89344,
+    "antiuav": 39088,
+    "public": 50256,
+    "negative": 55840
+  },
+  "public_pool": 111349,
+  "public_slots_per_epoch": 50256,
+  "public_full_coverage_epochs": 3,
+  "public_manifest_sha256": "0c1beeeb4dd4c24762bbe6cde05d616719072ba0023eb391b7441546fc3dfa87",
+  "native_positive_source_sha256": "b9c0042ffd580601c5744a1fea4cfbf23296155f1cb42e5542dbcbf61d262931",
+  "negative_fraction": 0.15625,
+  "max_extra_copies_per_native_index": 1,
+  "unchanged_dataset": true,
+  "all_native_positive_exposures_preserved": true,
+  "public_dataset_batch_quotas": {
+    "dut": 1,
+    "halmstad": 3,
+    "uavswarm": 1,
+    "purdue_uav": 3,
+    "aod4": 1
+  },
+  "public_dataset_pool": {
+    "aod4": 8659,
+    "dut": 5193,
+    "halmstad": 46481,
+    "purdue_uav": 44182,
+    "uavswarm": 6834
+  },
+  "public_dataset_epoch_slots": {
+    "dut": 5584,
+    "halmstad": 16752,
+    "uavswarm": 5584,
+    "purdue_uav": 16752,
+    "aod4": 5584
+  },
+  "max_public_copies_per_epoch": 2
+}

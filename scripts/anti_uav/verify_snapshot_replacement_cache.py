@@ -16,6 +16,8 @@ def verify_cache(cache_dir, data_dir, output):
     from scripts.anti_uav.build_gray_replacement_batch import load_assets
     from scripts.anti_uav.online_gray_replacement import compose_cached, decode_prepared
     from scripts.anti_uav.synthesize_gray_drone_replacements import SkipSample
+    from scripts.anti_uav.synthesize_gray_drone_replacements import preview_card
+    from PIL import Image
 
     output.mkdir(parents=True, exist_ok=False)
     summary = json.loads((cache_dir/"summary.json").read_text())
@@ -50,7 +52,7 @@ def verify_cache(cache_dir, data_dir, output):
         for asset_index in rng.permutation(len(assets))[:8]:
             asset, rgba = assets[int(asset_index)]
             try:
-                composed, bbox, _ = compose_cached(image, prepared, rgba)
+                composed, bbox, metrics = compose_cached(image, prepared, rgba)
             except SkipSample:
                 continue
             if not np.isfinite(bbox).all() or min(bbox[2:]) <= 0 or (bbox < 0).any() or (bbox > 1).any():
@@ -68,6 +70,11 @@ def verify_cache(cache_dir, data_dir, output):
                 asset_id=asset["id"], original_xywh_normalized=normalized_original.tolist(),
                 updated_xywh_normalized=bbox.tolist(), source_sha256=info["source_sha256"],
                 unmasked_pixels_unchanged=True, source_image_preserved=True))
+            new_box=[(bbox[0]-bbox[2]/2)*w,(bbox[1]-bbox[3]/2)*h,bbox[2]*w,bbox[3]*h]
+            card=preview_card(cv2.cvtColor(image,cv2.COLOR_BGR2GRAY),cv2.cvtColor(composed,cv2.COLOR_BGR2GRAY),
+                info["box"],dict(video=Path(path).parent.name,frame=info["frame"],asset_id=asset["id"],
+                    asset_model=asset["model"],metrics=metrics),Image.fromarray(rgba),new_box=new_box)
+            card.save(output/f'target_detail_{len(records):02d}.jpg',quality=95)
             break
     if len(records) < min(8, len(selected)) or not records:
         raise ValueError("Too few new frames passed online composition QA")

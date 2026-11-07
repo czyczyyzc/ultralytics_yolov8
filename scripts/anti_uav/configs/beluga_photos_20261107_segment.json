@@ -1,0 +1,16 @@
+{
+  "expected_inputs": 13,
+  "segment_input_ids": ["1", "2", "3", "4", "5", "6", "7", "13"],
+  "roi": {"13": [0.19, 0.02, 0.94, 0.98]},
+  "model_names": {
+    "1": "ATOMRC Beluga / supplied photos",
+    "2": "ATOMRC Beluga / supplied photos",
+    "3": "ATOMRC Beluga / supplied photos",
+    "4": "ATOMRC Beluga / supplied photos",
+    "5": "ATOMRC Beluga / supplied photos",
+    "6": "ATOMRC Beluga / supplied photos",
+    "7": "ATOMRC Beluga / supplied photos",
+    "13": "ATOMRC Beluga / supplied photos"
+  },
+  "policy": "Preserve original RGB. Estimate alpha with pinned segmentation model; visually reject floor, shadows and stands. Images 8-12 retained as inputs but not complete-airframe replacement candidates due possible clipping. Image 1 and 10-13 already show the underside, even though 10-13 were photographed with the aircraft physically inverted. Do not flip upper-surface photos and relabel them as underside."
+}

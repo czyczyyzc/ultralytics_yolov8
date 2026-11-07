@@ -1,0 +1,17 @@
+{
+  "photos": [
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-1fcbf596-1022-438f-9473-45f18c3f1302.png", "visible_surface": "underside", "note": "Product photo; landing gear extended"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-d01100ca-9856-4ae1-8f61-58763a3cc630.png", "visible_surface": "upper_oblique"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-0602ac3f-f8d3-4e83-91b2-4dc59ad76302.png", "visible_surface": "upper_oblique"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-ff79370b-9649-4b68-9761-ec4960bea86b.png", "visible_surface": "side", "note": "Landing gear extended; keep authentic silhouette"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-126d7098-4b2e-4a52-8083-36ef4ad6380e.png", "visible_surface": "upper_oblique"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-ba14d24c-eb7a-4bd9-9e54-78892310891b.jpg", "visible_surface": "upper", "note": "Floor photo; remove floor and cast shadow from alpha"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-6ba95438-3b93-489e-95bf-bafdf9a5d3e7.jpg", "visible_surface": "upper_oblique", "note": "Floor photo; remove floor and cast shadow from alpha"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-596fb1f0-3377-4a8d-a039-5c09a2307d6a.jpg", "visible_surface": "upper_oblique", "initial_review": "far wing near upper image border; check truncation"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-f20aecc0-0ab4-494d-9472-5a92e4205560.jpg", "visible_surface": "front_upper", "initial_review": "right wingtip at image border; check truncation"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-664b73e6-49dd-4f3d-bec0-172ffcff5cf7.jpg", "visible_surface": "underside", "initial_review": "aircraft inverted on stand; upper wingtip at image border"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-0f4fd166-46f1-4763-90e2-b272e53a9bf0.jpg", "visible_surface": "underside", "initial_review": "aircraft inverted on stand; tail tip at left image border"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-52e7b6a1-92f2-440e-a3a5-2ab0430dd952.jpg", "visible_surface": "underside", "initial_review": "aircraft inverted on stand; left wingtip outside image"},
+    {"source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-924ba3cc-0b40-44ea-ad7b-76136a29beeb.jpg", "visible_surface": "underside", "note": "Aircraft inverted on stand; complete visible belly, reject any retained stand"}
+  ]
+}

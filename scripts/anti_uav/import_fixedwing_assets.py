@@ -142,7 +142,8 @@ def segment(args):
             row["reviewed_alpha_erase_xyxy"] = exclusions
             row["protected_aircraft_xyxy"] = protected
         if provenance:
-            row["video_source"] = provenance[item["relative"]]
+            origin = provenance[item["relative"]]
+            row["video_source" if "source_frame_zero_based" in origin else "photo_source"] = origin
         shutil.copy2(path,args.output/row["raw"])
         full = Image.fromarray(rgba)
         full.save(args.output/row["rgba"])

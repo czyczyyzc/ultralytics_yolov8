@@ -1,0 +1,32 @@
+{
+  "models": {
+    "old69": {
+      "source": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved69_legacy52_dataonly_20261105/foundation/p3/weights/best.pt",
+      "snapshot": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_regression_audit_20261108/weights/old69.pt",
+      "sha256": "9eaaaba09470d9a3608cdbbfb6d1c5efdc2a8d5e12b3222f919fa284bc939a56"
+    },
+    "public69": {
+      "source": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved69_all_visible_aircraft_assets342_20261106/foundation/p3/weights/best.pt",
+      "snapshot": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_regression_audit_20261108/weights/public69.pt",
+      "sha256": "673791626b5342c85d42cea7b1691a27b0489a21d3d9cb794d3edca241ec82c9"
+    },
+    "current74": {
+      "source": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_gray_fixedquota_assets361_feishu7_20261107/foundation/p3/weights/best.pt",
+      "snapshot": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_regression_audit_20261108/weights/current74.pt",
+      "sha256": "d883f8f337c75a4bfddef713228c04ce10d8c5f99f2ca6221fad18fdd4322a2c"
+    }
+  },
+  "input_hw": [
+    544,
+    960
+  ],
+  "input_color": "gray3",
+  "precision": "FP32",
+  "conf": 0.03,
+  "ap_floor": 0.001,
+  "nms_iou": 0.45,
+  "match_iou": 0.5,
+  "max_det": 100,
+  "training_unmodified": true,
+  "validation_used_for_checkpoint_selection": true
+}

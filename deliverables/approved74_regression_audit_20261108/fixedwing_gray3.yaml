@@ -1,0 +1,41 @@
+path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106
+train: /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/train_public.txt
+val: /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/fixedwing_public_holdout.txt
+names:
+  0: drone
+label_sampling:
+  negative_pool: /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/negative_pool.txt
+  negative_pool_count: 107923
+  negatives_per_epoch: 39715
+  anchor_slots: 313798
+  target_negative_fraction: 0.15
+online_replacement:
+  cache: /mnt/andrew/anti_uav_model_refinement/data/real_gray_background_approved69_assets342_20261106
+  replacement_probability: 0.5
+  seed: 20260918
+trusted_label_caches:
+  /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/train_public.txt:
+    path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/train_public.cache
+    source_sha256: b8c1b6e321f5b3d811e16cb9a1d2d69354803180a64356fea24f433f5314161d
+    cache_sha256: 135a919e02de0ab0392849248e85532ce2fd9cf0f9a87c4a040847e1db59e7d8
+    dataset_hash: 06cb11d0eff5842d116d424887a121cecc1ca8822413a4bbe4dffa151e9fc099
+    entries: 421721
+  /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/val_monitor.txt:
+    path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/val_monitor.cache
+    source_sha256: 1257014083d92661a9e07944e2b2bd7c8c56e1cb341ea4a9890990f6d579b2fb
+    cache_sha256: 47df18ce7d80c29e60613349ba4c5aed3820de402c8deee7e664b6ff4fada9d3
+    dataset_hash: c56b0ab80d6c2ae3869eb6f02c21779414c0d1977c8921a815b792e37bfc5b5e
+    entries: 1485
+  ? /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/fixedwing_public_holdout.txt
+  : path: /mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/fixedwing_public_holdout.cache
+    source_sha256: d8e8469d09108484acc2c811d89da9404cbe99952ed31dcdf08408c85288e13b
+    cache_sha256: 28be4831471d4b14c8bb37dfe91303ecb9ed319e902d4a4fda4c5eec60532335
+    dataset_hash: d8e8469d09108484acc2c811d89da9404cbe99952ed31dcdf08408c85288e13b
+    entries: 3451
+tiny_sampling:
+  input_hw:
+  - 544
+  - 960
+  tiny_min_px: 4.0
+  tiny_max_px: 8.0
+input_color: gray3

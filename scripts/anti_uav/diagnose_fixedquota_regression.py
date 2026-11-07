@@ -66,7 +66,6 @@ def case_summary(rows):
 
 def draw_examples(output, models, comparison, limit=8):
     import cv2
-    import re
     from PIL import Image, ImageDraw
     lookup = [{row['image']: row for row in rows} for rows in models]
     examples = [x for x in comparison['changes'] if x['state'] == 'lost']

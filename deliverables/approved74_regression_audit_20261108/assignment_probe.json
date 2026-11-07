@@ -1,0 +1,152 @@
+{
+  "training_unmodified": true,
+  "probe_only": true,
+  "checkpoint": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_regression_audit_20261108/weights/current74.pt",
+  "batches": [
+    {
+      "epoch0_batch_index": 0,
+      "groups": {
+        "gray_other": {
+          "images": 16,
+          "gt": 16,
+          "assigned_gt": 15,
+          "positive_anchors": 115,
+          "assignment_score_sum": 95.8490155339241
+        },
+        "antiuav": {
+          "images": 7,
+          "gt": 7,
+          "assigned_gt": 7,
+          "positive_anchors": 70,
+          "assignment_score_sum": 51.73382902145386
+        },
+        "gray_tiny": {
+          "images": 19,
+          "gt": 19,
+          "assigned_gt": 9,
+          "positive_anchors": 9,
+          "assignment_score_sum": 7.271528840065002
+        },
+        "negative": {
+          "images": 10,
+          "gt": 0,
+          "assigned_gt": 0,
+          "positive_anchors": 0,
+          "assignment_score_sum": 0.0
+        },
+        "public": {
+          "images": 9,
+          "gt": 32,
+          "assigned_gt": 31,
+          "positive_anchors": 211,
+          "assignment_score_sum": 144.34541338682175
+        },
+        "gray_sub4": {
+          "images": 3,
+          "gt": 3,
+          "assigned_gt": 0,
+          "positive_anchors": 0,
+          "assignment_score_sum": 0.0
+        }
+      }
+    },
+    {
+      "epoch0_batch_index": 558,
+      "groups": {
+        "antiuav": {
+          "images": 7,
+          "gt": 7,
+          "assigned_gt": 7,
+          "positive_anchors": 70,
+          "assignment_score_sum": 55.329566955566406
+        },
+        "public": {
+          "images": 9,
+          "gt": 14,
+          "assigned_gt": 13,
+          "positive_anchors": 57,
+          "assignment_score_sum": 37.34615767002106
+        },
+        "gray_tiny": {
+          "images": 19,
+          "gt": 19,
+          "assigned_gt": 13,
+          "positive_anchors": 13,
+          "assignment_score_sum": 10.146944284439087
+        },
+        "gray_other": {
+          "images": 16,
+          "gt": 16,
+          "assigned_gt": 15,
+          "positive_anchors": 110,
+          "assignment_score_sum": 82.69951993227005
+        },
+        "negative": {
+          "images": 10,
+          "gt": 0,
+          "assigned_gt": 0,
+          "positive_anchors": 0,
+          "assignment_score_sum": 0.0
+        },
+        "gray_sub4": {
+          "images": 3,
+          "gt": 3,
+          "assigned_gt": 1,
+          "positive_anchors": 1,
+          "assignment_score_sum": 0.7525309920310974
+        }
+      }
+    },
+    {
+      "epoch0_batch_index": 2792,
+      "groups": {
+        "gray_tiny": {
+          "images": 19,
+          "gt": 19,
+          "assigned_gt": 8,
+          "positive_anchors": 10,
+          "assignment_score_sum": 7.719385206699371
+        },
+        "public": {
+          "images": 9,
+          "gt": 21,
+          "assigned_gt": 20,
+          "positive_anchors": 120,
+          "assignment_score_sum": 84.48712521791458
+        },
+        "negative": {
+          "images": 10,
+          "gt": 0,
+          "assigned_gt": 0,
+          "positive_anchors": 0,
+          "assignment_score_sum": 0.0
+        },
+        "antiuav": {
+          "images": 7,
+          "gt": 7,
+          "assigned_gt": 7,
+          "positive_anchors": 70,
+          "assignment_score_sum": 51.910240173339844
+        },
+        "gray_other": {
+          "images": 16,
+          "gt": 16,
+          "assigned_gt": 16,
+          "positive_anchors": 100,
+          "assignment_score_sum": 82.62534826993942
+        },
+        "gray_sub4": {
+          "images": 3,
+          "gt": 3,
+          "assigned_gt": 2,
+          "positive_anchors": 2,
+          "assignment_score_sum": 1.1368949115276337
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Native training images without online replacement, affine or brightness augmentation.",
+    "No backpropagation. Assignment score share is not measured gradient norm."
+  ]
+}

@@ -86,6 +86,24 @@ def prepare(old_run, new_run, output):
         dump(output/'partial.json',dict(sampler_audit=sampler.audit,epochs=epochs))
     if public_seen!=set(sampler.groups['public']):
         raise AssertionError('Public coverage incomplete across rotation cycle')
+    # Keep the declared negative budget consistent with the fixed-quota policy.
+    for color in ('source','gray3'):
+        name='quota_'+color;path=Path(configs[name]['path'])
+        data=yaml.safe_load(path.read_text())
+        data['label_sampling'].update(negatives_per_epoch=sampler.rotating_budget,
+            target_negative_fraction=sampler.audit['negative_fraction'])
+        path.write_text(yaml.safe_dump(data,sort_keys=False))
+        configs[name]['sha256']=sha256(path)
+    original_manifest=source_dir/'manifest.json'
+    scope=json.loads(original_manifest.read_text())
+    # A view shares the reviewed data scope, not the original sampling counts.
+    dump(output/'manifest.json',dict(schema='anti_uav.sampling_color_ablation.v1',
+        train_video_hashes=scope['train_video_hashes'],validation_sha256=scope['validation_sha256'],
+        test_sha256=scope['test_sha256'],source_manifest=str(original_manifest),
+        source_manifest_sha256=sha256(original_manifest),
+        current_approved_scope=scope.get('current_approved_scope'),configs=configs,
+        epoch_exposure_by_policy=dict(even_exposure_v1=dict(epoch_slots=source_summary['epoch_slots']),
+            fixed_domain_v1=sampler.audit),research_only=True,commercial_clearance=False))
     evaluation=yaml.safe_load((source_dir/'fixedwing_public_holdout.yaml').read_text())
     evaluation['input_color']='gray3'
     (output/'fixedwing_eval_gray3.yaml').write_text(yaml.safe_dump(evaluation,sort_keys=False))

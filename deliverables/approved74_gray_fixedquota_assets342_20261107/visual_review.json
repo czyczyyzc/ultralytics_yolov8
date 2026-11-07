@@ -1,0 +1,13 @@
+{
+  "accepted": true,
+  "reviewer": "assistant_visual_inspection",
+  "composition_acceptance_sha256": "d7e004f46c9b8551645779dda56871d378bf4cc825595f699ef5dfa2ada08928",
+  "scope": "Five original GT first/middle/last preview cards and five final successful replacement target-detail cards",
+  "notes": [
+    "Sampled original GT boxes align with visible aircraft, including truncated endpoint targets; this is not an exhaustive label audit.",
+    "Replacement previews cover all five added videos, with updated boxes and original long-edge scale preserved.",
+    "Low-contrast examples remain low contrast. One enlarged example shows a mild local background repair trace; these composites are not guaranteed artifact-free.",
+    "Accepted for the research augmentation run under existing safety gates and replacement probability 0.50. Original-only positives remain in training."
+  ],
+  "training_source_images_modified": false
+}

@@ -1,0 +1,1323 @@
+{
+  "complete": true,
+  "catalog": "/mnt/andrew/anti_uav_model_refinement/data/fixedwing_asset_catalog_target4_20261107/catalog.json",
+  "catalog_sha256": "b9b6a56e4693d7d88753ea5063d9839a98a5b2b984bd114aa4b10fb78c1c3291",
+  "asset_ids": [
+    "384",
+    "406",
+    "409",
+    "416"
+  ],
+  "rendered": 12,
+  "records": [
+    {
+      "asset_id": "384",
+      "scale_bin_source_pixels": "tiny",
+      "source_long_edge_px": 13.0,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000125.jpg",
+      "frame": 125,
+      "updated_xywh_normalized": [
+        0.6419270634651184,
+        0.4731481373310089,
+        0.006770832929760218,
+        0.011111111380159855
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          1226.0,
+          508.0,
+          13.0,
+          6.0
+        ],
+        "new_box_xywh": [
+          1226,
+          505,
+          13,
+          12
+        ],
+        "placement_center_xy": [
+          1232.5,
+          511.0
+        ],
+        "geometric_size_wh": [
+          13.0,
+          11.414634146341463
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 0.6679825186729431,
+        "source_contrast": 36.160841369628905,
+        "output_contrast": 35.96727294921875,
+        "contrast_gain": 0.8224339254229792,
+        "foreground_residual_p05_p95": [
+          -50.70134582519531,
+          -16.378941345214844
+        ],
+        "changed_pixels": 193,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 145,
+        "donor_offset": 20,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.23842158913612366,
+        "ring_mae": 0.8369062542915344,
+        "ring_p95_abs_error": 2.143215942382812,
+        "donor_to_reference_affine": [
+          [
+            0.995005190372467,
+            -0.09982217103242874,
+            -49.027366638183594
+          ],
+          [
+            0.09982217103242874,
+            0.995005190372467,
+            -189.08229064941406
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "masked_ECC_euclidean",
+        "ecc": 0.9315314725301154,
+        "residual_noise_mad": 0.9155625091552734,
+        "foreground_core_pixels": 68,
+        "repair_support_pixels": 308,
+        "repair_boundary_mean_abs_change": 0.19647938013076782,
+        "inner_outer_highpass_std_ratio": 1.4679955269308282,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -20,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 80,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "384",
+      "scale_bin_source_pixels": "medium",
+      "source_long_edge_px": 35.375999999999976,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000396.jpg",
+      "frame": 396,
+      "updated_xywh_normalized": [
+        0.5184895992279053,
+        0.5611110925674438,
+        0.01927083358168602,
+        0.029629629105329514
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          977.8660000000001,
+          600.886,
+          35.375999999999976,
+          10.23599999999999
+        ],
+        "new_box_xywh": [
+          977,
+          590,
+          37,
+          32
+        ],
+        "placement_center_xy": [
+          995.5540000000001,
+          606.0039999999999
+        ],
+        "geometric_size_wh": [
+          35.375999999999976,
+          31.061853658536563
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 1.6712348461151123,
+        "source_contrast": 16.432818603515617,
+        "output_contrast": 16.627783203125,
+        "contrast_gain": 0.42781160865232437,
+        "foreground_residual_p05_p95": [
+          -40.05900192260742,
+          -5.523754119873047
+        ],
+        "changed_pixels": 649,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 436,
+        "donor_offset": 40,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.5897318720817566,
+        "ring_mae": 1.580080509185791,
+        "ring_p95_abs_error": 3.9544189453125,
+        "donor_to_reference_affine": [
+          [
+            0.9965419769287109,
+            -0.08309196680784225,
+            -9.504912376403809
+          ],
+          [
+            0.08309196680784225,
+            0.9965419769287109,
+            -159.88417053222656
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "masked_ECC_euclidean",
+        "ecc": 0.9416137053083261,
+        "residual_noise_mad": 1.8770038146972656,
+        "foreground_core_pixels": 116,
+        "repair_support_pixels": 494,
+        "repair_boundary_mean_abs_change": 0.28325021266937256,
+        "inner_outer_highpass_std_ratio": 1.2032175314069091,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "384",
+      "scale_bin_source_pixels": "large",
+      "source_long_edge_px": 133.25300000000004,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_40videos_20260921/images/approved_gray/20260805_multirotor_overcast_unknown_tail_view_video00001_5552c87a_2111f70fde39/000000047.jpg",
+      "frame": 47,
+      "updated_xywh_normalized": [
+        0.3661458194255829,
+        0.22175925970077515,
+        0.06979166716337204,
+        0.10833333432674408
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          636.002,
+          176.023,
+          133.25300000000004,
+          127.16
+        ],
+        "new_box_xywh": [
+          636,
+          181,
+          134,
+          117
+        ],
+        "placement_center_xy": [
+          702.6285,
+          239.603
+        ],
+        "geometric_size_wh": [
+          133.25300000000004,
+          117.00263414634149
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 5.942140102386475,
+        "source_contrast": 122.78097839355469,
+        "output_contrast": 122.85650863647462,
+        "contrast_gain": 0.9938378668114409,
+        "foreground_residual_p05_p95": [
+          -125.4069839477539,
+          -60.89593353271488
+        ],
+        "changed_pixels": 19210,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 127,
+        "donor_offset": 80,
+        "donor_video_sha256": "2111f70fde39172ad55db8d0ddcec69f7e510cf3685739410f667c1cca860bd2",
+        "approved_coco_sha256": "3274dd7550712fb8402099381dbf9b3d747e4c88870646668edbad983a07e244",
+        "approved_manifest_sha256": "f8a78263d0c4d140ffd6cd6edf4b55630665e64ff5029ebf00b3bfc112871293",
+        "source_decode_mae": 0.39422452449798584,
+        "ring_mae": 1.136082410812378,
+        "ring_p95_abs_error": 2.999734878540039,
+        "donor_to_reference_affine": [
+          [
+            1.0007223604779094,
+            -0.002238206640707453,
+            2.2928423624736767
+          ],
+          [
+            0.002238206640707453,
+            1.0007223604779094,
+            -1.6861249836660825
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "LK_forward_backward_RANSAC",
+        "inliers": 260,
+        "inlier_fraction": 0.9811320754716981,
+        "median_error_px": 0.7505205164873502,
+        "residual_noise_mad": 1.2476464942932128,
+        "foreground_core_pixels": 14472,
+        "repair_support_pixels": 21352,
+        "repair_boundary_mean_abs_change": 0.2497614473104477,
+        "inner_outer_highpass_std_ratio": 0.9795009493864237,
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 40,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -40,
+            "reason": "insufficient_valid_background_ring"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "406",
+      "scale_bin_source_pixels": "tiny",
+      "source_long_edge_px": 13.0,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000125.jpg",
+      "frame": 125,
+      "updated_xywh_normalized": [
+        0.6419270634651184,
+        0.4731481373310089,
+        0.006770832929760218,
+        0.012962963432073593
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          1226.0,
+          508.0,
+          13.0,
+          6.0
+        ],
+        "new_box_xywh": [
+          1226,
+          504,
+          13,
+          14
+        ],
+        "placement_center_xy": [
+          1232.5,
+          511.0
+        ],
+        "geometric_size_wh": [
+          12.779661016949152,
+          13.0
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 0.6679825186729431,
+        "source_contrast": 36.160841369628905,
+        "output_contrast": 36.403802490234376,
+        "contrast_gain": 0.8025228788944171,
+        "foreground_residual_p05_p95": [
+          -50.70134582519531,
+          -16.378941345214844
+        ],
+        "changed_pixels": 200,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 145,
+        "donor_offset": 20,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.23842158913612366,
+        "ring_mae": 0.8369062542915344,
+        "ring_p95_abs_error": 2.143215942382812,
+        "donor_to_reference_affine": [
+          [
+            0.995005190372467,
+            -0.09982217103242874,
+            -49.027366638183594
+          ],
+          [
+            0.09982217103242874,
+            0.995005190372467,
+            -189.08229064941406
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "masked_ECC_euclidean",
+        "ecc": 0.9315314725301154,
+        "residual_noise_mad": 0.9155625091552734,
+        "foreground_core_pixels": 68,
+        "repair_support_pixels": 308,
+        "repair_boundary_mean_abs_change": 0.19647938013076782,
+        "inner_outer_highpass_std_ratio": 1.4679955269308282,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -20,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 80,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "406",
+      "scale_bin_source_pixels": "medium",
+      "source_long_edge_px": 35.375999999999976,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000396.jpg",
+      "frame": 396,
+      "updated_xywh_normalized": [
+        0.5184895992279053,
+        0.5611110925674438,
+        0.0182291679084301,
+        0.03333333134651184
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          977.8660000000001,
+          600.886,
+          35.375999999999976,
+          10.23599999999999
+        ],
+        "new_box_xywh": [
+          978,
+          588,
+          35,
+          36
+        ],
+        "placement_center_xy": [
+          995.5540000000001,
+          606.0039999999999
+        ],
+        "geometric_size_wh": [
+          34.776406779660995,
+          35.375999999999976
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 1.6712348461151123,
+        "source_contrast": 16.432818603515617,
+        "output_contrast": 16.480714416503908,
+        "contrast_gain": 0.4424989997774747,
+        "foreground_residual_p05_p95": [
+          -40.05900192260742,
+          -5.523754119873047
+        ],
+        "changed_pixels": 784,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 436,
+        "donor_offset": 40,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.5897318720817566,
+        "ring_mae": 1.580080509185791,
+        "ring_p95_abs_error": 3.9544189453125,
+        "donor_to_reference_affine": [
+          [
+            0.9965419769287109,
+            -0.08309196680784225,
+            -9.504912376403809
+          ],
+          [
+            0.08309196680784225,
+            0.9965419769287109,
+            -159.88417053222656
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "masked_ECC_euclidean",
+        "ecc": 0.9416137053083261,
+        "residual_noise_mad": 1.8770038146972656,
+        "foreground_core_pixels": 116,
+        "repair_support_pixels": 494,
+        "repair_boundary_mean_abs_change": 0.28325021266937256,
+        "inner_outer_highpass_std_ratio": 1.2032175314069091,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "406",
+      "scale_bin_source_pixels": "large",
+      "source_long_edge_px": 133.25300000000004,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_40videos_20260921/images/approved_gray/20260805_multirotor_overcast_unknown_tail_view_video00001_5552c87a_2111f70fde39/000000047.jpg",
+      "frame": 47,
+      "updated_xywh_normalized": [
+        0.3661458194255829,
+        0.2222222238779068,
+        0.0677083358168602,
+        0.12222222238779068
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          636.002,
+          176.023,
+          133.25300000000004,
+          127.16
+        ],
+        "new_box_xywh": [
+          638,
+          174,
+          130,
+          132
+        ],
+        "placement_center_xy": [
+          702.6285,
+          239.603
+        ],
+        "geometric_size_wh": [
+          130.99447457627124,
+          133.25300000000004
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 5.942140102386475,
+        "source_contrast": 122.78097839355469,
+        "output_contrast": 122.93412322998047,
+        "contrast_gain": 1.011604135853166,
+        "foreground_residual_p05_p95": [
+          -125.4069839477539,
+          -60.89593353271488
+        ],
+        "changed_pixels": 19288,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 127,
+        "donor_offset": 80,
+        "donor_video_sha256": "2111f70fde39172ad55db8d0ddcec69f7e510cf3685739410f667c1cca860bd2",
+        "approved_coco_sha256": "3274dd7550712fb8402099381dbf9b3d747e4c88870646668edbad983a07e244",
+        "approved_manifest_sha256": "f8a78263d0c4d140ffd6cd6edf4b55630665e64ff5029ebf00b3bfc112871293",
+        "source_decode_mae": 0.39422452449798584,
+        "ring_mae": 1.136082410812378,
+        "ring_p95_abs_error": 2.999734878540039,
+        "donor_to_reference_affine": [
+          [
+            1.0007223604779094,
+            -0.002238206640707453,
+            2.2928423624736767
+          ],
+          [
+            0.002238206640707453,
+            1.0007223604779094,
+            -1.6861249836660825
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "LK_forward_backward_RANSAC",
+        "inliers": 260,
+        "inlier_fraction": 0.9811320754716981,
+        "median_error_px": 0.7505205164873502,
+        "residual_noise_mad": 1.2476464942932128,
+        "foreground_core_pixels": 14472,
+        "repair_support_pixels": 21352,
+        "repair_boundary_mean_abs_change": 0.2497614473104477,
+        "inner_outer_highpass_std_ratio": 0.9795009493864237,
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 40,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -40,
+            "reason": "insufficient_valid_background_ring"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "409",
+      "scale_bin_source_pixels": "tiny",
+      "source_long_edge_px": 13.0,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000125.jpg",
+      "frame": 125,
+      "updated_xywh_normalized": [
+        0.6419270634651184,
+        0.4731481373310089,
+        0.006770832929760218,
+        0.011111111380159855
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          1226.0,
+          508.0,
+          13.0,
+          6.0
+        ],
+        "new_box_xywh": [
+          1226,
+          505,
+          13,
+          12
+        ],
+        "placement_center_xy": [
+          1232.5,
+          511.0
+        ],
+        "geometric_size_wh": [
+          13.0,
+          11.081967213114753
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 0.6679825186729431,
+        "source_contrast": 36.160841369628905,
+        "output_contrast": 36.03853759765625,
+        "contrast_gain": 0.8065705100947246,
+        "foreground_residual_p05_p95": [
+          -50.70134582519531,
+          -16.378941345214844
+        ],
+        "changed_pixels": 192,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 145,
+        "donor_offset": 20,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.23842158913612366,
+        "ring_mae": 0.8369062542915344,
+        "ring_p95_abs_error": 2.143215942382812,
+        "donor_to_reference_affine": [
+          [
+            0.995005190372467,
+            -0.09982217103242874,
+            -49.027366638183594
+          ],
+          [
+            0.09982217103242874,
+            0.995005190372467,
+            -189.08229064941406
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "masked_ECC_euclidean",
+        "ecc": 0.9315314725301154,
+        "residual_noise_mad": 0.9155625091552734,
+        "foreground_core_pixels": 68,
+        "repair_support_pixels": 308,
+        "repair_boundary_mean_abs_change": 0.19647938013076782,
+        "inner_outer_highpass_std_ratio": 1.4679955269308282,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -20,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 80,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "409",
+      "scale_bin_source_pixels": "medium",
+      "source_long_edge_px": 35.375999999999976,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000396.jpg",
+      "frame": 396,
+      "updated_xywh_normalized": [
+        0.5184895992279053,
+        0.5611110925674438,
+        0.0182291679084301,
+        0.029629629105329514
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          977.8660000000001,
+          600.886,
+          35.375999999999976,
+          10.23599999999999
+        ],
+        "new_box_xywh": [
+          978,
+          590,
+          35,
+          32
+        ],
+        "placement_center_xy": [
+          995.5540000000001,
+          606.0039999999999
+        ],
+        "geometric_size_wh": [
+          35.375999999999976,
+          30.15659016393441
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 1.6712348461151123,
+        "source_contrast": 16.432818603515617,
+        "output_contrast": 16.513739013671874,
+        "contrast_gain": 0.4441972514237823,
+        "foreground_residual_p05_p95": [
+          -40.05900192260742,
+          -5.523754119873047
+        ],
+        "changed_pixels": 753,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 436,
+        "donor_offset": 40,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.5897318720817566,
+        "ring_mae": 1.580080509185791,
+        "ring_p95_abs_error": 3.9544189453125,
+        "donor_to_reference_affine": [
+          [
+            0.9965419769287109,
+            -0.08309196680784225,
+            -9.504912376403809
+          ],
+          [
+            0.08309196680784225,
+            0.9965419769287109,
+            -159.88417053222656
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "masked_ECC_euclidean",
+        "ecc": 0.9416137053083261,
+        "residual_noise_mad": 1.8770038146972656,
+        "foreground_core_pixels": 116,
+        "repair_support_pixels": 494,
+        "repair_boundary_mean_abs_change": 0.28325021266937256,
+        "inner_outer_highpass_std_ratio": 1.2032175314069091,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "409",
+      "scale_bin_source_pixels": "large",
+      "source_long_edge_px": 133.25300000000004,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_40videos_20260921/images/approved_gray/20260805_multirotor_overcast_unknown_tail_view_video00001_5552c87a_2111f70fde39/000000047.jpg",
+      "frame": 47,
+      "updated_xywh_normalized": [
+        0.3658854067325592,
+        0.22175925970077515,
+        0.06927083432674408,
+        0.10648147761821747
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          636.002,
+          176.023,
+          133.25300000000004,
+          127.16
+        ],
+        "new_box_xywh": [
+          636,
+          182,
+          133,
+          115
+        ],
+        "placement_center_xy": [
+          702.6285,
+          239.603
+        ],
+        "geometric_size_wh": [
+          133.25300000000004,
+          113.59272131147546
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 5.942140102386475,
+        "source_contrast": 122.78097839355469,
+        "output_contrast": 122.8979721069336,
+        "contrast_gain": 1.010661961466207,
+        "foreground_residual_p05_p95": [
+          -125.4069839477539,
+          -60.89593353271488
+        ],
+        "changed_pixels": 19212,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 127,
+        "donor_offset": 80,
+        "donor_video_sha256": "2111f70fde39172ad55db8d0ddcec69f7e510cf3685739410f667c1cca860bd2",
+        "approved_coco_sha256": "3274dd7550712fb8402099381dbf9b3d747e4c88870646668edbad983a07e244",
+        "approved_manifest_sha256": "f8a78263d0c4d140ffd6cd6edf4b55630665e64ff5029ebf00b3bfc112871293",
+        "source_decode_mae": 0.39422452449798584,
+        "ring_mae": 1.136082410812378,
+        "ring_p95_abs_error": 2.999734878540039,
+        "donor_to_reference_affine": [
+          [
+            1.0007223604779094,
+            -0.002238206640707453,
+            2.2928423624736767
+          ],
+          [
+            0.002238206640707453,
+            1.0007223604779094,
+            -1.6861249836660825
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "LK_forward_backward_RANSAC",
+        "inliers": 260,
+        "inlier_fraction": 0.9811320754716981,
+        "median_error_px": 0.7505205164873502,
+        "residual_noise_mad": 1.2476464942932128,
+        "foreground_core_pixels": 14472,
+        "repair_support_pixels": 21352,
+        "repair_boundary_mean_abs_change": 0.2497614473104477,
+        "inner_outer_highpass_std_ratio": 0.9795009493864237,
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 40,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -40,
+            "reason": "insufficient_valid_background_ring"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "416",
+      "scale_bin_source_pixels": "tiny",
+      "source_long_edge_px": 13.0,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000125.jpg",
+      "frame": 125,
+      "updated_xywh_normalized": [
+        0.6419270634651184,
+        0.4731481373310089,
+        0.006770832929760218,
+        0.009259259328246117
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          1226.0,
+          508.0,
+          13.0,
+          6.0
+        ],
+        "new_box_xywh": [
+          1226,
+          506,
+          13,
+          10
+        ],
+        "placement_center_xy": [
+          1232.5,
+          511.0
+        ],
+        "geometric_size_wh": [
+          13.000000000000002,
+          8.72258064516129
+        ],
+        "long_edge_error_px": 1.7763568394002505e-15,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 0.6679825186729431,
+        "source_contrast": 36.160841369628905,
+        "output_contrast": 36.04640197753906,
+        "contrast_gain": 1.4073529602804447,
+        "foreground_residual_p05_p95": [
+          -50.70134582519531,
+          -16.378941345214844
+        ],
+        "changed_pixels": 184,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 145,
+        "donor_offset": 20,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.23842158913612366,
+        "ring_mae": 0.8369062542915344,
+        "ring_p95_abs_error": 2.143215942382812,
+        "donor_to_reference_affine": [
+          [
+            0.995005190372467,
+            -0.09982217103242874,
+            -49.027366638183594
+          ],
+          [
+            0.09982217103242874,
+            0.995005190372467,
+            -189.08229064941406
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "masked_ECC_euclidean",
+        "ecc": 0.9315314725301154,
+        "residual_noise_mad": 0.9155625091552734,
+        "foreground_core_pixels": 68,
+        "repair_support_pixels": 308,
+        "repair_boundary_mean_abs_change": 0.19647938013076782,
+        "inner_outer_highpass_std_ratio": 1.4679955269308282,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -10,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -20,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": 80,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "416",
+      "scale_bin_source_pixels": "medium",
+      "source_long_edge_px": 32.06399999999985,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_legacy52_dataonly_20261105/images/labeler_snapshot/capture_20261028_1550_mix_00002_d2eb710929a7_0abc868840f5/000000391.jpg",
+      "frame": 391,
+      "updated_xywh_normalized": [
+        0.5307291746139526,
+        0.5490740537643433,
+        0.01666666753590107,
+        0.020370369777083397
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          1002.46,
+          587.663,
+          32.06399999999985,
+          10.489000000000033
+        ],
+        "new_box_xywh": [
+          1003,
+          582,
+          32,
+          22
+        ],
+        "placement_center_xy": [
+          1018.492,
+          592.9075
+        ],
+        "geometric_size_wh": [
+          32.06399999999985,
+          21.513909677419253
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 1.6693729162216187,
+        "source_contrast": 15.222404479980469,
+        "output_contrast": 15.156929016113281,
+        "contrast_gain": 0.5741490982215878,
+        "foreground_residual_p05_p95": [
+          -47.4351806640625,
+          -5.014068603515625
+        ],
+        "changed_pixels": 403,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 411,
+        "donor_offset": 20,
+        "donor_video_sha256": "0abc868840f5b557dfe51095522d2baa87317903b6e26fedce08179f525b6d26",
+        "source_decode_mae": 0.6637234687805176,
+        "ring_mae": 1.6265894174575806,
+        "ring_p95_abs_error": 4.32716369628906,
+        "donor_to_reference_affine": [
+          [
+            0.9947190331776109,
+            -0.024941420887307938,
+            68.14489742467627
+          ],
+          [
+            0.024941420887307938,
+            0.9947190331776109,
+            -94.06086855893314
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "LK_forward_backward_RANSAC",
+        "inliers": 95,
+        "inlier_fraction": 0.9405940594059405,
+        "median_error_px": 0.4921922362289488,
+        "residual_noise_mad": 2.074816534423828,
+        "foreground_core_pixels": 78,
+        "repair_support_pixels": 368,
+        "repair_boundary_mean_abs_change": 0.22820810973644257,
+        "inner_outer_highpass_std_ratio": 0.9056863534196669,
+        "annotation_provenance": "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        "legacy_annotation_sha256": "frozen_labeler_snapshot",
+        "legacy_manifest_sha256": "not_claimed_approved",
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -10,
+            "reason": "donor_target_or_border_overlaps_repair"
+          },
+          {
+            "offset": -20,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -40,
+            "reason": "low_ECC_correlation"
+          },
+          {
+            "offset": -80,
+            "reason": "low_ECC_correlation"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    },
+    {
+      "asset_id": "416",
+      "scale_bin_source_pixels": "large",
+      "source_long_edge_px": 133.25300000000004,
+      "source_image": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_native_fullpool_40videos_20260921/images/approved_gray/20260805_multirotor_overcast_unknown_tail_view_video00001_5552c87a_2111f70fde39/000000047.jpg",
+      "frame": 47,
+      "updated_xywh_normalized": [
+        0.3661458194255829,
+        0.22175925970077515,
+        0.06979166716337204,
+        0.08425925672054291
+      ],
+      "metrics": {
+        "original_box_xywh": [
+          636.002,
+          176.023,
+          133.25300000000004,
+          127.16
+        ],
+        "new_box_xywh": [
+          636,
+          194,
+          134,
+          91
+        ],
+        "placement_center_xy": [
+          702.6285,
+          239.603
+        ],
+        "geometric_size_wh": [
+          133.25300000000004,
+          89.40846451612906
+        ],
+        "long_edge_error_px": 0.0,
+        "blur_sigma_px": 0.65,
+        "blur_method": "fixed_sigma_approximation_not_measured_PSF",
+        "ring_std": 5.942140102386475,
+        "source_contrast": 122.78097839355469,
+        "output_contrast": 122.92766723632813,
+        "contrast_gain": 1.2000475689607877,
+        "foreground_residual_p05_p95": [
+          -125.4069839477539,
+          -60.89593353271488
+        ],
+        "changed_pixels": 18906,
+        "outside_mask_changed_pixels": 0,
+        "label_policy": "bbox of blurred alpha > 0.15; may differ from geometric size",
+        "background_method": "registered_real_neighbor_plus_foreground_contour",
+        "donor_frame": 127,
+        "donor_offset": 80,
+        "donor_video_sha256": "2111f70fde39172ad55db8d0ddcec69f7e510cf3685739410f667c1cca860bd2",
+        "approved_coco_sha256": "3274dd7550712fb8402099381dbf9b3d747e4c88870646668edbad983a07e244",
+        "approved_manifest_sha256": "f8a78263d0c4d140ffd6cd6edf4b55630665e64ff5029ebf00b3bfc112871293",
+        "source_decode_mae": 0.39422452449798584,
+        "ring_mae": 1.136082410812378,
+        "ring_p95_abs_error": 2.999734878540039,
+        "donor_to_reference_affine": [
+          [
+            1.0007223604779094,
+            -0.002238206640707453,
+            2.2928423624736767
+          ],
+          [
+            0.002238206640707453,
+            1.0007223604779094,
+            -1.6861249836660825
+          ]
+        ],
+        "donor_exclusion_coverage": 1.0,
+        "registration": "LK_forward_backward_RANSAC",
+        "inliers": 260,
+        "inlier_fraction": 0.9811320754716981,
+        "median_error_px": 0.7505205164873502,
+        "residual_noise_mad": 1.2476464942932128,
+        "foreground_core_pixels": 14472,
+        "repair_support_pixels": 21352,
+        "repair_boundary_mean_abs_change": 0.2497614473104477,
+        "inner_outer_highpass_std_ratio": 0.9795009493864237,
+        "rejected_candidates": [
+          {
+            "offset": 10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -10,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -20,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": 40,
+            "reason": "insufficient_valid_background_ring"
+          },
+          {
+            "offset": -40,
+            "reason": "insufficient_valid_background_ring"
+          }
+        ],
+        "donor_candidates_checked": 8
+      },
+      "source_pixels_preserved": true,
+      "outside_edit_mask_unchanged": true
+    }
+  ],
+  "bins_source_pixels": {
+    "tiny": [
+      8,
+      16
+    ],
+    "medium": [
+      32,
+      64
+    ],
+    "large": [
+      96,
+      160
+    ]
+  },
+  "skipped_attempts": {
+    "contrast_gain_out_of_range": 67
+  },
+  "perfect_background_fusion_guaranteed": false,
+  "detector_accuracy_evaluated": false
+}

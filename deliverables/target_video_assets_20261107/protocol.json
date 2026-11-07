@@ -1,0 +1,114 @@
+{
+  "method": "standard YOLOv8n -> delivery-style P3 foundation -> frozen-P3 P2 Teacher -> FP32 P3 Student distillation",
+  "data": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_fixedquota_assets346_20261107/train_fixed_gray.yaml",
+  "foundation": "/mnt/chenziye/codes/ultralytics_yolov8/yolov8n.pt",
+  "foundation_sha256": "f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36",
+  "task_specific_initialization": false,
+  "input_hw": [
+    544,
+    960
+  ],
+  "training_videos": 74,
+  "batch": 64,
+  "nbs": 128,
+  "seed": 20261015,
+  "epochs": {
+    "foundation": 30,
+    "teacher": 12,
+    "student": 15,
+    "localization": 0
+  },
+  "augmentation": {
+    "online_replacement_probability": 0.5,
+    "online_scale_views": 0,
+    "mosaic": 0.0,
+    "mixup": 0.0,
+    "copy_paste": 0.0,
+    "degrees": 0.0,
+    "translate": 0.05,
+    "scale": 0.2,
+    "shear": 0.0,
+    "perspective": 0.0,
+    "flipud": 0.0,
+    "fliplr": 0.5,
+    "hsv_h": 0.0,
+    "hsv_s": 0.0,
+    "hsv_v": 0.3
+  },
+  "distillation": {
+    "student": {
+      "auxiliary": 0.25,
+      "p3_cls": 0.1,
+      "p3_dfl": 0.05,
+      "p2_cls": 0.25,
+      "p2_box": 0.1,
+      "feature": 0.1
+    },
+    "localization": {
+      "auxiliary": 0.25,
+      "p3_cls": 0.1,
+      "p3_dfl": 0.05,
+      "p2_cls": 0.3,
+      "p2_box": 0.15,
+      "feature": 0.1,
+      "localization_weight": 0.15,
+      "localization_range_px": [
+        4,
+        64
+      ]
+    }
+  },
+  "qat": false,
+  "input_color": "gray3",
+  "sampling_policy": {
+    "input_hw": [
+      544,
+      960
+    ],
+    "tiny_min_px": 4.0,
+    "tiny_max_px": 8.0,
+    "policy": "fixed_domain_v1",
+    "batch_quotas": {
+      "gray_tiny": 19,
+      "gray_sub4": 3,
+      "gray_other": 16,
+      "antiuav": 7,
+      "public": 9,
+      "negative": 10
+    },
+    "reference_epoch_slots": 357351,
+    "public_manifest": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/public_accepted.json",
+    "public_manifest_sha256": "0c1beeeb4dd4c24762bbe6cde05d616719072ba0023eb391b7441546fc3dfa87",
+    "native_positive_source_list": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_gray_fixedquota_assets342_20261107/audit/native_source_scope.txt",
+    "native_positive_source_sha256": "b9c0042ffd580601c5744a1fea4cfbf23296155f1cb42e5542dbcbf61d262931",
+    "max_extra_copies_per_native_index": 1,
+    "public_dataset_quotas": {
+      "dut": 1,
+      "halmstad": 3,
+      "uavswarm": 1,
+      "purdue_uav": 3,
+      "aod4": 1
+    },
+    "max_public_copies_per_epoch": 2
+  },
+  "execution_scope": "full_curriculum",
+  "checkpoint_selection": "Video00009: 0.5 F2@0.03 + 0.3 AP50 + 0.2 AP50-95",
+  "trusted_label_caches": {
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_all_visible_fixedquota_20261107/train_hardneg.txt": {
+      "path": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_all_visible_fixedquota_20261107/train_hardneg.cache",
+      "source_sha256": "19b8b286f09e12044910c3ecfc18329cb0fa79c2048ed51f1a404b93c858c02b",
+      "cache_sha256": "29c5fbb969a53ad2ce8a8d58a4bc8934b68b7a818ed6173608ac70ec49318c62",
+      "dataset_hash": "0fcbc02c6b4549d9b6227d2afef49aac2a66c23f7d353f5c3c540ab4b64ab177",
+      "entries": 427535
+    },
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_all_visible_fixedquota_20261107/val_monitor.txt": {
+      "path": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_all_visible_fixedquota_20261107/val_monitor.cache",
+      "source_sha256": "1257014083d92661a9e07944e2b2bd7c8c56e1cb341ea4a9890990f6d579b2fb",
+      "cache_sha256": "47df18ce7d80c29e60613349ba4c5aed3820de402c8deee7e664b6ff4fada9d3",
+      "dataset_hash": "c56b0ab80d6c2ae3869eb6f02c21779414c0d1977c8921a815b792e37bfc5b5e",
+      "entries": 1485
+    }
+  },
+  "final_graph": "standard YOLOv8n P3-P5; all P2/projection modules removed",
+  "git_commit": "3be9c64f834c46715c9e317e230bf455c65a037d"
+}

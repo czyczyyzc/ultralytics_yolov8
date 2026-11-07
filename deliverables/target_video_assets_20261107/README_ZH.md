@@ -46,6 +46,10 @@ BiRefNet 沿用固定版本 `e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4`，只预�
 
 训练启动前检查四张新增贴图在小/中/大三种原图目标尺度的 12 次实际合成，更新 bbox 且不改变编辑 mask 外像素；这不是检测精度或无融合痕迹的保证。全部检查通过并保存与新 catalog SHA 匹配的可视验收后，才允许启动。
 
+本轮 12 次检查已完成并查看全部预览；新增透明图没有独立的蓝色 HUD 残留，合成图未见明显矩形补块，但仍不能保证所有在线组合无痕。已于 2026-11-07 13:31:46 (Asia/Shanghai) 在 GPU 6 启动，总编排 PID 311149、训练 PID 311257；P3 initial 第 1/30 轮已执行到 42/5,584 batch，loss 有限且暂无报错。实际采样器仍为固定配额、每轮 357,376 槽位，111,349 张公共正样本三个 epoch 轮换覆盖。相关 28 项测试通过，五个相关脚本通过语法编译检查。
+
+本地本目录提供 `target_video_assets_new4_20261107.tar.gz`（只含 4 张新增 PNG 和来源/审核清单，不是全库）、`refined/cutouts/`、`composition_QA/new_asset_contact_sheet.jpg`、12 张 `composition_QA/asset_*_tiny|medium|large.jpg` 和 `composition_review.json`。服务器相同新增包在数据根目录；新训练目录的 `audit/composition_QA.json` 与 `audit/composition_review.json` 固定绑定合并 catalog SHA。`protocol.json`、`launch.json` 和 `preparation.json` 已下载到本地，供核查具体配置。
+
 这批靶机外观之后属于训练已见外观，后续现场测试可以考察适配效果，但不能称为未见机型泛化测试。原素材使用授权仍需由提供方确认。
 
 ## 复现代码

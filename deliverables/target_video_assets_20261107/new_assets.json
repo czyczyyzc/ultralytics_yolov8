@@ -1,0 +1,312 @@
+{
+  "records": [
+    {
+      "input_id": "12",
+      "model": "Colleague jet-like RC target / oblique underside",
+      "relative": "video1_pass2/frame_000348.png",
+      "sha256": "bb21d693fc49ece91ec4ecb0910360041d7dbb23e9aff70b833d4b50323f6962",
+      "size": [
+        600,
+        410
+      ],
+      "native_transparency": false,
+      "id": "384",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/384.png",
+      "rgba": "rgba/384.png",
+      "cutout": "cutouts/384.png",
+      "mask": "masks/384.png",
+      "preview": "previews/384.jpg",
+      "bounds": [
+        200,
+        83,
+        405,
+        263
+      ],
+      "quality": {
+        "foreground_fraction": 0.054878048780487805,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0.3,
+        0.15,
+        0.72,
+        0.68
+      ],
+      "source_relative": "video1_pass2/frame_000348.png",
+      "source_sha256": "bb21d693fc49ece91ec4ecb0910360041d7dbb23e9aff70b833d4b50323f6962",
+      "status": "visually_screened_compositing_candidate",
+      "video_source": {
+        "relative": "video1_pass2/frame_000348.png",
+        "source_video": "/Users/czyczyyzc/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_qpf9vzxmw2e422_bc96/msg/attach/d4eaf46512f09256e0d0548b90102e21/2026-11/Rec/a875ade0a61b2eb6/V/1.mp4",
+        "source_video_sha256": "c80593e93533f58f9501b4f9ead621390a286d8c892742113fecfcf823333a60",
+        "source_frame_zero_based": 348,
+        "source_time_seconds": 11.6,
+        "source_fps": 30.0,
+        "source_frame_wh": [
+          1280,
+          720
+        ],
+        "roi_xyxy": [
+          500,
+          180,
+          1100,
+          590
+        ],
+        "sha256": "bb21d693fc49ece91ec4ecb0910360041d7dbb23e9aff70b833d4b50323f6962",
+        "laplacian_variance": 56.767413863176685,
+        "source_kind": "display_recording_candidate",
+        "original_decoded_pixels_preserved": true,
+        "requires_review_for_hud_occlusion": true,
+        "input_id": "12"
+      },
+      "raw_sha256": "bb21d693fc49ece91ec4ecb0910360041d7dbb23e9aff70b833d4b50323f6962",
+      "rgba_sha256": "2d063bf024f164357f395d45b25c08af0648cb721eff5a5c738072fe02c02d50",
+      "cutout_sha256": "cf552e308f96a421b332b81b7fc3d564de4dfc773f5a608e740f56c88e069a9f",
+      "mask_sha256": "8c0fe85b6c95c52d2e56e0a9d7b597b48a2594e7069645ae07d85f19f9544dc5",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/target_video_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete oblique underside silhouette from 1.mp4 frame 348; reticle is separate from the aircraft. Original markings retained.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "34",
+      "model": "Colleague jet-like RC target / moderate bank",
+      "relative": "video2_pass2/frame_000504.png",
+      "sha256": "0b3bcee580b368aab894273e3be1b507b0d4af13f0e837a56bb25d47c20a681b",
+      "size": [
+        330,
+        210
+      ],
+      "native_transparency": false,
+      "id": "406",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/406.png",
+      "rgba": "rgba/406.png",
+      "cutout": "cutouts/406.png",
+      "mask": "masks/406.png",
+      "preview": "previews/406.jpg",
+      "bounds": [
+        124,
+        31,
+        182,
+        90
+      ],
+      "quality": {
+        "foreground_fraction": 0.021832611832611832,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0.32,
+        0.1,
+        0.67,
+        0.49
+      ],
+      "source_relative": "video2_pass2/frame_000504.png",
+      "source_sha256": "0b3bcee580b368aab894273e3be1b507b0d4af13f0e837a56bb25d47c20a681b",
+      "status": "visually_screened_compositing_candidate",
+      "video_source": {
+        "relative": "video2_pass2/frame_000504.png",
+        "source_video": "/Users/czyczyyzc/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_qpf9vzxmw2e422_bc96/msg/attach/d4eaf46512f09256e0d0548b90102e21/2026-11/Rec/a875ade0a61b2eb6/V/2.mp4",
+        "source_video_sha256": "6181acda1a2e9d60e74daa93e1276309d78cca5c5bdfa008e7ea23336613a625",
+        "source_frame_zero_based": 504,
+        "source_time_seconds": 16.8,
+        "source_fps": 30.0,
+        "source_frame_wh": [
+          1280,
+          720
+        ],
+        "roi_xyxy": [
+          500,
+          180,
+          830,
+          390
+        ],
+        "sha256": "0b3bcee580b368aab894273e3be1b507b0d4af13f0e837a56bb25d47c20a681b",
+        "laplacian_variance": 61.38251299555022,
+        "source_kind": "display_recording_candidate",
+        "original_decoded_pixels_preserved": true,
+        "requires_review_for_hud_occlusion": true,
+        "input_id": "34"
+      },
+      "raw_sha256": "0b3bcee580b368aab894273e3be1b507b0d4af13f0e837a56bb25d47c20a681b",
+      "rgba_sha256": "05d74a4f52c6a0df64832f6629ebe2a5bf36f128ad37159fe42a56b3adda371b",
+      "cutout_sha256": "dab8a8c19e21f9037f24c5442056b0b62c5fc2349b06abde67d06a3d2507a4b8",
+      "mask_sha256": "420a3b46e490cbca08e7ddb7ce8ca3698895b8f0ab635d7333baaa5147a5c395",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/target_video_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Moderate bank from 2.mp4 frame 504. Main crosshair is below the aircraft; source is low resolution with a mild bright edge halo.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "37",
+      "model": "Colleague jet-like RC target / broader wing silhouette",
+      "relative": "video2_pass2/frame_000510.png",
+      "sha256": "37522b7796470769ffda9ef6f252ca0172ea26f74ed62d222ba1adc74269845f",
+      "size": [
+        330,
+        210
+      ],
+      "native_transparency": false,
+      "id": "409",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/409.png",
+      "rgba": "rgba/409.png",
+      "cutout": "cutouts/409.png",
+      "mask": "masks/409.png",
+      "preview": "previews/409.jpg",
+      "bounds": [
+        123,
+        34,
+        184,
+        86
+      ],
+      "quality": {
+        "foreground_fraction": 0.02406926406926407,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0.32,
+        0.1,
+        0.72,
+        0.49
+      ],
+      "source_relative": "video2_pass2/frame_000510.png",
+      "source_sha256": "37522b7796470769ffda9ef6f252ca0172ea26f74ed62d222ba1adc74269845f",
+      "status": "visually_screened_compositing_candidate",
+      "video_source": {
+        "relative": "video2_pass2/frame_000510.png",
+        "source_video": "/Users/czyczyyzc/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_qpf9vzxmw2e422_bc96/msg/attach/d4eaf46512f09256e0d0548b90102e21/2026-11/Rec/a875ade0a61b2eb6/V/2.mp4",
+        "source_video_sha256": "6181acda1a2e9d60e74daa93e1276309d78cca5c5bdfa008e7ea23336613a625",
+        "source_frame_zero_based": 510,
+        "source_time_seconds": 17.0,
+        "source_fps": 30.0,
+        "source_frame_wh": [
+          1280,
+          720
+        ],
+        "roi_xyxy": [
+          500,
+          180,
+          830,
+          390
+        ],
+        "sha256": "37522b7796470769ffda9ef6f252ca0172ea26f74ed62d222ba1adc74269845f",
+        "laplacian_variance": 52.07999978677727,
+        "source_kind": "display_recording_candidate",
+        "original_decoded_pixels_preserved": true,
+        "requires_review_for_hud_occlusion": true,
+        "input_id": "37"
+      },
+      "raw_sha256": "37522b7796470769ffda9ef6f252ca0172ea26f74ed62d222ba1adc74269845f",
+      "rgba_sha256": "f09a47ae9ac62730f824c52c8a438c757fd39e74d4794765f300e4289342cd79",
+      "cutout_sha256": "8a2403b7c98f527263d9f7190772bb2e5a961f0e43126977c979050559ba5b2d",
+      "mask_sha256": "2c9549387b98b89258f1eccfc60b680264af1512b642722d0750a63ebf0632eb",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/target_video_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Broader wing silhouette from 2.mp4 frame 510. A nearby view, not a different model or a verified pose annotation; mild source edge halo remains.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "44",
+      "model": "Colleague jet-like RC target / lateral pass",
+      "relative": "video2_pass3/frame_000838.png",
+      "sha256": "6adc0a58a07f22b433214c46c00a6f5e21735f5c8a1eb8acbfcfa2e5d32fa221",
+      "size": [
+        720,
+        450
+      ],
+      "native_transparency": false,
+      "id": "416",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/416.png",
+      "rgba": "rgba/416.png",
+      "cutout": "cutouts/416.png",
+      "mask": "masks/416.png",
+      "preview": "previews/416.jpg",
+      "bounds": [
+        243,
+        220,
+        398,
+        324
+      ],
+      "quality": {
+        "foreground_fraction": 0.016114197530864197,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0.25,
+        0.25,
+        0.64,
+        0.72
+      ],
+      "source_relative": "video2_pass3/frame_000838.png",
+      "source_sha256": "6adc0a58a07f22b433214c46c00a6f5e21735f5c8a1eb8acbfcfa2e5d32fa221",
+      "status": "visually_screened_compositing_candidate",
+      "reviewed_alpha_erase_xyxy": [
+        [
+          353,
+          139,
+          395,
+          220
+        ]
+      ],
+      "protected_aircraft_xyxy": [
+        [
+          240,
+          220,
+          405,
+          328
+        ]
+      ],
+      "video_source": {
+        "relative": "video2_pass3/frame_000838.png",
+        "source_video": "/Users/czyczyyzc/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_qpf9vzxmw2e422_bc96/msg/attach/d4eaf46512f09256e0d0548b90102e21/2026-11/Rec/a875ade0a61b2eb6/V/2.mp4",
+        "source_video_sha256": "6181acda1a2e9d60e74daa93e1276309d78cca5c5bdfa008e7ea23336613a625",
+        "source_frame_zero_based": 838,
+        "source_time_seconds": 27.933333333333334,
+        "source_fps": 30.0,
+        "source_frame_wh": [
+          1280,
+          720
+        ],
+        "roi_xyxy": [
+          400,
+          200,
+          1120,
+          650
+        ],
+        "sha256": "6adc0a58a07f22b433214c46c00a6f5e21735f5c8a1eb8acbfcfa2e5d32fa221",
+        "laplacian_variance": 65.94371871169601,
+        "source_kind": "display_recording_candidate",
+        "original_decoded_pixels_preserved": true,
+        "requires_review_for_hud_occlusion": true,
+        "input_id": "44"
+      },
+      "raw_sha256": "6adc0a58a07f22b433214c46c00a6f5e21735f5c8a1eb8acbfcfa2e5d32fa221",
+      "rgba_sha256": "bb6e8c38443e9bf3ffa6639b581aec262fa8e4ed4cf98dd5b4a00bee008cfe93",
+      "cutout_sha256": "3c5bf672099cbf93938a3e6cb41f10b89501003da5fabe232e7f262366c2cc15",
+      "mask_sha256": "dcd22cf1f3d58e0d9456f023396e799864a4b58d1c75a5ca5fa40932c06c7dd4",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/target_video_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Lateral pass from 2.mp4 frame 838. Detached blue HUD brackets above the aircraft were removed only from alpha; protected aircraft alpha and original RGB were unchanged.",
+      "commercial_rights_review_pending": true
+    }
+  ]
+}

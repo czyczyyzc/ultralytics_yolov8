@@ -1,0 +1,16 @@
+{
+  "accepted": true,
+  "reviewer": "assistant_visual_inspection",
+  "catalog_sha256": "b9b6a56e4693d7d88753ea5063d9839a98a5b2b984bd114aa4b10fb78c1c3291",
+  "composition_qa_sha256": "332c6062dc6de94dbb53a4460d4e8f2465a38cf21b8d8394f5fcee61ef0de190",
+  "new_asset_ids": ["384", "406", "409", "416"],
+  "visual_checks": "Final four cutout cards; all four medium composites on contact sheet; four individual large composites and four individual tiny composites",
+  "notes": [
+    "Original imagery is retained; no aircraft RGB regeneration or reconstruction.",
+    "No obvious rectangular background patch or detached HUD seen in the reviewed final composites. This is a sampled check, not a perfect-fusion guarantee.",
+    "Assets 406/409 have low-resolution, mildly haloed source edges; large synthesized views are soft. No high-resolution detail is invented.",
+    "Accepted for the existing research augmentation policy with probability 0.50 and uniform catalog selection; do not increase new-target weight or change the fixed batch quotas."
+  ],
+  "machine_checks": {"composition_cases": 12, "scales_per_new_asset": 3, "source_images_preserved": true, "updated_boxes_valid": true},
+  "not_a_detector_accuracy_result": true
+}

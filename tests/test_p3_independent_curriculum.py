@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import yaml
 
-from scripts.anti_uav.run_p3_independent_curriculum_training import audit_label_caches, stage_yaml
+from scripts.anti_uav.run_p3_independent_curriculum_training import audit_label_caches, stage_yaml, common_train
 from ultralytics.data.dataset import DATASET_CACHE_VERSION, load_audited_dataset_cache
 
 
@@ -20,19 +20,41 @@ def test_stage_yaml_rebalances_appended_scale_slots(tmp_path):
         "online_scale": {"donor_manifest": str(donors), "views_per_donor": 5},
     }
 
-    native_path = stage_yaml(source, tmp_path / "native.yaml", 10, scale_views=0)
+    native_path = stage_yaml(source, tmp_path / "native.yaml", 10, replacement_probability=.5)
     native = yaml.safe_load(native_path.read_text())
     assert "online_scale" not in native
     assert native["label_sampling"]["anchor_slots"] == 65
     assert native["online_replacement"]["epoch_offset"] == 13
 
     balanced_path = stage_yaml(
-        source, tmp_path / "balanced.yaml", 20, scale_views=2, keep_replacement=False
+        source, tmp_path / "balanced.yaml", 20, replacement_probability=.25
     )
     balanced = yaml.safe_load(balanced_path.read_text())
-    assert balanced["online_scale"]["views_per_donor"] == 2
-    assert balanced["label_sampling"]["anchor_slots"] == 79
-    assert "online_replacement" not in balanced
+    assert "online_scale" not in balanced
+    assert balanced["label_sampling"]["anchor_slots"] == 65
+    assert balanced["online_replacement"]["replacement_probability"] == .25
+    assert balanced["online_replacement"]["epoch_offset"] == 23
+
+
+@pytest.mark.parametrize("color,expected", [("gray3", (0.,0.,.3)), ("source", (.015,.4,.3))])
+def test_training_color_mode_has_explicit_photometric_parameters(tmp_path, color, expected):
+    from types import SimpleNamespace
+    path=tmp_path/'data.yaml';path.write_text(yaml.safe_dump(dict(input_color=color)))
+    args=SimpleNamespace(batch=64,device='cpu',workers=16)
+    config=common_train(path,args,30)
+    assert (config['hsv_h'],config['hsv_s'],config['hsv_v'])==expected
+    assert config['imgsz']==[544,960]
+
+
+def test_gray_mode_and_fixed_sampler_are_preserved_across_stages(tmp_path):
+    source=dict(input_color='gray3',tiny_sampling=dict(policy='fixed_domain_v1'),
+        online_replacement=dict(cache='unchanged',replacement_probability=.5))
+    for stage,offset in [('p3',0),('teacher',30),('student',42)]:
+        path=stage_yaml(source,tmp_path/(stage+'.yaml'),offset,.5)
+        config=yaml.safe_load(path.read_text())
+        assert config['input_color']=='gray3'
+        assert config['tiny_sampling']['policy']=='fixed_domain_v1'
+        assert config['online_replacement']['epoch_offset']==offset
 
 
 def test_audited_cache_avoids_per_member_metadata_scan(tmp_path):

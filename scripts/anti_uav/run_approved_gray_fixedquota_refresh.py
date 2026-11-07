@@ -174,10 +174,12 @@ def main():
     p.add_argument('--allow-shared-gpu',action='store_true')
     p.add_argument('--prepare-only',action='store_true')
     p.add_argument('--train-prepared',action='store_true')
+    p.add_argument('--resume-preparation',action='store_true',
+                   help='Reuse completed frozen extraction/backgrounds, retry only QA/configuration')
     a=p.parse_args()
     for key,value in vars(a).items():
         if isinstance(value,Path):setattr(a,key,value.resolve())
-    a.run_dir.mkdir(parents=True,exist_ok=a.train_prepared)
+    a.run_dir.mkdir(parents=True,exist_ok=a.train_prepared or a.resume_preparation)
     lock=(a.run_dir/'refresh.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     (a.run_dir/'logs').mkdir(exist_ok=True);(a.run_dir/'audit').mkdir(exist_ok=True)
     def status(stage,**more):
@@ -198,21 +200,30 @@ def main():
         if not a.train_prepared:
             status('freezing_approved_scope')
             items=select_requested(snapshot_tasks(a.database,a.video_root,blocked),a.approved_sha256,source)
-            dump(requested,dict(captured_at=datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(),videos=items,
-                source_manifest_sha256=sha256(source_dir/'manifest.json'),source_database=str(a.database)))
-            command('extract_approved',[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_labeler_training_expansion.py',
-                '--source',source_dir,'--source-yaml',source_yaml.name,'--baseline-protocol',a.source_run/'protocol.json',
-                '--database',a.database,'--video-root',a.video_root,'--output',a.data_output,'--workers','5','--task-snapshot',requested])
+            if a.resume_preparation:
+                from scripts.anti_uav.run_approved_data_only_refresh import verify_frozen_scope
+                frozen=json.loads(requested.read_text())
+                verify_frozen_scope(frozen['videos'],items)
+                if frozen['source_manifest_sha256']!=sha256(source_dir/'manifest.json'):raise ValueError('Source changed since frozen extraction')
+                if (a.run_dir/'preparation.json').exists():raise ValueError('Completed preparation must use --train-prepared')
+            else:
+                dump(requested,dict(captured_at=datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(),videos=items,
+                    source_manifest_sha256=sha256(source_dir/'manifest.json'),source_database=str(a.database)))
+                command('extract_approved',[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_labeler_training_expansion.py',
+                    '--source',source_dir,'--source-yaml',source_yaml.name,'--baseline-protocol',a.source_run/'protocol.json',
+                    '--database',a.database,'--video-root',a.video_root,'--output',a.data_output,'--workers','5','--task-snapshot',requested])
             data_manifest=json.loads((a.data_output/'manifest.json').read_text())
             if set(data_manifest['train_video_hashes'])!=set(source['train_video_hashes'])|set(a.approved_sha256):raise ValueError('Appended video scope differs from request')
-            command('prepare_backgrounds',[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_snapshot_replacement_cache.py',
-                '--data-dir',a.data_output,'--previous-cache',a.previous_cache,'--output',a.cache_output,
-                '--workers','16','--chunk-size','128','--donors-from-frozen-frames'])
+            if not a.resume_preparation:
+                command('prepare_backgrounds',[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_snapshot_replacement_cache.py',
+                    '--data-dir',a.data_output,'--previous-cache',a.previous_cache,'--output',a.cache_output,
+                    '--workers','16','--chunk-size','128','--donors-from-frozen-frames'])
             summary=json.loads((a.cache_output/'summary.json').read_text())
             if summary['stage']!='complete' or summary['asset_count']!=342:raise ValueError('New cache or assets incomplete')
             from scripts.anti_uav.verify_snapshot_replacement_cache import verify_cache
             if summary['new_ready_backgrounds']:
-                qa=verify_cache(a.cache_output,a.data_output,a.run_dir/'replacement_QA')
+                qa_path=a.run_dir/('replacement_QA_retry' if a.resume_preparation else 'replacement_QA')
+                qa=verify_cache(a.cache_output,a.data_output,qa_path)
             else:
                 qa=dict(stage='no_safe_replacements',rendered=0,originals_retained=True)
             dump(a.run_dir/'audit/composition_acceptance.json',qa)

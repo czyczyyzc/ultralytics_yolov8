@@ -36,10 +36,13 @@ def verify_cache(cache_dir, data_dir, output):
     selected = []
     for digest, rows in sorted(groups.items()):
         rows.sort(key=lambda x: x[1]["frame"])
-        selected.append(rows[len(rows)//2])
-    records, previews = [], []
+        for index in dict.fromkeys((len(rows)//2,len(rows)//4,3*len(rows)//4,0,len(rows)-1)):
+            selected.append(rows[index])
+    records, previews, represented = [], [], set()
     rng = np.random.default_rng(20261030)
     for path, info in selected:
+        if info['video_sha256'] in represented:
+            continue
         if sha256(path) != info["source_sha256"]:
             raise ValueError("Frozen cache source bytes changed")
         with sqlite3.connect(f"file:{(cache_dir/info['pack']).resolve()}?mode=ro", uri=True) as db:
@@ -49,7 +52,7 @@ def verify_cache(cache_dir, data_dir, output):
             raise ValueError("Background payload changed")
         prepared = decode_prepared(payload)
         image = cv2.imread(path)
-        for asset_index in rng.permutation(len(assets))[:8]:
+        for asset_index in dict.fromkeys([*rng.permutation(len(assets))[:32],0]):
             asset, rgba = assets[int(asset_index)]
             try:
                 composed, bbox, metrics = compose_cached(image, prepared, rgba)
@@ -70,13 +73,14 @@ def verify_cache(cache_dir, data_dir, output):
                 asset_id=asset["id"], original_xywh_normalized=normalized_original.tolist(),
                 updated_xywh_normalized=bbox.tolist(), source_sha256=info["source_sha256"],
                 unmasked_pixels_unchanged=True, source_image_preserved=True))
+            represented.add(info['video_sha256'])
             new_box=[(bbox[0]-bbox[2]/2)*w,(bbox[1]-bbox[3]/2)*h,bbox[2]*w,bbox[3]*h]
             card=preview_card(cv2.cvtColor(image,cv2.COLOR_BGR2GRAY),cv2.cvtColor(composed,cv2.COLOR_BGR2GRAY),
                 info["box"],dict(video=Path(path).parent.name,frame=info["frame"],asset_id=asset["id"],
                     asset_model=asset["model"],metrics=metrics),Image.fromarray(rgba),new_box=new_box)
             card.save(output/f'target_detail_{len(records):02d}.jpg',quality=95)
             break
-    if len(records) < min(8, len(selected)) or not records:
+    if len(records) < min(8, len(groups)) or not records:
         raise ValueError("Too few new frames passed online composition QA")
     for page in range((len(previews)+3)//4):
         canvas = np.full((660, 1920, 3), 24, np.uint8)

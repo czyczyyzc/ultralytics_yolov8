@@ -90,3 +90,30 @@ def test_quota_and_replay_limits_fail_closed(tmp_path):
     config['reference_epoch_slots']=10000
     with pytest.raises(ValueError,match='bounded replay'):
         FixedDomainQuotaSampler(data,label_config,config,16)
+
+
+def test_each_public_dataset_keeps_fixed_quota_and_cycles_short_sources(tmp_path):
+    data,label_config,config=fixture(tmp_path)
+    path=__import__('pathlib').Path(config['public_manifest'])
+    records=json.loads(path.read_text())
+    for i,row in enumerate(records):row['dataset']='short' if i<5 else 'long'
+    path.write_text(json.dumps(records));config['public_manifest_sha256']=hashlib.sha256(path.read_bytes()).hexdigest()
+    config['public_dataset_quotas']=dict(short=1,long=2)
+    sampler=FixedDomainQuotaSampler(data,label_config,config,16,41)
+    seen=set()
+    for epoch in range(sampler.audit['public_full_coverage_epochs']):
+        sampler.set_epoch(epoch);order=list(sampler)
+        for start in range(0,len(order),16):
+            actual=Counter(sampler.public_dataset_by_index[i] for i in order[start:start+16] if sampler.group_by_index[i]=='public')
+            assert actual==dict(short=1,long=2)
+        copies=Counter(i for i in order if sampler.group_by_index[i]=='public')
+        assert max(copies.values())==2
+        seen.update(copies)
+    assert seen==set(sampler.groups['public'])
+
+
+def test_public_subquota_requires_all_sources(tmp_path):
+    data,label_config,config=fixture(tmp_path)
+    config['public_dataset_quotas']=dict(wrong=3)
+    with pytest.raises(ValueError,match='every dataset'):
+        FixedDomainQuotaSampler(data,label_config,config,16)

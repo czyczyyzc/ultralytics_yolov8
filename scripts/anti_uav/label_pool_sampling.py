@@ -230,6 +230,7 @@ class FixedDomainQuotaSampler(TinyAwareSampler):
         native_scope = set(native_list.read_text().splitlines())
         self.groups = {key: [] for key in self.GROUPS}
         self.group_by_index = []
+        self.public_dataset_by_index = {}
         public_seen = set()
         for index, row in enumerate(dataset.labels):
             path = row["im_file"]
@@ -242,6 +243,7 @@ class FixedDomainQuotaSampler(TinyAwareSampler):
                     raise ValueError("Public positive duplicated or overlaps native scope")
                 public_seen.add(path)
                 key = "public"
+                self.public_dataset_by_index[index] = public[path]["dataset"]
                 self.video_keys[index] = public[path]["dataset"] + ":" + public[path]["group"]
             elif path not in native_scope:
                 raise ValueError("Positive absent from frozen native/public source scopes")
@@ -275,7 +277,25 @@ class FixedDomainQuotaSampler(TinyAwareSampler):
         if not 0 < self.rotating_budget <= len(self.native.negative_order):
             raise ValueError("Negative quota exceeds reviewed rotating capacity")
         self.public_budget = self.batches*quotas["public"]
-        if self.public_budget > len(self.groups["public"]):
+        self.public_dataset_quotas = config.get("public_dataset_quotas")
+        self.public_orders = {}
+        if self.public_dataset_quotas:
+            actual_datasets = set(self.public_dataset_by_index.values())
+            if (set(self.public_dataset_quotas) != actual_datasets
+                    or any(type(v) is not int or v <= 0 for v in self.public_dataset_quotas.values())
+                    or sum(self.public_dataset_quotas.values()) != quotas["public"]):
+                raise ValueError("Public dataset quotas must cover every dataset and sum to the public batch quota")
+            max_public_copies = int(config.get("max_public_copies_per_epoch", 2))
+            if max_public_copies not in (1, 2, 3):
+                raise ValueError("Public replay limit must be 1, 2 or 3")
+            for number, dataset_name in enumerate(sorted(actual_datasets)):
+                indices = [i for i in self.groups["public"] if self.public_dataset_by_index[i] == dataset_name]
+                budget = self.batches*self.public_dataset_quotas[dataset_name]
+                if budget > len(indices)*max_public_copies:
+                    raise ValueError("Public dataset quota exceeds its bounded replay limit")
+                rng = np.random.default_rng(np.random.SeedSequence([self.seed, number, 947]))
+                self.public_orders[dataset_name] = np.asarray(balanced_video_order(indices, self.video_keys, rng))
+        elif self.public_budget > len(self.groups["public"]):
             raise ValueError("Public quota must not repeat positives inside an epoch")
         rng = np.random.default_rng(np.random.SeedSequence([self.seed, 919]))
         self.public_order = np.asarray(balanced_video_order(self.groups["public"], self.video_keys, rng))
@@ -290,6 +310,13 @@ class FixedDomainQuotaSampler(TinyAwareSampler):
             negative_fraction=quotas["negative"]/self.batch_size,
             max_extra_copies_per_native_index=max_extra,
             unchanged_dataset=True, all_native_positive_exposures_preserved=True)
+        if self.public_dataset_quotas:
+            self.audit.update(public_dataset_batch_quotas=self.public_dataset_quotas,
+                public_dataset_pool={k:len(v) for k,v in self.public_orders.items()},
+                public_dataset_epoch_slots={k:self.batches*v for k,v in self.public_dataset_quotas.items()},
+                public_full_coverage_epochs=max(math.ceil(len(v)/(self.batches*self.public_dataset_quotas[k]))
+                                                for k,v in self.public_orders.items()),
+                max_public_copies_per_epoch=max_public_copies)
 
     def __len__(self):
         return self.batches*self.batch_size
@@ -302,10 +329,21 @@ class FixedDomainQuotaSampler(TinyAwareSampler):
             rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, number, 929]))
             selected = np.concatenate([rng.permutation(values) for _ in range(math.ceil(count/len(values)))])[:count]
             pools[key] = balanced_video_order(selected.tolist(), self.video_keys, rng)
-        offsets = (self.epoch*self.public_budget+np.arange(self.public_budget)) % len(self.public_order)
-        selected = self.public_order[offsets].tolist()
         rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, 937]))
-        pools["public"] = balanced_video_order(selected, self.video_keys, rng)
+        if self.public_dataset_quotas:
+            per_dataset = {}
+            for name, order in self.public_orders.items():
+                budget = self.batches*self.public_dataset_quotas[name]
+                offsets = (self.epoch*budget+np.arange(budget)) % len(order)
+                per_dataset[name] = balanced_video_order(order[offsets].tolist(), self.video_keys, rng)
+            pools["public"] = []
+            for batch in range(self.batches):
+                for name, quota in self.public_dataset_quotas.items():
+                    pools["public"].extend(per_dataset[name][batch*quota:(batch+1)*quota])
+        else:
+            offsets = (self.epoch*self.public_budget+np.arange(self.public_budget)) % len(self.public_order)
+            selected = self.public_order[offsets].tolist()
+            pools["public"] = balanced_video_order(selected, self.video_keys, rng)
         offsets = (self.epoch*self.rotating_budget+np.arange(self.rotating_budget)) % len(self.native.negative_order)
         selected = self.fixed_negative+self.native.negative_order[offsets].tolist()
         pools["negative"] = balanced_video_order(selected, self.video_keys, rng)

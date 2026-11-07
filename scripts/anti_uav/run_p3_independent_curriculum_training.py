@@ -133,6 +133,7 @@ def stage_yaml(
 
 
 def common_train(data: Path, args, epochs: int, patience: int = 0) -> dict:
+    gray_input = yaml.safe_load(data.read_text()).get("input_color", "source") == "gray3"
     return dict(
         data=str(data), imgsz=[544, 960], epochs=epochs, patience=patience,
         batch=args.batch, device=args.device, workers=args.workers, save=True, save_period=-1,
@@ -141,7 +142,8 @@ def common_train(data: Path, args, epochs: int, patience: int = 0) -> dict:
         deterministic=True, seed=SEED, nbs=128, rect=False, cache=False, val=True,
         plots=True, single_cls=True, mosaic=0., mixup=0., copy_paste=0., degrees=0.,
         translate=.05, scale=.2, shear=0., perspective=0., flipud=0., fliplr=.5,
-        hsv_h=.015, hsv_s=.4, hsv_v=.3, close_mosaic=0, verbose=True, exist_ok=False,
+        hsv_h=0. if gray_input else .015, hsv_s=0. if gray_input else .4,
+        hsv_v=.3, close_mosaic=0, verbose=True, exist_ok=False,
     )
 
 
@@ -277,7 +279,9 @@ def main() -> None:
             online_scale_views=0,
             mosaic=0.0, mixup=0.0, copy_paste=0.0, degrees=0.0,
             translate=0.05, scale=0.2, shear=0.0, perspective=0.0,
-            flipud=0.0, fliplr=0.5, hsv_h=0.015, hsv_s=0.4, hsv_v=0.3,
+            flipud=0.0, fliplr=0.5,
+            hsv_h=0.0 if source.get("input_color") == "gray3" else 0.015,
+            hsv_s=0.0 if source.get("input_color") == "gray3" else 0.4, hsv_v=0.3,
         ),
         distillation=dict(
             student=dict(auxiliary=0.25, p3_cls=0.10, p3_dfl=0.05,

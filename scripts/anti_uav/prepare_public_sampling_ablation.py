@@ -37,7 +37,9 @@ def prepare(old_run, new_run, output):
     fixed=dict(source['tiny_sampling'],policy='fixed_domain_v1',batch_quotas=quotas,
         reference_epoch_slots=source_summary['epoch_slots'],public_manifest=str(public),
         public_manifest_sha256=sha256(public),native_positive_source_list=old['train'],
-        native_positive_source_sha256=sha256(old['train']),max_extra_copies_per_native_index=1)
+        native_positive_source_sha256=sha256(old['train']),max_extra_copies_per_native_index=1,
+        public_dataset_quotas=dict(dut=1,halmstad=3,uavswarm=1,purdue_uav=3,aod4=1),
+        max_public_copies_per_epoch=2)
     configs={}
     for sampler in ('order','quota'):
         for color in ('source','gray3'):
@@ -60,6 +62,10 @@ def prepare(old_run, new_run, output):
         for start in range(0,len(order),64):
             if Counter(groups[start:start+64])!=quotas:
                 raise AssertionError('Actual batch violates fixed quota')
+            public_batch=Counter(sampler.public_dataset_by_index[i] for i in order[start:start+64]
+                                 if sampler.group_by_index[i]=='public')
+            if public_batch!=fixed['public_dataset_quotas']:
+                raise AssertionError('Actual public batch violates per-dataset quota')
         counts=Counter(order)
         if any(not 1<=counts[i]<=2 for i in native):
             raise AssertionError('Native exposure floor/replay limit violated')
@@ -67,12 +73,14 @@ def prepare(old_run, new_run, output):
         if any(replay[path]<count for path,count in old_native_counts.items()):
             raise AssertionError('Native repeated positive exposure lost')
         public_selected=[i for i in order if sampler.group_by_index[i]=='public']
-        if len(public_selected)!=len(set(public_selected)):
-            raise AssertionError('Public duplicate inside epoch')
+        if max(Counter(public_selected).values())>fixed['max_public_copies_per_epoch']:
+            raise AssertionError('Public per-epoch replay bound exceeded')
         public_seen.update(public_selected)
         epochs.append(dict(epoch=epoch,slots=len(order),counts=dict(Counter(groups)),
             first_batch=dict(Counter(groups[:64])),last_batch=dict(Counter(groups[-64:])),
             public_covered_so_far=len(public_seen),all_native_positive_indices_present=True,
+            public_dataset_counts=dict(Counter(sampler.public_dataset_by_index[i] for i in public_selected)),
+            public_index_copies_max=max(Counter(public_selected).values()),
             native_extra_copies_max=max(counts[i]-1 for i in native),
             index_sha256=hashlib.sha256(np.asarray(order,dtype='<i8').tobytes()).hexdigest()))
         dump(output/'partial.json',dict(sampler_audit=sampler.audit,epochs=epochs))
@@ -85,6 +93,9 @@ def prepare(old_run, new_run, output):
         unchanged_source_train_sha256=sha256(source['train']),configs=configs,
         sampler_audit=sampler.audit,epochs=epochs,all_public_positives_covered=True,
         input_color='gray3 means BGR->luminance->three equal channels after augmentation, before Format; no source files changed',
+        gray_photometric=dict(hsv_h=0.,hsv_s=0.,hsv_v=.3,brightness_gain_range=[.7,1.3],
+            applies_to='training only',random_validation_augmentation=False),
+        size_groups='Nominal target long edge at 960x544 BEFORE random scale augmentation',
         comparison_rules='Compare all candidates and controls with the SAME input color and frame list; no test-driven selection',
         changes_isolated=True)
     dump(output/'preparation.json',report)

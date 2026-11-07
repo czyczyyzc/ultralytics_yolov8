@@ -225,9 +225,16 @@ def main():
             if a.prepare_only:return
         prepared=json.loads((a.run_dir/'preparation.json').read_text())
         if set(prepared['requested_sha256'])!=set(a.approved_sha256) or sha256(prepared['data'])!=prepared['data_sha256']:raise ValueError('Prepared data differs from requested run')
+        cache_summary=json.loads((a.cache_output/'summary.json').read_text())
+        if (cache_summary.get('stage')!='complete'
+                or cache_summary['index_sha256']!=prepared['backgrounds']['index_sha256']
+                or sha256(a.cache_output/'index.json')!=cache_summary['index_sha256']):
+            raise ValueError('Replacement cache changed after preparation')
         if prepared['visual_review_pending']:
             review=json.loads((a.run_dir/'audit/visual_review.json').read_text())
-            if review.get('accepted') is not True:raise ValueError('New replacement previews require visual acceptance')
+            if (review.get('accepted') is not True
+                    or review.get('composition_acceptance_sha256')!=sha256(a.run_dir/'audit/composition_acceptance.json')):
+                raise ValueError('New replacement previews require matching visual acceptance')
         from scripts.anti_uav.run_approved_data_only_refresh import verify_frozen_scope
         frozen=json.loads(requested.read_text())['videos']
         current=select_requested(snapshot_tasks(a.database,a.video_root,blocked),a.approved_sha256,source)

@@ -25,12 +25,16 @@ def test_sequential_exports_preserve_pixels_and_provenance(tmp_path):
         writer.write(np.full((24, 32, 3), value, np.uint8))
     writer.release()
     plan = dict(videos=[dict(file='source.avi', name='aircraft', windows=[[1, 4]],
-                             step=2, roi_xyxy=[4, 6, 28, 22])])
+                             step=2, roi_xyxy=[4, 6, 28, 22], source_kind='direct_aircraft_capture',
+                             suspension_lines_present=True, visible_surface='underside')])
     output = tmp_path / 'out'
     export(tmp_path, plan, output)
     rows = json.loads((output / 'provenance.json').read_text())['records']
     assert [r['source_frame_zero_based'] for r in rows] == [1, 3]
     assert all(r['source_video_sha256'] == digest(video) for r in rows)
+    assert all(r['source_kind'] == 'direct_aircraft_capture' and r['visible_surface'] == 'underside'
+               and r['requires_review_for_support_lines'] and not r['requires_review_for_hud_occlusion'] for r in rows)
+    assert all(r['timestamp_basis'] in {'decoder_pts', 'nominal_frame_rate_fallback'} for r in rows)
     capture = cv2.VideoCapture(str(video))
     for index in range(4):
         ok, frame = capture.read()

@@ -56,6 +56,13 @@ def export(video_root, plan, output):
         if not capture.isOpened():
             raise ValueError(f'Cannot open {source}')
         fps = float(capture.get(cv2.CAP_PROP_FPS))
+        if not np.isfinite(fps) or fps <= 0:
+            capture.release()
+            raise ValueError('Positive finite source FPS required')
+        source_kind = item.get('source_kind', 'display_recording_candidate')
+        if source_kind not in {'display_recording_candidate', 'direct_aircraft_capture'}:
+            capture.release()
+            raise ValueError('Unknown video source kind')
         x0, y0, x1, y1 = item['roi_xyxy']
         if not all(isinstance(x, int) for x in [x0, y0, x1, y1]) or not (0 <= x0 < x1 and 0 <= y0 < y1):
             raise ValueError('Integer source-pixel ROI required')
@@ -80,12 +87,18 @@ def export(video_root, plan, output):
                 if not np.array_equal(cv2.imread(str(target)), crop):
                     raise ValueError('PNG changed decoded source pixels')
                 gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+                timestamp = float(capture.get(cv2.CAP_PROP_POS_MSEC)) / 1000
+                have_pts = np.isfinite(timestamp) and timestamp >= 0 and (index == 0 or timestamp > 0)
                 row = dict(relative=relative, source_video=str(source), source_video_sha256=source_sha,
-                           source_frame_zero_based=index, source_time_seconds=index / fps,
+                           source_frame_zero_based=index, source_time_seconds=timestamp if have_pts else index / fps,
+                           source_nominal_time_seconds=index / fps,
+                           timestamp_basis='decoder_pts' if have_pts else 'nominal_frame_rate_fallback',
                            source_fps=fps, source_frame_wh=[width, height], roi_xyxy=[x0, y0, x1, y1],
                            sha256=digest(target), laplacian_variance=float(cv2.Laplacian(gray, cv2.CV_64F).var()),
-                           source_kind='display_recording_candidate', original_decoded_pixels_preserved=True,
-                           requires_review_for_hud_occlusion=True)
+                           source_kind=source_kind, original_decoded_pixels_preserved=True,
+                           requires_review_for_hud_occlusion=source_kind == 'display_recording_candidate',
+                           requires_review_for_support_lines=bool(item.get('suspension_lines_present', False)),
+                           visible_surface=item.get('visible_surface', 'unverified'))
                 rows.append(row)
                 video_rows.append(row)
         finally:

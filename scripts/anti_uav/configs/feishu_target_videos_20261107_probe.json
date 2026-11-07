@@ -1,0 +1,9 @@
+{
+  "purpose": "Review real underside/oblique views of suspended aircraft; reject clipped, blurred or support-contaminated silhouettes. No generative view conversion.",
+  "videos": [
+    {"file": "飞书20261107-170212.mp4", "name": "beluga_170212", "windows": [[15, 345]], "step": 30, "roi_xyxy": [150, 0, 1100, 600], "source_kind": "direct_aircraft_capture", "visible_surface": "underside_or_lower_oblique", "suspension_lines_present": true},
+    {"file": "飞书20261107-170223.mp4", "name": "beluga_170223", "windows": [[15, 795]], "step": 45, "roi_xyxy": [150, 0, 1100, 600], "source_kind": "direct_aircraft_capture", "visible_surface": "underside_or_lower_oblique", "suspension_lines_present": true},
+    {"file": "飞书20261107-170227.mp4", "name": "beluga_170227", "windows": [[15, 495]], "step": 30, "roi_xyxy": [40, 0, 1100, 570], "source_kind": "direct_aircraft_capture", "visible_surface": "underside_or_lower_oblique", "suspension_lines_present": true},
+    {"file": "飞书20261107-170233.mp4", "name": "beluga_170233", "windows": [[15, 765]], "step": 30, "roi_xyxy": [120, 0, 1140, 600], "source_kind": "direct_aircraft_capture", "visible_surface": "underside_or_lower_oblique", "suspension_lines_present": true}
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "expected_inputs": 70,
+  "segment_input_ids": ["1", "3", "6", "10", "13", "18", "20", "27", "35", "36", "38", "44", "46", "54", "57", "66"],
+  "model_names": {
+    "1": "ATOMRC Beluga / suspended underside capture",
+    "3": "ATOMRC Beluga / suspended underside capture",
+    "6": "ATOMRC Beluga / suspended underside capture",
+    "10": "ATOMRC Beluga / suspended underside capture",
+    "13": "ATOMRC Beluga / suspended underside capture",
+    "18": "ATOMRC Beluga / suspended underside capture",
+    "20": "ATOMRC Beluga / suspended underside capture",
+    "27": "ATOMRC Beluga / suspended underside capture",
+    "35": "ATOMRC Beluga / suspended underside capture",
+    "36": "ATOMRC Beluga / suspended underside capture",
+    "38": "ATOMRC Beluga / suspended underside capture",
+    "44": "ATOMRC Beluga / suspended underside capture",
+    "46": "ATOMRC Beluga / suspended underside capture",
+    "54": "ATOMRC Beluga / suspended underside capture",
+    "57": "ATOMRC Beluga / suspended underside capture",
+    "66": "ATOMRC Beluga / suspended underside capture"
+  },
+  "policy": "Candidate pass only. The videos show a real suspended aircraft from below, not a filmed display and not a generated view. Segment original decoded RGB with pinned BiRefNet; reject clipping, blur, significant suspension lines, ceiling fixtures or duplicate near-views at visual review. No generative RGB reconstruction or inpainting."
+}

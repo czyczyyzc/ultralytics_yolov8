@@ -113,9 +113,10 @@
     "public_gt": 67,
     "public_assigned_gt": 64,
     "gray_4to8_assignment_score_share": 0.03523899205267564,
-    "gray_4to8_after_existing185_multiplier_relative_score_share": 0.06329621471134893,
+    "gray_4to8_after_existing175_multiplier_relative_score_share": 0.06008035765766705,
     "public_assignment_score_share": 0.3731371558799251,
-    "not_a_measurement_of_training_gradient_norm_or_whole_epoch_average": true
+    "not_a_measurement_of_training_gradient_norm_or_whole_epoch_average": true,
+    "stage_config_correction": "P3 initial uses tiny=1.75 and localization 4-64px. Student uses tiny=1.75 and localization 4-960px. Earlier prose incorrectly mixed these with class defaults. Raw probe and evaluation results are unchanged."
   },
   "causal_limits": [
     "Box-size bias and affected frames/scales are directly observed.",

@@ -32,15 +32,53 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--control-run',type=Path,required=True);p.add_argument('--native-control-run',type=Path,required=True)
     p.add_argument('--run-dir',type=Path,required=True);p.add_argument('--gpus',nargs='+',type=int,default=list(range(8)))
+    p.add_argument('--adopt-training-pid',type=int,help='Replace only a supervisor, preserving a verified live training process')
+    p.add_argument('--adopt-gpu',type=int)
     a=p.parse_args()
     for key,value in vars(a).items():
         if isinstance(value,Path):setattr(a,key,value.resolve())
-    a.run_dir.mkdir(parents=True,exist_ok=False)
+    a.run_dir.mkdir(parents=True,exist_ok=a.adopt_training_pid is not None)
     lock=(a.run_dir/'experiment.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     def status(stage,**extra):
         dump(a.run_dir/'repair_launch_status.json',dict(stage=stage,pid=__import__('os').getpid(),
             time=datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(),**extra))
+    def finish(gpu,contract):
+        while True:
+            control_status=json.loads((a.control_run/'status.json').read_text())
+            if control_status['stage']=='complete':break
+            if control_status['stage']=='failed':raise RuntimeError('Control failed; cannot claim full comparison')
+            status('trained_waiting_for_control',gpu=gpu);time.sleep(60)
+        compare(SimpleNamespace(run_dir=a.run_dir,source_run=a.control_run,native_control_run=a.native_control_run,
+            source_arm_label='approved74_legacy_loss',comparison_arm_label='approved74_regression_repair',
+            comparison_intentional_changes=contract['intentional_changes']),gpu)
+        status('complete',gpu=gpu,comparison=str(a.run_dir/'comparison/results.json'))
     try:
+        if a.adopt_training_pid is not None:
+            contract=json.loads((a.run_dir/'experiment_contract.json').read_text())
+            launch=json.loads((a.run_dir/'repair_launch.json').read_text())
+            protocol=json.loads((a.run_dir/'protocol.json').read_text())
+            pid=a.adopt_training_pid
+            cmdline=(Path('/proc')/str(pid)/'cmdline').read_bytes().split(b'\0')
+            if (str(a.run_dir).encode() not in cmdline or b'--regression-repair' not in cmdline
+                    or not protocol.get('regression_repair') or a.adopt_gpu!=launch['gpu']
+                    or str(a.control_run)!=contract['control_run']):
+                raise ValueError('Cannot adopt an unrelated training process')
+            for path,expected in contract['pinned'].items():
+                if sha256(path)!=expected:raise ValueError('Adopted input identity changed')
+            fingerprint=(Path('/proc')/str(pid)/'stat').read_text().rsplit(')',1)[1].split()[19]
+            dump(a.run_dir/'supervisor_adoption.json',dict(training_pid=pid,gpu=a.adopt_gpu,
+                model_process_not_restarted=True,reason='Resolve inherited public holdout config for final comparison'))
+            status('training',gpu=a.adopt_gpu,adopted_training_pid=pid)
+            while True:
+                own=json.loads((a.run_dir/'status.json').read_text())
+                if own['stage']=='complete':break
+                if own['stage']=='failed':raise RuntimeError('Adopted training failed: '+str(own))
+                proc=Path('/proc')/str(pid)/'stat'
+                if not proc.exists() or proc.read_text().rsplit(')',1)[1].split()[19]!=fingerprint:
+                    raise RuntimeError('Adopted training process exited before a completed status')
+                time.sleep(30)
+            finish(a.adopt_gpu,contract)
+            return
         control=json.loads((a.control_run/'protocol.json').read_text())
         source=Path(control['data']);data=yaml.safe_load(source.read_text())
         preparation=json.loads((a.control_run/'preparation.json').read_text())
@@ -90,15 +128,7 @@ def main():
         status('training',gpu=gpu)
         with (a.run_dir/'training.log').open('x') as log:
             subprocess.run(command,cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,check=True)
-        while True:
-            control_status=json.loads((a.control_run/'status.json').read_text())
-            if control_status['stage']=='complete':break
-            if control_status['stage']=='failed':raise RuntimeError('Control failed; cannot claim full comparison')
-            status('trained_waiting_for_control',gpu=gpu);time.sleep(60)
-        compare(SimpleNamespace(run_dir=a.run_dir,source_run=a.control_run,native_control_run=a.native_control_run,
-            source_arm_label='approved74_legacy_loss',comparison_arm_label='approved74_regression_repair',
-            comparison_intentional_changes=contract['intentional_changes']),gpu)
-        status('complete',gpu=gpu,comparison=str(a.run_dir/'comparison/results.json'))
+        finish(gpu,contract)
     except BaseException as error:
         status('failed',error=repr(error));raise
 

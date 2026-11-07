@@ -88,6 +88,18 @@ def test_idle_gpu_selector_never_uses_another_occupied_card():
     assert select_idle_gpu(usage,[0,2]) is None
 
 
+def test_comparison_resolves_frozen_asset_view_to_public_holdout(tmp_path):
+    import yaml
+    from scripts.anti_uav.run_approved_gray_fixedquota_refresh import fixedwing_eval_config
+    public=tmp_path/'public';public.mkdir()
+    view=tmp_path/'asset_view';view.mkdir()
+    target=public/'fixedwing_public_holdout.yaml';target.write_text('val: holdout.txt\n')
+    manifest=public/'public_accepted.json'
+    config=view/'train.yaml';config.write_text(yaml.safe_dump(dict(tiny_sampling=dict(public_manifest=str(manifest)))))
+    assert fixedwing_eval_config(config)==target
+    assert not (view/'fixedwing_public_holdout.yaml').exists()
+
+
 def test_epoch_zero_is_exact_legacy_then_repair_backpropagates(tmp_path):
     model=toy_model().train()
     config=source(tmp_path)

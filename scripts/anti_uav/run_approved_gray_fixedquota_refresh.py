@@ -114,6 +114,17 @@ def configure(data_dir, cache_dir, source_config, source_dir, output):
     return result
 
 
+def fixedwing_eval_config(source_yaml):
+    import yaml
+    direct=source_yaml.parent/'fixedwing_public_holdout.yaml'
+    if direct.is_file():return direct
+    config=yaml.safe_load(source_yaml.read_text())
+    manifest=Path(config['tiny_sampling']['public_manifest'])
+    target=manifest.parent/'fixedwing_public_holdout.yaml'
+    if not target.is_file():raise FileNotFoundError(target)
+    return target
+
+
 def compare(a, device):
     import numpy as np
     import torch
@@ -123,8 +134,8 @@ def compare(a, device):
     from scripts.anti_uav.run_native_pool_comparison import HOLDOUT, clean
     output=a.run_dir/'comparison';output.mkdir()
     native_data=Path(json.loads((a.native_control_run/'protocol.json').read_text())['data'])
-    source_data=Path(json.loads((a.source_run/'protocol.json').read_text())['data']).parent
-    sources=dict(Video00004=HOLDOUT,Video00009=native_data,fixedwing=source_data/'fixedwing_public_holdout.yaml')
+    source_data=Path(json.loads((a.source_run/'protocol.json').read_text())['data'])
+    sources=dict(Video00004=HOLDOUT,Video00009=native_data,fixedwing=fixedwing_eval_config(source_data))
     configs={}
     for key,path in sources.items():
         config=yaml.safe_load(path.read_text());config['input_color']='gray3'

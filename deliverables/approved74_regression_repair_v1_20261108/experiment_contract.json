@@ -1,0 +1,83 @@
+{
+  "control_run": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_gray_fixedquota_assets361_feishu7_20261107",
+  "same_data": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_fixedquota_assets361_20261107/train_fixed_gray.yaml",
+  "pinned": {
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved74_fixedquota_assets361_20261107/train_fixed_gray.yaml": "7671a91752b661faa146f774d994ed91e8ab87b7b9ae8e0b27fcf17375952dfc",
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_background_approved74_assets361_20261107/index.json": "cf40f23a4d8023c55c6661e88f7115b1ab7fb28e7ed14d1e71ee4600dc4eb641",
+    "/mnt/andrew/anti_uav_model_refinement/data/fixedwing_asset_catalog_feishu7_20261107/catalog.json": "7d678f06bf625e950b4f76fd20d18572eb99a121975c13505c72cc3a3cba148c",
+    "/mnt/chenziye/codes/ultralytics_yolov8/yolov8n.pt": "f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36",
+    "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/public_accepted.json": "0c1beeeb4dd4c24762bbe6cde05d616719072ba0023eb391b7441546fc3dfa87"
+  },
+  "training_videos": 74,
+  "assets": 361,
+  "input_color": "gray3",
+  "input_hw": [
+    544,
+    960
+  ],
+  "same_augmentations": {
+    "online_replacement_probability": 0.5,
+    "online_scale_views": 0,
+    "mosaic": 0.0,
+    "mixup": 0.0,
+    "copy_paste": 0.0,
+    "degrees": 0.0,
+    "translate": 0.05,
+    "scale": 0.2,
+    "shear": 0.0,
+    "perspective": 0.0,
+    "flipud": 0.0,
+    "fliplr": 0.5,
+    "hsv_h": 0.0,
+    "hsv_s": 0.0,
+    "hsv_v": 0.3
+  },
+  "same_sampling": {
+    "input_hw": [
+      544,
+      960
+    ],
+    "tiny_min_px": 4.0,
+    "tiny_max_px": 8.0,
+    "policy": "fixed_domain_v1",
+    "batch_quotas": {
+      "gray_tiny": 19,
+      "gray_sub4": 3,
+      "gray_other": 16,
+      "antiuav": 7,
+      "public": 9,
+      "negative": 10
+    },
+    "reference_epoch_slots": 357351,
+    "public_manifest": "/mnt/andrew/anti_uav_model_refinement/data/real_gray_approved69_all_visible_aircraft_assets342_20261106/public_accepted.json",
+    "public_manifest_sha256": "0c1beeeb4dd4c24762bbe6cde05d616719072ba0023eb391b7441546fc3dfa87",
+    "native_positive_source_list": "/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_gray_fixedquota_assets342_20261107/audit/native_source_scope.txt",
+    "native_positive_source_sha256": "b9c0042ffd580601c5744a1fea4cfbf23296155f1cb42e5542dbcbf61d262931",
+    "max_extra_copies_per_native_index": 1,
+    "public_dataset_quotas": {
+      "dut": 1,
+      "halmstad": 3,
+      "uavswarm": 1,
+      "purdue_uav": 3,
+      "aod4": 1
+    },
+    "max_public_copies_per_epoch": 2
+  },
+  "same_epochs": {
+    "foundation": 30,
+    "teacher": 12,
+    "student": 15,
+    "localization": 0
+  },
+  "same_batch": 64,
+  "same_seed": 20261015,
+  "old_task_weights_not_used": true,
+  "intentional_changes": [
+    "per_GT_per_source_scale_regression_normalization",
+    "tiny_width_height_and_edge_supervision",
+    "assignment_coverage_audit",
+    "three_epoch_loss_ramp"
+  ],
+  "inference_graph_and_thresholds_unchanged": true,
+  "control_not_stopped_or_modified": true
+}

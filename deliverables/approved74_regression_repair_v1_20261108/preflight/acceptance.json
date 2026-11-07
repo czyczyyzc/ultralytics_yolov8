@@ -1,0 +1,78 @@
+{
+  "complete": true,
+  "real_augmented_batches": 4,
+  "input_hw": [
+    544,
+    960
+  ],
+  "batch_size": 64,
+  "amp": true,
+  "full_repair_enabled": true,
+  "loss": 834.3945922851562,
+  "weights_discarded_not_used_for_initialization": true,
+  "audit": {
+    "epoch_zero_based": 3,
+    "batches": 4,
+    "balance_mix": 0.5,
+    "repair_progress": 1.0,
+    "input_hw": [
+      544,
+      960
+    ],
+    "batch_size": 64,
+    "legacy_tiny_multiplier": 1.75,
+    "legacy_localization_range_px": [
+      4.0,
+      64.0
+    ],
+    "repaired_localization_min_px": 2.0,
+    "extra_log_size_range_px": [
+      2.0,
+      16.0
+    ],
+    "classification_and_assigner_unchanged": true,
+    "gradient_norm_not_measured": true,
+    "groups": {
+      "gray_sub4": {
+        "gt": 7.0,
+        "assigned_gt": 0.0,
+        "no_interior_grid_gt": 7.0,
+        "positive_anchors": 0.0,
+        "assignment_score_sum": 0.0,
+        "normalized_regression_mass": 0.0
+      },
+      "gray_4to8": {
+        "gt": 68.0,
+        "assigned_gt": 25.0,
+        "no_interior_grid_gt": 37.0,
+        "positive_anchors": 27.0,
+        "assignment_score_sum": 12.760751724243164,
+        "normalized_regression_mass": 0.7869130373001099
+      },
+      "gray_other": {
+        "gt": 63.0,
+        "assigned_gt": 60.0,
+        "no_interior_grid_gt": 3.0,
+        "positive_anchors": 384.0,
+        "assignment_score_sum": 183.347900390625,
+        "normalized_regression_mass": 1.5385780334472656
+      },
+      "antiuav": {
+        "gt": 28.0,
+        "assigned_gt": 28.0,
+        "no_interior_grid_gt": 0.0,
+        "positive_anchors": 277.0,
+        "assignment_score_sum": 107.4378662109375,
+        "normalized_regression_mass": 0.8183754682540894
+      },
+      "public": {
+        "gt": 88.0,
+        "assigned_gt": 83.0,
+        "no_interior_grid_gt": 3.0,
+        "positive_anchors": 561.0,
+        "assignment_score_sum": 98.63472747802734,
+        "normalized_regression_mass": 0.8356791734695435
+      }
+    }
+  }
+}

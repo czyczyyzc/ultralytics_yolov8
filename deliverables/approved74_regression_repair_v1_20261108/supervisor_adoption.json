@@ -1,0 +1,6 @@
+{
+  "training_pid": 2575466,
+  "gpu": 3,
+  "model_process_not_restarted": true,
+  "reason": "Resolve inherited public holdout config for final comparison"
+}

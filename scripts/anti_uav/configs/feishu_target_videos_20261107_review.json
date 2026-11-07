@@ -1,0 +1,28 @@
+{
+  "candidate_catalog_sha256": "1ba20939f6da7b0cb9b80d25c9ba072d2d3658040b3df5683fe6917e19b9a5b5",
+  "accepted_input_ids": ["3", "10", "13", "20", "35", "44", "46"],
+  "reviewer": "assistant_visual_inspection",
+  "review_basis": "All ten final checker/dark contact cards and individual previews inspected. Original RGB preserved; alpha-only rigid-airframe support cleanup. Seven selected conservatively; no geometry reconstruction.",
+  "notes": {
+    "3": "170212 frame 75: complete oblique underside; no visible external suspension line in checker/dark preview.",
+    "10": "170212 frame 285: complete near-side underside view.",
+    "13": "170223 frame 60: opposite oblique underside; wing/tail silhouette retained.",
+    "20": "170223 frame 375: frontal underside view; no hanging fixture retained.",
+    "35": "170227 frame 165: steep side/underside view; complete airframe.",
+    "44": "170227 frame 435: opposite side/underside view; ceiling fixture excluded.",
+    "46": "170233 frame 15: oblique underside; concave wing-tail gap cleaned using a body-shaped alpha gate."
+  },
+  "rejected_final_candidates": {
+    "54": "Green ceiling-light contamination near wing edge remains; reject rather than recolor the aircraft.",
+    "57": "Small white ceiling fixture remains near tail; possible green light near nose. Not accepted.",
+    "66": "White ceiling fixture adjacent to nose remains. Not accepted."
+  },
+  "limitations": [
+    "Seven views of one airframe, not seven distinct aircraft types or calibrated pose classes.",
+    "Only the transparent training cutouts are cleaned; the four original videos remain unchanged.",
+    "Alpha cleanup cannot restore aircraft pixels hidden by a line; no generative redraw or inpainting used.",
+    "Pixel-perfect removal at all support contact points is not guaranteed; checked at exported preview scale.",
+    "These sources are for training appearance adaptation and are not an unseen-airframe test set.",
+    "Usage rights must be reviewed before commercial distribution."
+  ]
+}

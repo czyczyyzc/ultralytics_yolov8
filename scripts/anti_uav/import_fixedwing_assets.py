@@ -54,9 +54,39 @@ def source_provenance(path, source):
     return result
 
 
-def reviewed_alpha_cleanup(alpha, erase_boxes, protected_boxes, erase_polygons=()):
+def support_envelope(alpha, config):
+    """Gate an explicitly reviewed rigid-airframe mask, without filling its holes."""
+    import cv2
+    kernel = config['opening_kernel']
+    padding = config['padding_px']
+    limit = float(config['max_removed_alpha_fraction'])
+    if (not isinstance(kernel, int) or kernel < 3 or kernel % 2 != 1
+            or not isinstance(padding, int) or padding < 0 or not 0 < limit < 1):
+        raise ValueError('Invalid reviewed support-envelope configuration')
+    core = cv2.morphologyEx((alpha >= 128).astype(np.uint8), cv2.MORPH_OPEN,
+                           cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel, kernel)))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(core, connectivity=8)
+    if count < 2 or stats[1:, cv2.CC_STAT_AREA].max() < 32:
+        raise ValueError('No solid airframe core for reviewed support cleanup')
+    main = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    ys, xs = np.where(labels == main)
+    gate = np.zeros(alpha.shape, np.uint8)
+    cv2.fillConvexPoly(gate, cv2.convexHull(np.column_stack((xs, ys)).astype(np.int32)), 1)
+    if padding:
+        size = padding * 2 + 1
+        gate = cv2.dilate(gate, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
+    result = alpha * gate
+    removed = 1.0 - float(result.sum()) / max(1., float(alpha.sum()))
+    if removed > limit:
+        raise ValueError('Reviewed support cleanup removes too much alpha; inspect or reject the frame')
+    return result
+
+
+def reviewed_alpha_cleanup(alpha, erase_boxes, protected_boxes, erase_polygons=(), envelope=None):
     """Apply reviewed non-aircraft exclusions without reconstructing hidden RGB."""
     result = alpha.copy()
+    if envelope:
+        result = support_envelope(result, envelope)
     height, width = alpha.shape
     for box in [*erase_boxes, *protected_boxes]:
         if (len(box) != 4 or not all(isinstance(x, int) for x in box)
@@ -138,7 +168,9 @@ def segment(args):
         exclusions = rules.get("reviewed_alpha_erase_xyxy", {}).get(item["input_id"], [])
         protected = rules.get("protected_aircraft_xyxy", {}).get(item["input_id"], [])
         polygons = rules.get("reviewed_alpha_erase_polygons", {}).get(item["input_id"], [])
-        alpha = reviewed_alpha_cleanup(alpha, exclusions, protected, polygons)
+        envelope = rules.get("reviewed_rigid_airframe_envelope", {}).get(item["input_id"])
+        before_cleanup = int(alpha.sum())
+        alpha = reviewed_alpha_cleanup(alpha, exclusions, protected, polygons, envelope)
         rgba, bounds, quality = pack_alpha(np.asarray(image),alpha)
         aid = str(offset+int(item["input_id"]))
         row = dict(item, id=aid, model=rules.get("model_names", {}).get(item["input_id"], item["model"]),
@@ -147,10 +179,12 @@ def segment(args):
             cutout=f"cutouts/{aid}.png", mask=f"masks/{aid}.png", preview=f"previews/{aid}.jpg",
             bounds=bounds, quality=quality, roi=roi, source_relative=item["relative"],
             source_sha256=item["sha256"], status="candidate_requires_visual_review")
-        if exclusions or polygons:
+        if exclusions or polygons or envelope:
             row["reviewed_alpha_erase_xyxy"] = exclusions
             row["reviewed_alpha_erase_polygons"] = polygons
             row["protected_aircraft_xyxy"] = protected
+            row["reviewed_rigid_airframe_envelope"] = envelope
+            row["alpha_cleanup_removed_fraction"] = 1.0 - float(alpha.sum()) / max(1, before_cleanup)
         if provenance:
             origin = provenance[item["relative"]]
             row["video_source" if "source_frame_zero_based" in origin else "photo_source"] = origin

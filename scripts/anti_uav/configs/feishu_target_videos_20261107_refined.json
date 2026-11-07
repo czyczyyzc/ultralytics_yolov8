@@ -1,0 +1,29 @@
+{
+  "expected_inputs": 70,
+  "segment_input_ids": ["3", "10", "13", "20", "35", "44", "46", "54", "57", "66"],
+  "model_names": {
+    "3": "ATOMRC Beluga / suspended underside capture",
+    "10": "ATOMRC Beluga / suspended underside capture",
+    "13": "ATOMRC Beluga / suspended underside capture",
+    "20": "ATOMRC Beluga / suspended underside capture",
+    "35": "ATOMRC Beluga / suspended underside capture",
+    "44": "ATOMRC Beluga / suspended underside capture",
+    "46": "ATOMRC Beluga / suspended underside capture",
+    "54": "ATOMRC Beluga / suspended underside capture",
+    "57": "ATOMRC Beluga / suspended underside capture",
+    "66": "ATOMRC Beluga / suspended underside capture"
+  },
+  "reviewed_rigid_airframe_envelope": {
+    "3": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "10": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "13": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "20": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "35": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "44": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "46": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "54": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "57": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "66": {"opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08}
+  },
+  "policy": "Opt-in only for these visually selected rigid fixed-wing silhouettes, not a global largest-component filter for the old drone/rotor catalog. The opened solid core estimates a padded support-exclusion envelope; the final alpha is only gated, never filled or regenerated. All original RGB remains unchanged. Reject if more than 8% alpha mass is removed, if any real wing/tail is clipped at review, or if significant suspension lines remain. Fixtures/blur/clipped candidates 1,6,18,27,36,38 are not used."
+}

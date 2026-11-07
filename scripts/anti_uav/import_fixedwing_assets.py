@@ -42,6 +42,18 @@ def alpha_eligible(path):
             raise ValueError(f"Empty or opaque asset: {path}")
 
 
+def source_provenance(path, source):
+    if path is None:
+        return {}
+    records = json.loads(path.read_text())["records"]
+    result = {row["relative"]: row for row in records}
+    if len(result) != len(records) or set(result) != {row["relative"] for row in source}:
+        raise ValueError("Provenance and input inventory differ")
+    if any(result[row["relative"]]["sha256"] != row["sha256"] for row in source):
+        raise ValueError("Provenance image checksum differs")
+    return result
+
+
 def segment(args):
     import torch
     from torchvision import transforms
@@ -52,6 +64,8 @@ def segment(args):
     base = json.loads(args.base_catalog.read_text())
     offset = max(int(r["id"]) for r in base["records"])
     source = inventory(args.input)
+    provenance_path = getattr(args, "source_provenance", None)
+    provenance = source_provenance(provenance_path, source)
     if len(source) != rules["expected_inputs"]:
         raise ValueError("Input count changed")
     selected = set(rules["segment_input_ids"])
@@ -68,6 +82,8 @@ def segment(args):
     dump(args.output/"run_config.json", dict(model_files=model_files,
         model_revision=reference["model_revision"], rules=rules, rules_sha256=digest(args.rules),
         base_catalog=str(args.base_catalog), base_catalog_sha256=digest(args.base_catalog),
+        source_provenance=str(provenance_path) if provenance_path else None,
+        source_provenance_sha256=digest(provenance_path) if provenance_path else None,
         device=args.device, input_root=str(args.input), source_rgb_regenerated=False,
         orientation="EXIF transpose to displayed orientation before lossless RGB preservation"))
     torch.set_num_threads(4)
@@ -97,11 +113,14 @@ def segment(args):
         alpha[y0:y1,x0:x1] = np.asarray(small.resize(crop.size, Image.Resampling.BILINEAR))
         rgba, bounds, quality = pack_alpha(np.asarray(image),alpha)
         aid = str(offset+int(item["input_id"]))
-        row = dict(item, id=aid, category="fixedwing_rc", company=None,
+        row = dict(item, id=aid, model=rules.get("model_names", {}).get(item["input_id"], item["model"]),
+            category="fixedwing_rc", company=None,
             raw=f"raw/{aid}{path.suffix.lower()}", rgba=f"rgba/{aid}.png",
             cutout=f"cutouts/{aid}.png", mask=f"masks/{aid}.png", preview=f"previews/{aid}.jpg",
             bounds=bounds, quality=quality, roi=roi, source_relative=item["relative"],
             source_sha256=item["sha256"], status="candidate_requires_visual_review")
+        if provenance:
+            row["video_source"] = provenance[item["relative"]]
         shutil.copy2(path,args.output/row["raw"])
         full = Image.fromarray(rgba)
         full.save(args.output/row["rgba"])
@@ -204,6 +223,8 @@ def main():
     a=sub.add_parser("segment");a.add_argument("--input",type=Path,required=True)
     a.add_argument("--rules",type=Path,required=True);a.add_argument("--model",type=Path,required=True)
     a.add_argument("--model-provenance",type=Path,required=True);a.add_argument("--device",default="cuda:0")
+    a.add_argument("--source-provenance",type=Path,
+                   help="Optional pinned decoded-frame/ROI manifest from prepare_video_asset_candidates.py")
     b=sub.add_parser("publish");b.add_argument("--candidates",type=Path,required=True)
     b.add_argument("--review",type=Path,required=True)
     for parser in (a,b):

@@ -1,0 +1,11 @@
+{
+  "purpose": "Inspect close-pass and off-reticle frames; no generative reconstruction of obscured aircraft",
+  "videos": [
+    {"file": "0.mp4", "name": "video0_pass", "windows": [[173, 177]], "step": 1, "roi_xyxy": [400, 200, 1050, 630]},
+    {"file": "1.mp4", "name": "video1_pass1", "windows": [[178, 184]], "step": 1, "roi_xyxy": [400, 150, 1100, 630]},
+    {"file": "1.mp4", "name": "video1_pass2", "windows": [[347, 351]], "step": 1, "roi_xyxy": [500, 180, 1100, 590]},
+    {"file": "2.mp4", "name": "video2_pass1", "windows": [[297, 304]], "step": 1, "roi_xyxy": [400, 100, 1150, 660]},
+    {"file": "2.mp4", "name": "video2_pass2", "windows": [[480, 516]], "step": 2, "roi_xyxy": [500, 180, 830, 390]},
+    {"file": "2.mp4", "name": "video2_pass3", "windows": [[834, 842]], "step": 1, "roi_xyxy": [400, 200, 1120, 650]}
+  ]
+}

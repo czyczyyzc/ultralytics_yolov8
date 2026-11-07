@@ -1,0 +1,11 @@
+{
+  "stage": "stopped_by_user",
+  "previous_stage": "training_native_p3_foundation",
+  "experiment": "approved74_gray_fixedquota_assets342_20261107",
+  "reason": "User requested stopping the current run and restarting from public foundation after adding reviewed target cutouts from three supplied videos.",
+  "process_group_terminated": 140714,
+  "training_process_terminated": 140793,
+  "remaining_live_process_group_members_after_stop": [],
+  "old_logs_and_data_preserved": true,
+  "replacement_experiment": "pending_reviewed_target_asset_catalog"
+}

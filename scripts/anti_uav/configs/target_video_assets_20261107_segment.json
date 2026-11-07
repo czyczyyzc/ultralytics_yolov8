@@ -1,0 +1,29 @@
+{
+  "expected_inputs": 47,
+  "segment_input_ids": ["12", "14", "22", "26", "31", "34", "37", "39", "44", "45"],
+  "roi": {
+    "12": [0.30, 0.15, 0.72, 0.68],
+    "14": [0.32, 0.15, 0.83, 0.85],
+    "22": [0.32, 0.14, 0.60, 0.48],
+    "26": [0.32, 0.12, 0.63, 0.48],
+    "31": [0.32, 0.10, 0.67, 0.49],
+    "34": [0.32, 0.10, 0.67, 0.49],
+    "37": [0.32, 0.10, 0.72, 0.49],
+    "39": [0.32, 0.10, 0.72, 0.49],
+    "44": [0.25, 0.25, 0.64, 0.72],
+    "45": [0.12, 0.36, 0.63, 0.97]
+  },
+  "model_names": {
+    "12": "Colleague jet-like RC target / oblique underside",
+    "14": "Colleague jet-like RC target / oblique close pass candidate",
+    "22": "Colleague jet-like RC target / near axial silhouette candidate",
+    "26": "Colleague jet-like RC target / near axial bank",
+    "31": "Colleague jet-like RC target / moderate bank",
+    "34": "Colleague jet-like RC target / oblique view candidate",
+    "37": "Colleague jet-like RC target / broader wing silhouette",
+    "39": "Colleague jet-like RC target / side-bank candidate",
+    "44": "Colleague jet-like RC target / lateral pass candidate",
+    "45": "Colleague jet-like RC target / lateral close pass candidate"
+  },
+  "policy": "Only alpha segmentation of original decoded pixels. Reject clipped aircraft, HUD occlusion, major ghosting and screen artifacts at visual review. No generative reconstruction. Views are descriptive, not verified left/right aircraft pose labels."
+}

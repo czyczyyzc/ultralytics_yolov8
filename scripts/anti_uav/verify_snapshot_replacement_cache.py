@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from scripts.anti_uav.prepare_labeler_training_expansion import dump, sha256
+from scripts.anti_uav.prepare_labeler_training_expansion import dump, sha256, frame_plan
 
 
 def verify_cache(cache_dir, data_dir, output):
@@ -90,7 +90,35 @@ def verify_cache(cache_dir, data_dir, output):
                         (x+4, y+40), cv2.FONT_HERSHEY_SIMPLEX, .43, (100, 230, 100), 1, cv2.LINE_AA)
         if not cv2.imwrite(str(output/f'replacement_QA_{page+1:02d}.jpg'), canvas):
             raise OSError("Cannot write replacement QA preview")
+    gt_previews=[]
+    snapshot=data_dir/'annotation_snapshot.json'
+    if snapshot.exists():
+        for item in json.loads(snapshot.read_text())['videos']:
+            plan,_=frame_plan(item['annotations'],item['frame_count'],item['frame_width'],item['frame_height'],item['status']=='approved')
+            positive=sorted(f for f,boxes in plan.items() if boxes)
+            if not positive:continue
+            key=Path(item['video']).stem+'_'+item['source_sha256'][:12]
+            canvas=np.full((912,600,3),24,np.uint8)
+            for row,frame in enumerate([positive[0],positive[len(positive)//2],positive[-1]]):
+                path=data_dir/'images/labeler_snapshot'/key/f'{frame:09d}.jpg'
+                image=cv2.imread(str(path))
+                if image is None:raise ValueError('GT preview source missing')
+                h,w=image.shape[:2];box=np.asarray(plan[frame][0])*[w,h,w,h];cx,cy,bw,bh=box
+                span=min(h,w,max(48,int(max(bw,bh)*1.5)))
+                left=int(np.clip(cx-span/2,0,w-span));top=int(np.clip(cy-span/2,0,h-span))
+                full=cv2.resize(image,(320,180));zoom=cv2.resize(image[top:top+span,left:left+span],(264,264),interpolation=cv2.INTER_NEAREST)
+                for view,sx,sy,ox,oy in [(full,320/w,180/h,0,0),(zoom,264/span,264/span,left,top)]:
+                    x1=round((cx-bw/2-ox)*sx);y1=round((cy-bh/2-oy)*sy);x2=round((cx+bw/2-ox)*sx);y2=round((cy+bh/2-oy)*sy)
+                    for x,dx in [(x1,1),(x2,-1)]:
+                        for y,dy in [(y1,1),(y2,-1)]:
+                            cv2.line(view,(x,y),(x+dx*5,y),(0,230,0),1);cv2.line(view,(x,y),(x,y+dy*5),(0,230,0),1)
+                y=row*304;canvas[y+32:y+212,:320]=full;canvas[y+32:y+296,328:592]=zoom
+                cv2.putText(canvas,f'{item["source_sha256"][:12]} frame {frame} / {item["frame_count"]}',(6,y+22),cv2.FONT_HERSHEY_SIMPLEX,.5,(230,230,230),1,cv2.LINE_AA)
+            target=output/f'original_GT_{item["source_sha256"][:12]}.jpg'
+            if not cv2.imwrite(str(target),canvas):raise OSError('Cannot write GT preview')
+            gt_previews.append(dict(path=str(target),video_sha256=item['source_sha256'],frames=[positive[0],positive[len(positive)//2],positive[-1]]))
     result = dict(stage="complete", rendered=len(records), asset_count=len(assets), records=records,
+                  original_gt_previews=gt_previews,
                   independent_background_visual_quality_guaranteed=False)
     dump(output/"acceptance.json", result)
     return result

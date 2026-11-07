@@ -28,7 +28,7 @@ PNG 的透明区域仍保留原 RGB，用于验证未改原像素；部分不处
 
 ## 合并与训练
 
-复用已有 346 条库（含上一批 4 张视频靶机素材），追加本批审核通过的 8 张，预期为 354 条、343 张不同 PNG；以实际发布后的 `summary.json` 为准。保留旧素材、数据清单、重复曝光、全部公共可见光飞机、Anti-UAV300 及 74 段自采训练视频。此次提供的是贴图照片，不增加训练视频计数。
+复用已有 346 条库（含上一批 4 张视频靶机素材），已发布为 354 条、343 张不同 PNG，新增 8 张没有发现文件级重复。保留旧素材、数据清单、重复曝光、全部公共可见光飞机、Anti-UAV300 及 74 段自采训练视频。此次提供的是贴图照片，不增加训练视频计数。
 
 仍仅对有安全背景的正样本以 0.50 概率尝试替换，机型条目均匀选择，bbox 根据最终 alpha 同步更新；不增加负样本，不把地面、支架或白色底图整体贴入训练。沿用 58,466 个可用背景，不重新计算或修改旧背景 pack。
 
@@ -37,6 +37,10 @@ PNG 的透明区域仍保留原 RGB，用于验证未改原像素；部分不处
 输入 960x544、全灰度三通道、亮度增益 0.7-1.3、平移 0.05、缩放 0.2、水平翻转 0.5；Mosaic/MixUp/Copy-Paste/旋转/透视维持关闭。每批 64 张固定配额仍为自采 4-8 px 19、自采小于 4 px 3、其他自采正样本 16、Anti-UAV300 7、公共正样本 9、负样本 10。Video00004/Video00009 不进入训练，后者仍用于选择权重。
 
 启动前须通过本批 8 张贴图的小/中/大三档共 24 次合成检查，并保存与 catalog SHA 匹配的可视验收。检查是合成/bbox 验证，不是检测精度或完美融合保证。商业使用前仍需核查源照片使用权。
+
+24 次合成检查已全部通过；已查看全部 8 张最终贴图预览、8 张中尺度合成预览，以及 417/429 两张机腹素材的大尺度合成。429 在复核画面中没有明显支架轮廓；亮色飞机在原目标对比度很低的背景上仍然偏淡，不人为提高对比度来美化预览。原 346 条轮次的独立进程组 311149 已退出且无存活成员，日志和数据保留。相关 30 项回归测试通过。
+
+已于 2026-11-07 14:48:49 (Asia/Shanghai) 在 GPU 6 启动新轮次，总编排 PID 514327、训练 PID 514415。P3 initial 第 1/30 轮已实际执行到 35/5,584 batch，loss 有限、暂无报错；不是第一轮已完成。实际采样器仍为固定配额，每轮 357,376 个槽位，111,349 张公共正样本在三个 epoch 内轮换覆盖。Foundation 固定为公开 `yolov8n.pt`，没有使用停止轮次的任务权重。
 
 ## 服务器位置
 
@@ -50,6 +54,8 @@ PNG 的透明区域仍保留原 RGB，用于验证未改原像素；部分不处
 - 背景视图：`real_gray_background_approved74_assets354_20261107/`。
 - 训练 YAML：`real_gray_approved74_fixedquota_assets354_20261107/train_fixed_gray.yaml`。
 - 新实验：`/mnt/chenziye/codes/ultralytics_yolov8/runs/anti_uav/approved74_gray_fixedquota_assets354_beluga8_20261107/`。
+
+本地本目录已提供 `beluga_photo_assets_new8_20261107.tar.gz`（仅本批 8 张透明 PNG 和来源/审核清单，不是完整 354 条库）、`refined/cutouts/`、`composition_QA/new_asset_contact_sheet.jpg`、`composition_QA/composition_contact_sheet.jpg` 和 24 张单独合成预览。`asset_429_large.jpg` 是倒放实拍机腹的灰度替换示例，`asset_417_large.jpg` 是机腹产品图示例。服务器新增 PNG 包在数据根目录的同名压缩包。`protocol.json`、`launch.json`、`preparation.json`、`new_assets.json`、`summary.json` 与合成验收也已下载到本地，方便核对。
 
 代码位于 `/mnt/chenziye/codes/ultralytics_yolov8/scripts/anti_uav/`：`stage_photo_asset_inputs.py` 冻结原图，`import_fixedwing_assets.py segment/publish` 抠图与发布，`configs/beluga_photos_20261107_*.json` 固定源图/ROI/多边形/审核，`run_reviewed_asset_refresh.py` 创建只改变贴图库的新实验并启动，`verify_asset_refresh_composites.py` 检查逐张合成。
 

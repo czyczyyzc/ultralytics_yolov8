@@ -1,0 +1,11 @@
+{
+  "stage": "stopped_by_user",
+  "experiment": "approved74_gray_fixedquota_assets346_target4_20261107",
+  "reason": "User explicitly requested restarting only after the entire supplemental photo asset batch passed review.",
+  "completed_before_stop": "Eight reviewed photo assets and all 24 composition checks; catalog 354 entries / 343 unique PNGs",
+  "process_group_terminated": 311149,
+  "training_process_terminated": 311257,
+  "remaining_live_process_group_members_after_stop": [],
+  "old_logs_and_data_preserved": true,
+  "replacement_experiment": "approved74_gray_fixedquota_assets354_beluga8_20261107"
+}

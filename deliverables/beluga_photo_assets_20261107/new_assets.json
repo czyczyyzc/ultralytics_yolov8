@@ -1,0 +1,622 @@
+{
+  "records": [
+    {
+      "input_id": "1",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/01.png",
+      "sha256": "a139b5ce72d001bfade96ab13ac58fc914afaf36cec718061cf183d3882f2caa",
+      "size": [
+        1210,
+        746
+      ],
+      "native_transparency": false,
+      "id": "417",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/417.png",
+      "rgba": "rgba/417.png",
+      "cutout": "cutouts/417.png",
+      "mask": "masks/417.png",
+      "preview": "previews/417.jpg",
+      "bounds": [
+        16,
+        12,
+        1205,
+        738
+      ],
+      "quality": {
+        "foreground_fraction": 0.3867768595041322,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source_relative": "beluga/01.png",
+      "source_sha256": "a139b5ce72d001bfade96ab13ac58fc914afaf36cec718061cf183d3882f2caa",
+      "status": "visually_screened_compositing_candidate",
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-1fcbf596-1022-438f-9473-45f18c3f1302.png",
+        "visible_surface": "underside",
+        "note": "Product photo; landing gear extended",
+        "input_id": "1",
+        "relative": "beluga/01.png",
+        "sha256": "a139b5ce72d001bfade96ab13ac58fc914afaf36cec718061cf183d3882f2caa",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-1fcbf596-1022-438f-9473-45f18c3f1302.png",
+        "source_photo_sha256": "a139b5ce72d001bfade96ab13ac58fc914afaf36cec718061cf183d3882f2caa",
+        "displayed_wh": [
+          1210,
+          746
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "a139b5ce72d001bfade96ab13ac58fc914afaf36cec718061cf183d3882f2caa",
+      "rgba_sha256": "8afb2786cd16897499c80b5b969a6bbe8831789406051ea6f6c3490dc51f5115",
+      "cutout_sha256": "d15755b3d4e97ce68483f970455ad8b6ea2746f816c96237878ec04b3509399a",
+      "mask_sha256": "e2a3f5afcf0eaac26cb84449ca0731ff8d0bfdc0cb8f44affb09d3f6c5b77517",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete true underside product view; landing gear and original propellers retained. No view conversion.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "2",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/02.png",
+      "sha256": "8c2e9c31d0f7f2fa44f8dc9a604b388d9bfc03d29732096a9531bac4c82ad41e",
+      "size": [
+        1226,
+        682
+      ],
+      "native_transparency": false,
+      "id": "418",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/418.png",
+      "rgba": "rgba/418.png",
+      "cutout": "cutouts/418.png",
+      "mask": "masks/418.png",
+      "preview": "previews/418.jpg",
+      "bounds": [
+        4,
+        7,
+        1217,
+        673
+      ],
+      "quality": {
+        "foreground_fraction": 0.24925849028622274,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source_relative": "beluga/02.png",
+      "source_sha256": "8c2e9c31d0f7f2fa44f8dc9a604b388d9bfc03d29732096a9531bac4c82ad41e",
+      "status": "visually_screened_compositing_candidate",
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-d01100ca-9856-4ae1-8f61-58763a3cc630.png",
+        "visible_surface": "upper_oblique",
+        "input_id": "2",
+        "relative": "beluga/02.png",
+        "sha256": "8c2e9c31d0f7f2fa44f8dc9a604b388d9bfc03d29732096a9531bac4c82ad41e",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-d01100ca-9856-4ae1-8f61-58763a3cc630.png",
+        "source_photo_sha256": "8c2e9c31d0f7f2fa44f8dc9a604b388d9bfc03d29732096a9531bac4c82ad41e",
+        "displayed_wh": [
+          1226,
+          682
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "8c2e9c31d0f7f2fa44f8dc9a604b388d9bfc03d29732096a9531bac4c82ad41e",
+      "rgba_sha256": "d66b73921993799362f9d05eb03d8df61b773e028236889bc8e7efbc36ad7bf2",
+      "cutout_sha256": "98156268635b414dfdfd9fef3a56747c88ce817970600ac42eafa49c3619b6ba",
+      "mask_sha256": "df67f500b5c96c518391557952364f28137806fbb67039ffa3edf938e7bf9f54",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete upper-oblique view, retained as upper surface, not mislabeled underside.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "3",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/03.png",
+      "sha256": "684d18e7bd57da67e6cd4b2dc7414d592b6dd060a5df921cde9a7d632fa2e952",
+      "size": [
+        1098,
+        806
+      ],
+      "native_transparency": false,
+      "id": "419",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/419.png",
+      "rgba": "rgba/419.png",
+      "cutout": "cutouts/419.png",
+      "mask": "masks/419.png",
+      "preview": "previews/419.jpg",
+      "bounds": [
+        8,
+        9,
+        1088,
+        795
+      ],
+      "quality": {
+        "foreground_fraction": 0.34845896215541905,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source_relative": "beluga/03.png",
+      "source_sha256": "684d18e7bd57da67e6cd4b2dc7414d592b6dd060a5df921cde9a7d632fa2e952",
+      "status": "visually_screened_compositing_candidate",
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-0602ac3f-f8d3-4e83-91b2-4dc59ad76302.png",
+        "visible_surface": "upper_oblique",
+        "input_id": "3",
+        "relative": "beluga/03.png",
+        "sha256": "684d18e7bd57da67e6cd4b2dc7414d592b6dd060a5df921cde9a7d632fa2e952",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-0602ac3f-f8d3-4e83-91b2-4dc59ad76302.png",
+        "source_photo_sha256": "684d18e7bd57da67e6cd4b2dc7414d592b6dd060a5df921cde9a7d632fa2e952",
+        "displayed_wh": [
+          1098,
+          806
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "684d18e7bd57da67e6cd4b2dc7414d592b6dd060a5df921cde9a7d632fa2e952",
+      "rgba_sha256": "3a4fa7fc935eaeccbaeb56cc0cacb8a3d3cd932c0bffda2ddd45caf2daeb67d0",
+      "cutout_sha256": "d3ed20c0dd2f7044c701b153425ed0e72cd004f5d588d7f7fcf15ff776a85b8b",
+      "mask_sha256": "a2bbb6623f8d74e13d7fe3501a3fbdc66a27c83b59514466f049230c0bf366a2",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete gray upper-oblique view; real landing-gear details retained.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "4",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/04.png",
+      "sha256": "f825ef284e7b3eb75a09b06f7f5da07c68663999476c8525bbdb4cdf403fce0c",
+      "size": [
+        1122,
+        444
+      ],
+      "native_transparency": false,
+      "id": "420",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/420.png",
+      "rgba": "rgba/420.png",
+      "cutout": "cutouts/420.png",
+      "mask": "masks/420.png",
+      "preview": "previews/420.jpg",
+      "bounds": [
+        8,
+        7,
+        1090,
+        432
+      ],
+      "quality": {
+        "foreground_fraction": 0.3324059353471118,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source_relative": "beluga/04.png",
+      "source_sha256": "f825ef284e7b3eb75a09b06f7f5da07c68663999476c8525bbdb4cdf403fce0c",
+      "status": "visually_screened_compositing_candidate",
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-ff79370b-9649-4b68-9761-ec4960bea86b.png",
+        "visible_surface": "side",
+        "note": "Landing gear extended; keep authentic silhouette",
+        "input_id": "4",
+        "relative": "beluga/04.png",
+        "sha256": "f825ef284e7b3eb75a09b06f7f5da07c68663999476c8525bbdb4cdf403fce0c",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-ff79370b-9649-4b68-9761-ec4960bea86b.png",
+        "source_photo_sha256": "f825ef284e7b3eb75a09b06f7f5da07c68663999476c8525bbdb4cdf403fce0c",
+        "displayed_wh": [
+          1122,
+          444
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "f825ef284e7b3eb75a09b06f7f5da07c68663999476c8525bbdb4cdf403fce0c",
+      "rgba_sha256": "ce2a5afe560bdd0d4064deca27002de40d48febcdfe6638a73e6c97e32bf17a5",
+      "cutout_sha256": "b21408d8f474a4b2d1ecf6dabc1402fbeab83178fd26ee7a0d83f36a4e2666b8",
+      "mask_sha256": "56b52b1d68243a2e5e7489d4827fdd65d2cadd460a5d7f4c08f4d8ccbc63a101",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete side view with extended landing gear; retained as side view.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "5",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/05.png",
+      "sha256": "46a1c8a7e632e6d5499c45f3ae6a2d3d423bf11dec5155603dbd5a3f96109fa3",
+      "size": [
+        1116,
+        870
+      ],
+      "native_transparency": false,
+      "id": "421",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/421.png",
+      "rgba": "rgba/421.png",
+      "cutout": "cutouts/421.png",
+      "mask": "masks/421.png",
+      "preview": "previews/421.jpg",
+      "bounds": [
+        13,
+        10,
+        1112,
+        866
+      ],
+      "quality": {
+        "foreground_fraction": 0.37925369752399785,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source_relative": "beluga/05.png",
+      "source_sha256": "46a1c8a7e632e6d5499c45f3ae6a2d3d423bf11dec5155603dbd5a3f96109fa3",
+      "status": "visually_screened_compositing_candidate",
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-126d7098-4b2e-4a52-8083-36ef4ad6380e.png",
+        "visible_surface": "upper_oblique",
+        "input_id": "5",
+        "relative": "beluga/05.png",
+        "sha256": "46a1c8a7e632e6d5499c45f3ae6a2d3d423bf11dec5155603dbd5a3f96109fa3",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-126d7098-4b2e-4a52-8083-36ef4ad6380e.png",
+        "source_photo_sha256": "46a1c8a7e632e6d5499c45f3ae6a2d3d423bf11dec5155603dbd5a3f96109fa3",
+        "displayed_wh": [
+          1116,
+          870
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "46a1c8a7e632e6d5499c45f3ae6a2d3d423bf11dec5155603dbd5a3f96109fa3",
+      "rgba_sha256": "78f32a8064c3300b30231d60eff1b3cf106794781b76741d498f99f3ea0a7e15",
+      "cutout_sha256": "62d45b848f19dbda90e08ad5238e7c5aac8d77748df09c983795b38ffa0f3791",
+      "mask_sha256": "1a935a77dc73c0013d9623ff003ec815192d700b30cf174e3d4bc059b0b886b6",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete upper-oblique view; retained as upper surface.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "6",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/06.jpg",
+      "sha256": "dfe965731d92a79f4d9c5ae3bb0a6f8500130a5e361789fe4e9cf35a951cfba8",
+      "size": [
+        1440,
+        1080
+      ],
+      "native_transparency": false,
+      "id": "422",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/422.jpg",
+      "rgba": "rgba/422.png",
+      "cutout": "cutouts/422.png",
+      "mask": "masks/422.png",
+      "preview": "previews/422.jpg",
+      "bounds": [
+        243,
+        15,
+        1148,
+        959
+      ],
+      "quality": {
+        "foreground_fraction": 0.15030671296296297,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source_relative": "beluga/06.jpg",
+      "source_sha256": "dfe965731d92a79f4d9c5ae3bb0a6f8500130a5e361789fe4e9cf35a951cfba8",
+      "status": "visually_screened_compositing_candidate",
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-ba14d24c-eb7a-4bd9-9e54-78892310891b.jpg",
+        "visible_surface": "upper",
+        "note": "Floor photo; remove floor and cast shadow from alpha",
+        "input_id": "6",
+        "relative": "beluga/06.jpg",
+        "sha256": "dfe965731d92a79f4d9c5ae3bb0a6f8500130a5e361789fe4e9cf35a951cfba8",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-ba14d24c-eb7a-4bd9-9e54-78892310891b.jpg",
+        "source_photo_sha256": "dfe965731d92a79f4d9c5ae3bb0a6f8500130a5e361789fe4e9cf35a951cfba8",
+        "displayed_wh": [
+          1440,
+          1080
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "dfe965731d92a79f4d9c5ae3bb0a6f8500130a5e361789fe4e9cf35a951cfba8",
+      "rgba_sha256": "2ea1eb60d0af92938a10c0c89a9e09fcb35a4e58a7d9857108a70dd8f80f7f6c",
+      "cutout_sha256": "d2458f0513889b1d5e6bee5d5625167e4179efa2a86ab11022a0ab0c2101e807",
+      "mask_sha256": "88a92d5e29a5fd11d087f0548cf7e1f9a47168e72df589a43f68016f4b9d65ec",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete upper view from a floor photograph; ground and cast shadow excluded by alpha.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "7",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/07.jpg",
+      "sha256": "72f44946cffc8c441dc0a41b10c7d19da784b8fd1b1f79fe46eff6709e4ec353",
+      "size": [
+        1440,
+        1080
+      ],
+      "native_transparency": false,
+      "id": "423",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/423.jpg",
+      "rgba": "rgba/423.png",
+      "cutout": "cutouts/423.png",
+      "mask": "masks/423.png",
+      "preview": "previews/423.jpg",
+      "bounds": [
+        64,
+        37,
+        1147,
+        1013
+      ],
+      "quality": {
+        "foreground_fraction": 0.20087577160493827,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "source_relative": "beluga/07.jpg",
+      "source_sha256": "72f44946cffc8c441dc0a41b10c7d19da784b8fd1b1f79fe46eff6709e4ec353",
+      "status": "visually_screened_compositing_candidate",
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-6ba95438-3b93-489e-95bf-bafdf9a5d3e7.jpg",
+        "visible_surface": "upper_oblique",
+        "note": "Floor photo; remove floor and cast shadow from alpha",
+        "input_id": "7",
+        "relative": "beluga/07.jpg",
+        "sha256": "72f44946cffc8c441dc0a41b10c7d19da784b8fd1b1f79fe46eff6709e4ec353",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-6ba95438-3b93-489e-95bf-bafdf9a5d3e7.jpg",
+        "source_photo_sha256": "72f44946cffc8c441dc0a41b10c7d19da784b8fd1b1f79fe46eff6709e4ec353",
+        "displayed_wh": [
+          1440,
+          1080
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "72f44946cffc8c441dc0a41b10c7d19da784b8fd1b1f79fe46eff6709e4ec353",
+      "rgba_sha256": "41590aeac7619217a4c12e097ca04555a3bea0f9a2bfe1eca89d573def100ed0",
+      "cutout_sha256": "dbe304ca4cee67d2f158cc182001b5542bb9cd3e904363de86480a1400624abc",
+      "mask_sha256": "c8d6d0b4ba126327a5b2f4cf037e1138bae60954c2bc87c932575b6db8baa168",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Complete upper-oblique floor photograph; ground excluded by alpha.",
+      "commercial_rights_review_pending": true
+    },
+    {
+      "input_id": "13",
+      "model": "ATOMRC Beluga / supplied photos",
+      "relative": "beluga/13.jpg",
+      "sha256": "480314550c9386d7edbbb0336850845c415d24383020f2d630325e8e34167ecc",
+      "size": [
+        1440,
+        1080
+      ],
+      "native_transparency": false,
+      "id": "429",
+      "category": "fixedwing_rc",
+      "company": null,
+      "raw": "raw/429.jpg",
+      "rgba": "rgba/429.png",
+      "cutout": "cutouts/429.png",
+      "mask": "masks/429.png",
+      "preview": "previews/429.jpg",
+      "bounds": [
+        325,
+        51,
+        1290,
+        1032
+      ],
+      "quality": {
+        "foreground_fraction": 0.2094650205761317,
+        "significant_components": 1,
+        "component_count": 1,
+        "main_component_fraction": 1.0,
+        "border_foreground_fraction": 0.0,
+        "flags": []
+      },
+      "roi": [
+        0.19,
+        0.02,
+        0.94,
+        0.98
+      ],
+      "source_relative": "beluga/13.jpg",
+      "source_sha256": "480314550c9386d7edbbb0336850845c415d24383020f2d630325e8e34167ecc",
+      "status": "visually_screened_compositing_candidate",
+      "reviewed_alpha_erase_xyxy": [],
+      "reviewed_alpha_erase_polygons": [
+        [
+          [
+            570,
+            220
+          ],
+          [
+            693,
+            220
+          ],
+          [
+            679,
+            282
+          ],
+          [
+            570,
+            282
+          ]
+        ],
+        [
+          [
+            475,
+            605
+          ],
+          [
+            650,
+            605
+          ],
+          [
+            646,
+            682
+          ],
+          [
+            475,
+            682
+          ]
+        ],
+        [
+          [
+            906,
+            640
+          ],
+          [
+            1050,
+            640
+          ],
+          [
+            1050,
+            715
+          ],
+          [
+            889,
+            715
+          ]
+        ],
+        [
+          [
+            850,
+            893
+          ],
+          [
+            890,
+            893
+          ],
+          [
+            890,
+            940
+          ],
+          [
+            839,
+            940
+          ]
+        ]
+      ],
+      "protected_aircraft_xyxy": [
+        [
+          700,
+          310,
+          1170,
+          400
+        ],
+        [
+          735,
+          100,
+          825,
+          180
+        ],
+        [
+          710,
+          460,
+          850,
+          570
+        ],
+        [
+          700,
+          750,
+          800,
+          950
+        ]
+      ],
+      "photo_source": {
+        "source": "/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-924ba3cc-0b40-44ea-ad7b-76136a29beeb.jpg",
+        "visible_surface": "underside",
+        "note": "Aircraft inverted on stand; complete visible belly, reject any retained stand",
+        "input_id": "13",
+        "relative": "beluga/13.jpg",
+        "sha256": "480314550c9386d7edbbb0336850845c415d24383020f2d630325e8e34167ecc",
+        "source_photo": "/private/var/folders/v_/t0_hf50j0blc2p1fhwpd4kq80000gn/T/codex-clipboard-924ba3cc-0b40-44ea-ad7b-76136a29beeb.jpg",
+        "source_photo_sha256": "480314550c9386d7edbbb0336850845c415d24383020f2d630325e8e34167ecc",
+        "displayed_wh": [
+          1440,
+          1080
+        ],
+        "source_kind": "supplied_photo",
+        "source_rgb_regenerated": false
+      },
+      "raw_sha256": "480314550c9386d7edbbb0336850845c415d24383020f2d630325e8e34167ecc",
+      "rgba_sha256": "2262af76ec0d1021ed03e479de0c9c0a44bbebc0a552199ea4bd45cb8dc44ee6",
+      "cutout_sha256": "44cb3ff6ee20f8963d3b3be9e4a36c9df991c38b2fc8539b093e83693ae409b4",
+      "mask_sha256": "71eb73e7c699373dbfd7f6ec8a9500f17f9c29c87181651b143e6501718cb928",
+      "source_candidate_catalog": "/mnt/andrew/anti_uav_model_refinement/data/beluga_photo_asset_candidates_refined_20261107/catalog.json",
+      "review_note": "Real underside: aircraft was physically inverted. Four reviewed polygons remove protruding support bars from alpha. Protected aircraft alpha and all original RGB unchanged; no reconstruction of hidden surface.",
+      "commercial_rights_review_pending": true
+    }
+  ]
+}

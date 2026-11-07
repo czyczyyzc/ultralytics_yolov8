@@ -1,0 +1,17 @@
+{
+  "accepted": true,
+  "reviewer": "assistant_visual_inspection",
+  "catalog_sha256": "e0de820c84c1f33a7e1ae362ca0509a574baffdeadfbd2c3050220cf7168fde2",
+  "composition_qa_sha256": "84d8350109da76d90d78ab6452879e0bb18cfc3288ce2cc2aeb3268231ec5d6d",
+  "new_asset_ids": ["417", "418", "419", "420", "421", "422", "423", "429"],
+  "visual_checks": "All eight final source/checker/dark preview cards; underside 429 detail; all eight medium composite cards; individual large underside composites 417 and 429",
+  "machine_checks": {"composition_cases": 24, "scales_per_new_asset": 3, "source_images_preserved": true, "updated_boxes_valid": true, "outside_edit_mask_unchanged": true},
+  "notes": [
+    "Real underside photos are used directly; no flip or homography is represented as a dorsal-to-belly conversion.",
+    "Explicit alpha polygons remove the protruding support bars in photo 13. Protected aircraft alpha and original RGB remain unchanged.",
+    "No obvious stand silhouette or rectangular pasted background seen in the reviewed composites. Not a guarantee for every future online combination.",
+    "Light-colored aircraft can remain faint in low-contrast gray scenes because the original target contrast is preserved; contrast is not artificially increased for the preview.",
+    "Accepted under the unchanged research policy: replacement attempts at probability 0.50, uniform asset choice, fixed batch quotas, gray3 input; no change to geometric augmentation."
+  ],
+  "not_a_detector_accuracy_result": true
+}

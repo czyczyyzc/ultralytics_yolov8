@@ -1,0 +1,19 @@
+{
+  "expected_inputs": 47,
+  "segment_input_ids": ["12", "34", "37", "44"],
+  "roi": {
+    "12": [0.30, 0.15, 0.72, 0.68],
+    "34": [0.32, 0.10, 0.67, 0.49],
+    "37": [0.32, 0.10, 0.72, 0.49],
+    "44": [0.25, 0.25, 0.64, 0.72]
+  },
+  "model_names": {
+    "12": "Colleague jet-like RC target / oblique underside",
+    "34": "Colleague jet-like RC target / moderate bank",
+    "37": "Colleague jet-like RC target / broader wing silhouette",
+    "44": "Colleague jet-like RC target / lateral pass"
+  },
+  "reviewed_alpha_erase_xyxy": {"44": [[353, 139, 395, 220]]},
+  "protected_aircraft_xyxy": {"44": [[240, 220, 405, 328]]},
+  "policy": "Four manually screened views from videos 1 and 2. Video 0 has no accepted HUD-free complete silhouette. The explicit alpha-only exclusion removes detached blue HUD brackets above view 44; aircraft-region alpha and all source RGB must remain unchanged. No filling, inpainting or generative reconstruction. Low source resolution and mild edge halos remain limitations."
+}

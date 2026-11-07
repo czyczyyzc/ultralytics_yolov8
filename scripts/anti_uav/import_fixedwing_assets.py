@@ -54,6 +54,22 @@ def source_provenance(path, source):
     return result
 
 
+def reviewed_alpha_cleanup(alpha, erase_boxes, protected_boxes):
+    """Apply explicit reviewed HUD exclusions, never reconstruct hidden RGB."""
+    result = alpha.copy()
+    height, width = alpha.shape
+    for box in [*erase_boxes, *protected_boxes]:
+        if (len(box) != 4 or not all(isinstance(x, int) for x in box)
+                or not (0 <= box[0] < box[2] <= width and 0 <= box[1] < box[3] <= height)):
+            raise ValueError("Invalid reviewed alpha rectangle")
+    for x0, y0, x1, y1 in erase_boxes:
+        result[y0:y1, x0:x1] = 0
+    for x0, y0, x1, y1 in protected_boxes:
+        if not np.array_equal(alpha[y0:y1, x0:x1], result[y0:y1, x0:x1]):
+            raise ValueError("HUD exclusion overlaps protected aircraft alpha")
+    return result
+
+
 def segment(args):
     import torch
     from torchvision import transforms
@@ -111,6 +127,9 @@ def segment(args):
         small = Image.fromarray((pred[0,0].cpu().numpy()*255).clip(0,255).astype(np.uint8))
         alpha = np.zeros((image.height,image.width),np.uint8)
         alpha[y0:y1,x0:x1] = np.asarray(small.resize(crop.size, Image.Resampling.BILINEAR))
+        exclusions = rules.get("reviewed_alpha_erase_xyxy", {}).get(item["input_id"], [])
+        protected = rules.get("protected_aircraft_xyxy", {}).get(item["input_id"], [])
+        alpha = reviewed_alpha_cleanup(alpha, exclusions, protected)
         rgba, bounds, quality = pack_alpha(np.asarray(image),alpha)
         aid = str(offset+int(item["input_id"]))
         row = dict(item, id=aid, model=rules.get("model_names", {}).get(item["input_id"], item["model"]),
@@ -119,6 +138,9 @@ def segment(args):
             cutout=f"cutouts/{aid}.png", mask=f"masks/{aid}.png", preview=f"previews/{aid}.jpg",
             bounds=bounds, quality=quality, roi=roi, source_relative=item["relative"],
             source_sha256=item["sha256"], status="candidate_requires_visual_review")
+        if exclusions:
+            row["reviewed_alpha_erase_xyxy"] = exclusions
+            row["protected_aircraft_xyxy"] = protected
         if provenance:
             row["video_source"] = provenance[item["relative"]]
         shutil.copy2(path,args.output/row["raw"])

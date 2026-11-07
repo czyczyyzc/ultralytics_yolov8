@@ -132,7 +132,8 @@ def compare(a, device):
     expected=dict(Video00004=(2359,448),Video00009=(1421,797),fixedwing=(3451,3451))
     torch.set_num_threads(4);torch.backends.cuda.matmul.allow_tf32=False;torch.backends.cudnn.allow_tf32=False
     result={}
-    for arm,run in [('native69',a.native_control_run),('public69_before_repair',a.source_run),('approved74_fixedgray',a.run_dir)]:
+    new_label=getattr(a,'comparison_arm_label','approved74_fixedgray')
+    for arm,run in [('native69',a.native_control_run),('public69_before_repair',a.source_run),(new_label,a.run_dir)]:
         for stage,relative in [('p3_initial','foundation/p3/weights/best.pt'),('teacher','teacher/p2p3/weights/best.pt'),
                                ('student','p3_student_distilled_best_fp32.pt')]:
             name=arm+'_'+stage;weights=run/relative;digest=sha256(weights)
@@ -156,7 +157,8 @@ def compare(a, device):
     dump(output/'protocol.json',dict(input_color='gray3',input_hw=[544,960],precision='FP32',tracker=False,
         conf=.03,ap_floor=.001,nms_iou=.45,match_iou=.5,pooled_frames=3780,pooled_gt=1245,
         pooled_contains_selection_validation=True,external_fixedwing_positive_frames_only=True,
-        intentional_changes=['five_new_approved_videos','fixed_source_size_quotas','gray3_input','brightness_only','new_background_caches']))
+        intentional_changes=getattr(a,'comparison_intentional_changes',
+            ['five_new_approved_videos','fixed_source_size_quotas','gray3_input','brightness_only','new_background_caches'])))
 
 
 def main():

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from scripts.anti_uav.prepare_video_asset_candidates import export, frame_indices, digest
-from scripts.anti_uav.import_fixedwing_assets import source_provenance
+from scripts.anti_uav.import_fixedwing_assets import source_provenance, reviewed_alpha_cleanup
 
 
 def test_windows_are_zero_based_half_open_and_deduplicated():
@@ -53,3 +53,26 @@ def test_source_paths_cannot_escape_video_root(tmp_path):
                             roi_xyxy=[0, 0, 2, 2])])
     with pytest.raises(ValueError, match='escapes'):
         export(tmp_path, plan, tmp_path / 'out')
+
+
+def test_reviewed_hud_erasure_preserves_protected_aircraft_and_original():
+    original = np.full((10, 12), 200, np.uint8)
+    result = reviewed_alpha_cleanup(original, [[0, 0, 3, 3]], [[4, 4, 10, 10]])
+    assert not result[:3, :3].any()
+    assert np.array_equal(result[4:10, 4:10], original[4:10, 4:10])
+    assert np.all(original == 200)
+    with pytest.raises(ValueError, match='protected'):
+        reviewed_alpha_cleanup(original, [[0, 0, 3, 3]], [[2, 2, 8, 8]])
+    with pytest.raises(ValueError, match='rectangle'):
+        reviewed_alpha_cleanup(original, [[0, 0, 13, 2]], [])
+
+
+def test_catalog_extension_preserves_old_ids_and_requires_review():
+    from scripts.anti_uav.run_reviewed_asset_refresh import validate_extension
+    old = [dict(id='1', cutout_sha256='old')]
+    new = dict(id='2', cutout_sha256='new', status='visually_screened_compositing_candidate')
+    assert validate_extension(old, old + [new], ['1']) == [new]
+    for rows in [[new], old + [dict(new, status='candidate_requires_visual_review')],
+                 [dict(old[0], cutout_sha256='changed'), new], old + [new, new]]:
+        with pytest.raises(ValueError):
+            validate_extension(old, rows, ['1'])

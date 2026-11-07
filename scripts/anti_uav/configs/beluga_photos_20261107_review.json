@@ -1,0 +1,24 @@
+{
+  "candidate_catalog_sha256": "881a98ead3a48bd5e61c48b79db65cabeb92a5684c6266a47f6b6f8cd44766c6",
+  "accepted_input_ids": ["1", "2", "3", "4", "5", "6", "7", "13"],
+  "reviewer": "assistant_visual_inspection",
+  "notes": {
+    "1": "Complete true underside product view; landing gear and original propellers retained. No view conversion.",
+    "2": "Complete upper-oblique view, retained as upper surface, not mislabeled underside.",
+    "3": "Complete gray upper-oblique view; real landing-gear details retained.",
+    "4": "Complete side view with extended landing gear; retained as side view.",
+    "5": "Complete upper-oblique view; retained as upper surface.",
+    "6": "Complete upper view from a floor photograph; ground and cast shadow excluded by alpha.",
+    "7": "Complete upper-oblique floor photograph; ground excluded by alpha.",
+    "13": "Real underside: aircraft was physically inverted. Four reviewed polygons remove protruding support bars from alpha. Protected aircraft alpha and all original RGB unchanged; no reconstruction of hidden surface."
+  },
+  "not_selected_input_ids": ["8", "9", "10", "11", "12"],
+  "not_selected_reason": "Wing/tail at or beyond image boundary, or suspected truncation. Preserve inputs but do not normalize a clipped silhouette as a complete aircraft asset.",
+  "visible_surface_counts": {"underside": 2, "side": 1, "upper_or_upper_oblique": 5},
+  "limitations": [
+    "Eight view/photo assets, not eight distinct airframe types.",
+    "No image flipping, large homography or generative model was used to turn the dorsal surface into a belly.",
+    "Fine propellers, soft white edges and residual subpixel background contamination are not guaranteed perfect.",
+    "Product/ground photos are source material, not proof of realistic in-flight lighting; grayscale composition matches local scale, blur and contrast."
+  ]
+}

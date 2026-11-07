@@ -171,6 +171,9 @@ def publish(args):
     if not candidates.get("complete") or digest(args.base_catalog) != config["base_catalog_sha256"]:
         raise ValueError("Incomplete candidates or changed base catalog")
     review = json.loads(args.review.read_text())
+    if (review.get("candidate_catalog_sha256")
+            and review["candidate_catalog_sha256"] != digest(args.candidates/"catalog.json")):
+        raise ValueError("Reviewed candidate catalog changed")
     accepted = set(review["accepted_input_ids"])
     available = {r["input_id"]:r for r in candidates["records"]}
     if not accepted <= set(available):

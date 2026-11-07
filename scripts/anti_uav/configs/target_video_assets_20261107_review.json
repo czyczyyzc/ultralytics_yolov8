@@ -1,0 +1,22 @@
+{
+  "candidate_catalog_sha256": "baa3ac7c15864261c99c68d7d885827c5b9fe495bde5186a84a27c7dd71ab2a1",
+  "accepted_input_ids": ["12", "34", "37", "44"],
+  "reviewer": "assistant_visual_inspection",
+  "notes": {
+    "12": "Complete oblique underside silhouette from 1.mp4 frame 348; reticle is separate from the aircraft. Original markings retained.",
+    "34": "Moderate bank from 2.mp4 frame 504. Main crosshair is below the aircraft; source is low resolution with a mild bright edge halo.",
+    "37": "Broader wing silhouette from 2.mp4 frame 510. A nearby view, not a different model or a verified pose annotation; mild source edge halo remains.",
+    "44": "Lateral pass from 2.mp4 frame 838. Detached blue HUD brackets above the aircraft were removed only from alpha; protected aircraft alpha and original RGB were unchanged."
+  },
+  "rejected_or_not_selected": {
+    "0.mp4": "No clean complete aircraft selected: HUD overlaps, image corruption or truncation in close passes.",
+    "empty_near_axial_candidates": "No reliable segmentation foreground; not forced into training.",
+    "other_candidates": "HUD contamination, ghosting, blur or redundant neighboring view."
+  },
+  "limitations": [
+    "Four view assets, not four new airframe types.",
+    "Source videos are display recordings; no claim of lossless camera imagery or perfect matting.",
+    "No verified front/left/right/tail pose labels or exhaustive view coverage.",
+    "Once trained with these assets, next tests of this airframe are adaptation tests, not unseen-airframe tests."
+  ]
+}

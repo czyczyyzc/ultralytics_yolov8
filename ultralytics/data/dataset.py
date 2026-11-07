@@ -231,6 +231,10 @@ class YOLODataset(BaseDataset):
             transforms = v8_transforms(self, self.imgsz, hyp)
         else:
             transforms = Compose([LetterBox(new_shape=imgsz, scaleup=False)])
+        from .color import input_color_transform
+        color_transform = input_color_transform(self.data.get("input_color", "source"))
+        if color_transform is not None:
+            transforms.append(color_transform)
         transforms.append(
             Format(
                 bbox_format="xywh",

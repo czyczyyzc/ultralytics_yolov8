@@ -1,6 +1,8 @@
 """Preserve audited exposure while building size- and video-balanced epochs."""
 
 from collections import defaultdict, deque
+import hashlib
+import json
 import math
 from pathlib import Path
 import re
@@ -183,6 +185,142 @@ def balanced_video_order(indices, video_keys, rng):
     return np.concatenate(values)[order].tolist()
 
 
+class EvenExposureTinyAwareSampler(TinyAwareSampler):
+    """Spread each source's exact exposures through every part of the epoch.
+
+    Legacy round-robin exhausts short videos first, leaving long flat public
+    directories in the tail. This opt-in policy changes only ordering: no tiny
+    oversampling, domain reweighting or changes to the rotating negative slice.
+    """
+
+    def _video_round_robin(self, indices, category):
+        rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, category, 31]))
+        return balanced_video_order(indices, self.video_keys, rng)
+
+
+class FixedDomainQuotaSampler(TinyAwareSampler):
+    """Explicit per-batch source/size quotas, with public coverage across epochs.
+
+    Native positive anchor multiplicities are a per-epoch floor. The full public
+    pool is retained but rotated when its batch quota cannot fit every image.
+    """
+
+    GROUPS = ("gray_tiny", "gray_sub4", "gray_other", "antiuav", "public", "negative")
+
+    def __init__(self, dataset, label_config=None, tiny_config=None, batch_size=64, seed=20260915):
+        if not label_config:
+            raise ValueError("Fixed quotas require an audited negative pool")
+        super().__init__(dataset, label_config, tiny_config, batch_size, seed)
+        config = tiny_config or {}
+        quotas = config.get("batch_quotas", {})
+        if set(quotas) != set(self.GROUPS) or any(type(v) is not int or v <= 0 for v in quotas.values()):
+            raise ValueError("Fixed quotas require positive integer counts for every source/size group")
+        if sum(quotas.values()) != self.batch_size:
+            raise ValueError("Batch quotas must sum to the actual batch size")
+        manifest = Path(config["public_manifest"])
+        if hashlib.sha256(manifest.read_bytes()).hexdigest() != config["public_manifest_sha256"]:
+            raise ValueError("Public source manifest changed")
+        records = json.loads(manifest.read_text())
+        public = {row["image"]: row for row in records}
+        if len(public) != len(records) or any(row.get("split") != "train" or row.get("boxes", 0) < 1 for row in records):
+            raise ValueError("Public quota manifest must contain unique training positives")
+        native_list = Path(config["native_positive_source_list"])
+        if hashlib.sha256(native_list.read_bytes()).hexdigest() != config["native_positive_source_sha256"]:
+            raise ValueError("Native positive scope changed")
+        native_scope = set(native_list.read_text().splitlines())
+        self.groups = {key: [] for key in self.GROUPS}
+        self.group_by_index = []
+        public_seen = set()
+        for index, row in enumerate(dataset.labels):
+            path = row["im_file"]
+            if self.categories[index] == 2:
+                if path in public:
+                    raise ValueError("Public positive became a negative")
+                key = "negative"
+            elif path in public:
+                if path in public_seen or path in native_scope:
+                    raise ValueError("Public positive duplicated or overlaps native scope")
+                public_seen.add(path)
+                key = "public"
+                self.video_keys[index] = public[path]["dataset"] + ":" + public[path]["group"]
+            elif path not in native_scope:
+                raise ValueError("Positive absent from frozen native/public source scopes")
+            elif "/anti_uav300_yolo/" in path:
+                key = "antiuav"
+                self.video_keys[index] = source_video_identity(path)
+            elif self.categories[index] == 0:
+                key = "gray_tiny"
+            else:
+                h, w = row["shape"]
+                boxes = np.asarray(row["bboxes"])
+                edges = np.maximum(boxes[:, 2]*w, boxes[:, 3]*h)*min(self.input_hw[0]/h, self.input_hw[1]/w)
+                key = "gray_sub4" if np.any(edges < self.tiny_min) else "gray_other"
+            self.groups[key].append(index)
+            self.group_by_index.append(key)
+        if public_seen != set(public) or any(not group for group in self.groups.values()):
+            raise ValueError("Fixed-quota source groups incomplete or empty")
+        self.quotas = dict(quotas)
+        reference = int(config.get("reference_epoch_slots", len(self.native)))
+        self.batches = max(math.ceil(reference/self.batch_size), *(
+            math.ceil(len(self.groups[key])/quotas[key]) for key in self.GROUPS[:4]))
+        max_extra = int(config.get("max_extra_copies_per_native_index", 1))
+        if max_extra not in (0, 1, 2):
+            raise ValueError("Native extra-copy limit must be 0, 1 or 2")
+        for key in self.GROUPS[:4]:
+            if self.batches*quotas[key] > len(self.groups[key])*(1+max_extra):
+                raise ValueError("Native quota exceeds its bounded replay limit")
+        self.negative_budget = self.batches*quotas["negative"]
+        self.fixed_negative = [i for i in self.native.anchors if self.categories[i] == 2]
+        self.rotating_budget = self.negative_budget-len(self.fixed_negative)
+        if not 0 < self.rotating_budget <= len(self.native.negative_order):
+            raise ValueError("Negative quota exceeds reviewed rotating capacity")
+        self.public_budget = self.batches*quotas["public"]
+        if self.public_budget > len(self.groups["public"]):
+            raise ValueError("Public quota must not repeat positives inside an epoch")
+        rng = np.random.default_rng(np.random.SeedSequence([self.seed, 919]))
+        self.public_order = np.asarray(balanced_video_order(self.groups["public"], self.video_keys, rng))
+        self.audit = dict(policy="fixed_domain_v1", batch_size=self.batch_size, batch_quotas=self.quotas,
+            epoch_slots=len(self), batches=self.batches,
+            native_positive_floor=sum(len(self.groups[k]) for k in self.GROUPS[:4]),
+            epoch_group_slots={k:self.batches*v for k,v in quotas.items()},
+            public_pool=len(self.public_order), public_slots_per_epoch=self.public_budget,
+            public_full_coverage_epochs=math.ceil(len(self.public_order)/self.public_budget),
+            public_manifest_sha256=config["public_manifest_sha256"],
+            native_positive_source_sha256=config["native_positive_source_sha256"],
+            negative_fraction=quotas["negative"]/self.batch_size,
+            max_extra_copies_per_native_index=max_extra,
+            unchanged_dataset=True, all_native_positive_exposures_preserved=True)
+
+    def __len__(self):
+        return self.batches*self.batch_size
+
+    def __iter__(self):
+        pools = {}
+        for number, key in enumerate(self.GROUPS[:4]):
+            values = np.asarray(self.groups[key])
+            count = self.batches*self.quotas[key]
+            rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, number, 929]))
+            selected = np.concatenate([rng.permutation(values) for _ in range(math.ceil(count/len(values)))])[:count]
+            pools[key] = balanced_video_order(selected.tolist(), self.video_keys, rng)
+        offsets = (self.epoch*self.public_budget+np.arange(self.public_budget)) % len(self.public_order)
+        selected = self.public_order[offsets].tolist()
+        rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, 937]))
+        pools["public"] = balanced_video_order(selected, self.video_keys, rng)
+        offsets = (self.epoch*self.rotating_budget+np.arange(self.rotating_budget)) % len(self.native.negative_order)
+        selected = self.fixed_negative+self.native.negative_order[offsets].tolist()
+        pools["negative"] = balanced_video_order(selected, self.video_keys, rng)
+        output = []
+        for batch in range(self.batches):
+            indices = []
+            for key, quota in self.quotas.items():
+                indices.extend(pools[key][batch*quota:(batch+1)*quota])
+            rng.shuffle(indices)
+            output.extend(indices)
+        if len(output) != len(self):
+            raise AssertionError("Fixed-quota epoch incomplete")
+        return iter(output)
+
+
 class BalancedTinyAwareSampler(TinyAwareSampler):
     """Opt-in repair: retain native positives, bound tiny repeats, balance negatives."""
 
@@ -283,9 +421,10 @@ def make_exposure_sampler(dataset, label_config=None, tiny_config=None, batch_si
     if not tiny_config:
         return NativeExposureSampler(dataset, label_config, seed)
     policy = tiny_config.get("policy", "legacy")
-    if policy not in ("legacy", "balanced_v2"):
+    if policy not in ("legacy", "balanced_v2", "even_exposure_v1", "fixed_domain_v1"):
         raise ValueError(f"Unknown tiny sampling policy: {policy}")
-    cls = BalancedTinyAwareSampler if policy == "balanced_v2" else TinyAwareSampler
+    cls = {"legacy": TinyAwareSampler, "balanced_v2": BalancedTinyAwareSampler,
+           "even_exposure_v1": EvenExposureTinyAwareSampler, "fixed_domain_v1": FixedDomainQuotaSampler}[policy]
     return cls(dataset, label_config, tiny_config, batch_size, seed)
 
 

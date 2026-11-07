@@ -17,16 +17,8 @@ sys.path.insert(0, str(ROOT))
 from scripts.anti_uav.audit_labeler_expansion_regression import (
     AuditDataset, label_equal, size_category, strip_locations,
 )
-from scripts.anti_uav.label_pool_sampling import TinyAwareSampler, balanced_video_order
+from scripts.anti_uav.label_pool_sampling import TinyAwareSampler, EvenExposureTinyAwareSampler
 from scripts.anti_uav.prepare_labeler_training_expansion import dump, sha256
-
-
-class EvenOrderProbe(TinyAwareSampler):
-    """Counterfactual reorder only: preserve every epoch index and its multiplicity."""
-
-    def _video_round_robin(self, indices, category):
-        rng = np.random.default_rng(np.random.SeedSequence([self.seed, self.epoch, category, 31]))
-        return balanced_video_order(indices, self.video_keys, rng)
 
 
 def source_kind(path, public):
@@ -43,7 +35,7 @@ def compact_counts(values):
 
 
 def trace(labels, config, public, epoch, even=False):
-    cls = EvenOrderProbe if even else TinyAwareSampler
+    cls = EvenExposureTinyAwareSampler if even else TinyAwareSampler
     sampler = cls(AuditDataset(labels), config["label_sampling"], config["tiny_sampling"], 64, 20261015)
     sampler.set_epoch(epoch)
     order = list(sampler)
@@ -53,6 +45,8 @@ def trace(labels, config, public, epoch, even=False):
     def describe(indices):
         return dict(slots=len(indices), domains=compact_counts(domains[i] for i in indices),
                     sizes=compact_counts(categories[i] for i in indices),
+                    positive_domains=compact_counts(domains[i] for i in indices if categories[i] != "negative"),
+                    tiny_domains=compact_counts(domains[i] for i in indices if categories[i] == "4to8"),
                     public_fraction=sum(domains[i].startswith("public/") for i in indices) / max(len(indices), 1),
                     gray_fraction=sum(domains[i] == "native_gray" for i in indices) / max(len(indices), 1))
 

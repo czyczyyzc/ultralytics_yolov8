@@ -70,9 +70,10 @@ def comparison_group_names(training_videos):
 def recipe_difference(reference, candidate):
     keys = ("method", "foundation_sha256", "task_specific_initialization", "input_hw",
             "batch", "nbs", "seed", "epochs", "augmentation", "distillation", "qat",
-            "checkpoint_selection", "final_graph")
-    return {key: {"reference": reference.get(key), "candidate": candidate.get(key)}
-            for key in keys if reference.get(key) != candidate.get(key)}
+            "checkpoint_selection", "final_graph", "input_color", "sampling_policy")
+    value = lambda protocol, key: protocol.get(key, "source" if key == "input_color" else None)
+    return {key: {"reference": value(reference, key), "candidate": value(candidate, key)}
+            for key in keys if value(reference, key) != value(candidate, key)}
 
 
 def choose_idle_gpu(text, allowed, allow_shared=False):

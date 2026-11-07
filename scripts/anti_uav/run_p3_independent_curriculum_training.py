@@ -287,6 +287,7 @@ def main() -> None:
                               localization_weight=0.15, localization_range_px=[4, 64]),
         ),
         qat=False,
+        input_color=source.get("input_color", "source"),
         sampling_policy=source.get("tiny_sampling", {"policy": "legacy"}),
         execution_scope="foundation_only" if args.foundation_only else "full_curriculum",
         checkpoint_selection="Video00009: 0.5 F2@0.03 + 0.3 AP50 + 0.2 AP50-95",
@@ -300,6 +301,8 @@ def main() -> None:
         for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation"):
             if previous.get(key) != protocol.get(key):
                 raise ValueError(f"Resume protocol mismatch for {key}")
+        if previous.get("input_color", "source") != protocol["input_color"]:
+            raise ValueError("Resume input color mode differs from the saved experiment")
         if "sampling_policy" in previous and previous["sampling_policy"] != protocol["sampling_policy"]:
             raise ValueError("Resume protocol mismatch for sampling_policy")
     else:

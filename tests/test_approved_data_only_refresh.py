@@ -12,6 +12,13 @@ from scripts.anti_uav.run_approved_data_only_refresh import (
 )
 
 
+def test_gray_input_and_sampler_changes_cannot_be_called_data_only():
+    assert recipe_difference({}, {"input_color": "source"}) == {}
+    assert set(recipe_difference({}, {"input_color": "gray3"})) == {"input_color"}
+    assert set(recipe_difference({"sampling_policy": {"policy": "legacy"}},
+        {"sampling_policy": {"policy": "fixed_domain_v1"}})) == {"sampling_policy"}
+
+
 def task(digest="new", status="approved", revision=3, approved_revision=3):
     return dict(task_id=digest, source_sha256=digest, status=status, revision=revision,
                 approved_revision=approved_revision, annotations=[dict(frame_index=1, status="confirmed")])

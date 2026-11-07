@@ -185,6 +185,7 @@ def extract(item, output):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--source-yaml", default="train_online_gray_monitor.yaml")
     p.add_argument("--baseline-protocol", type=Path, required=True)
     p.add_argument("--database", type=Path, required=True)
     p.add_argument("--video-root", type=Path, required=True)
@@ -203,7 +204,7 @@ def main():
     from scripts.anti_uav.append_approved_gray_native import append_samples, expansion_sampling
 
     cv2.setNumThreads(1)
-    config = yaml.safe_load((a.source / "train_online_gray_monitor.yaml").read_text())
+    config = yaml.safe_load((a.source / a.source_yaml).read_text())
     source = json.loads((a.source / "manifest.json").read_text())
     baseline_protocol = json.loads(a.baseline_protocol.read_text())
     for split in ("train", "val"):
@@ -295,7 +296,7 @@ def main():
         source_statuses=dict(Counter(r["status"] for r in included)),
         excluded_frames=dict(sum((Counter(r["excluded"]) for r in records), Counter())),
         train_slots=len(schedule), epoch_slots=positives+desired, negative_fraction=manifest["final_negative_fraction"],
-        replacement_policy="Existing 328-asset cache/p=0.5 retained; uncached new frames remain original pixels")
+        replacement_policy="Existing pinned asset cache/p=0.5 retained; uncached new frames remain original pixels")
     dump(a.output / "status.json", status)
     print(json.dumps(status, ensure_ascii=False), flush=True)
 

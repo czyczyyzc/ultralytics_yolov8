@@ -17,6 +17,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.anti_uav.prepare_labeler_training_expansion import dump, frame_plan, sha256
+from scripts.anti_uav.gray_temporal_background import TemporalBackgrounds, BackgroundUnavailable
 
 _PLAN = None
 _TEMPORAL = {}
@@ -30,21 +31,42 @@ def pixel_plan(item):
             for f, boxes in normalized.items()}, excluded
 
 
-def snapshot_temporal(item, boxes, heldout):
+class FrozenFrameTemporalBackgrounds(TemporalBackgrounds):
+    """Read sequentially exported frames; never rely on MPEG-TS random seeking."""
+
+    def read(self, record, frame):
+        import cv2
+        if frame not in record["eligible"]:
+            raise BackgroundUnavailable("frame_not_in_reviewed_frozen_export")
+        path = Path(record["frame_directory"]) / f"{frame:09d}.jpg"
+        image = cv2.imread(str(path))
+        metadata = record["metadata"]
+        if image is None or image.shape[:2] != (metadata["frame_height"], metadata["frame_width"]):
+            raise BackgroundUnavailable("frozen_donor_missing_or_wrong_geometry")
+        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    def close(self):
+        self.cache.clear()
+
+
+def snapshot_temporal(item, boxes, heldout, frozen_frames=False, snapshot_sha256=None):
     import cv2
     from scripts.anti_uav.gray_temporal_background import TemporalBackgrounds
 
     if item["source_sha256"] in heldout:
         raise ValueError("Heldout temporal source rejected")
-    temporal = TemporalBackgrounds.__new__(TemporalBackgrounds)
+    cls = FrozenFrameTemporalBackgrounds if frozen_frames else TemporalBackgrounds
+    temporal = cls.__new__(cls)
     temporal.cache, temporal.offsets = {}, (10, -10, 20, -20, 40, -40, 80, -80)
-    capture = cv2.VideoCapture(item["video"])
-    if not capture.isOpened():
+    capture = None if frozen_frames else cv2.VideoCapture(item["video"])
+    if capture is not None and not capture.isOpened():
         raise ValueError("Cannot open frozen temporal video")
     temporal.records = {Path(item["video"]).stem: dict(video=Path(item["video"]), metadata=item,
         boxes=boxes, eligible=set(boxes), capture=capture, video_sha256=item["source_sha256"],
         coco_sha256="frozen_labeler_snapshot", approved_manifest_sha256="not_claimed_approved",
-        annotation_provenance="frozen_human_confirmed_labels_pending_tasks_explicitly_allowed")}
+        annotation_provenance="approved_labeler_snapshot_sequential_frozen_frames" if frozen_frames
+            else "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
+        frame_directory=item.get("frame_directory"), frozen_snapshot_sha256=snapshot_sha256)}
     return temporal
 
 
@@ -66,7 +88,8 @@ def prepare_chunk(job):
     if digest not in _TEMPORAL:
         if len(_TEMPORAL) >= 2:
             _TEMPORAL.pop(next(iter(_TEMPORAL))).close()
-        _TEMPORAL[digest] = snapshot_temporal(item, item["frame_boxes"], _PLAN["heldout_sha256"])
+        _TEMPORAL[digest] = snapshot_temporal(item, item["frame_boxes"], _PLAN["heldout_sha256"],
+            _PLAN.get("donors_from_frozen_frames", False), _PLAN["snapshot_sha256"])
     temporal = _TEMPORAL[digest]
     output = Path(_PLAN["output"])
     path = output/job["pack"]
@@ -179,7 +202,10 @@ def finalize(plan, jobs):
         new_original_only=processed-ready, new_rejection_reasons=dict(reasons),
         source_videos=old_summary["source_videos"]+len(plan["videos"]), asset_count=len(index["asset_ids"]),
         original_images_preserved=True, synthetic_full_images_written=0, replacement_probability=.5,
-        manual_visual_review_pending=True, pending_task_provenance_explicit=True)
+        manual_visual_review_pending=True,
+        pending_task_provenance_explicit=any(v["status"] != "approved" for v in plan["videos"]),
+        new_snapshot_task_statuses=dict(Counter(v["status"] for v in plan["videos"])),
+        donor_frame_access="sequential_frozen_exports" if plan.get("donors_from_frozen_frames") else "video_seek")
     dump(root/"summary.json", summary)
     return summary
 
@@ -191,6 +217,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--chunk-size", type=int, default=128)
+    parser.add_argument("--donors-from-frozen-frames", action="store_true",
+                        help="Use the exact reviewed sequential exports for temporal donors; recommended for TS")
     args = parser.parse_args()
     if args.output.exists() or not 1 <= args.workers <= 32 or not 16 <= args.chunk_size <= 512:
         raise ValueError("Use a fresh cache, 1..32 workers and chunks of 16..512")
@@ -222,7 +250,8 @@ def main():
         if not rows:
             continue
         position = len(videos)
-        videos.append(dict(item, frame_boxes=boxes))
+        videos.append(dict(item, frame_boxes=boxes,
+            frame_directory=str(data/"images/labeler_snapshot"/key)))
         for offset in range(0, len(rows), args.chunk_size):
             jobs.append(dict(video_index=position, pack=f"snapshot_{digest}_{offset//args.chunk_size:04d}.sqlite",
                              rows=rows[offset:offset+args.chunk_size]))
@@ -233,6 +262,7 @@ def main():
         protected_inputs={str(data/name): sha256(data/name) for name in
             ("annotation_snapshot.json", "train_hardneg.txt", "train_hardneg.cache", "val_monitor.txt", "val_monitor.cache")},
         source_annotations_modified=False, original_retention_not_training_size_filter=True,
+        donors_from_frozen_frames=args.donors_from_frozen_frames,
         code_sha256=sha256(__file__))
     dump(output/"plan.json", plan)
     dump(output/"jobs.json", jobs)

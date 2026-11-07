@@ -133,7 +133,8 @@ def compare(a, device):
     torch.set_num_threads(4);torch.backends.cuda.matmul.allow_tf32=False;torch.backends.cudnn.allow_tf32=False
     result={}
     new_label=getattr(a,'comparison_arm_label','approved74_fixedgray')
-    for arm,run in [('native69',a.native_control_run),('public69_before_repair',a.source_run),(new_label,a.run_dir)]:
+    source_label=getattr(a,'source_arm_label','public69_before_repair')
+    for arm,run in [('native69',a.native_control_run),(source_label,a.source_run),(new_label,a.run_dir)]:
         for stage,relative in [('p3_initial','foundation/p3/weights/best.pt'),('teacher','teacher/p2p3/weights/best.pt'),
                                ('student','p3_student_distilled_best_fp32.pt')]:
             name=arm+'_'+stage;weights=run/relative;digest=sha256(weights)

@@ -198,7 +198,24 @@ def main() -> None:
     parser.add_argument("--expected-training-videos", type=int, default=50)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--foundation-only", action="store_true", help="Validate the repaired foundation before training Teacher/Student")
+    parser.add_argument("--regression-repair", action="store_true", help="Opt-in source/scale-normalized regression; legacy defaults unchanged")
+    parser.add_argument("--repair-balance-mix", type=float, default=.5)
+    parser.add_argument("--repair-warmup-epochs", type=int, default=3)
     args = parser.parse_args()
+
+    p3_trainer, teacher_trainer, student_trainer = TinyAwareP3Trainer, TinyAwareAddOnTrainer, P3StudentFP32DistillationTrainer
+    repair = None
+    if args.regression_repair:
+        from scripts.anti_uav.regression_repair_trainers import (
+            RegressionRepairP3Trainer, RegressionRepairAddOnTrainer, RegressionRepairStudentTrainer,
+        )
+        if not 0 < args.repair_balance_mix <= .75 or args.repair_warmup_epochs < 1:
+            raise ValueError("Invalid bounded regression repair schedule")
+        repair = dict(balance_mix=args.repair_balance_mix, warmup_epochs=args.repair_warmup_epochs,
+                      tiny_log_size_weight=.5)
+        p3_trainer, teacher_trainer, student_trainer = RegressionRepairP3Trainer, RegressionRepairAddOnTrainer, RegressionRepairStudentTrainer
+        for trainer in (p3_trainer, teacher_trainer, student_trainer):
+            trainer.repair_options = repair
 
     args.data = args.data.resolve()
     args.foundation = args.foundation.resolve()
@@ -300,8 +317,17 @@ def main() -> None:
         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
     )
     protocol_path = args.run_dir / "protocol.json"
+    if repair is not None:
+        protocol["regression_repair"] = dict(options=repair,
+            source="per_image_gt_credit_and_augmented_source_scale_buckets",
+            classification_unchanged=True, assigner_unchanged=True,
+            inference_graph_unchanged=True, unmatched_gt_not_fabricated=True,
+            extra_size_range_px=[2,16], localization_min_px=2,
+            stages=["foundation", "teacher", "student"])
     if protocol_path.exists():
         previous = json.loads(protocol_path.read_text())
+        if previous.get("regression_repair") != protocol.get("regression_repair"):
+            raise ValueError("Resume regression repair differs from saved experiment")
         for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation"):
             if previous.get(key) != protocol.get(key):
                 raise ValueError(f"Resume protocol mismatch for {key}")
@@ -315,16 +341,16 @@ def main() -> None:
     try:
         foundation_best = args.run_dir / "foundation/p3/weights/best.pt"
         if not (args.resume and foundation_best.is_file()):
-            TinyAwareP3Trainer.validator_class = FixedShapeGrayValidator
-            TinyAwareP3Trainer.tiny_multiplier = 1.75
-            TinyAwareP3Trainer.localization_weight = .12
-            TinyAwareP3Trainer.localization_min_px = 4.0
-            TinyAwareP3Trainer.localization_max_px = 64.0
+            p3_trainer.validator_class = FixedShapeGrayValidator
+            p3_trainer.tiny_multiplier = 1.75
+            p3_trainer.localization_weight = .12
+            p3_trainer.localization_min_px = 4.0
+            p3_trainer.localization_max_px = 64.0
             foundation = YOLO(str(args.foundation))
             add_status_callback(foundation, args.run_dir, "train_native_p3_foundation")
             write_status(args.run_dir, "train_native_p3_foundation", epoch=0)
             foundation.train(
-                trainer=TinyAwareP3Trainer, project=str(args.run_dir / "foundation"), name="p3",
+                trainer=p3_trainer, project=str(args.run_dir / "foundation"), name="p3",
                 lr0=.001, warmup_epochs=1,
                 **common_train(foundation_data, args, args.foundation_epochs),
             )
@@ -342,11 +368,11 @@ def main() -> None:
             teacher_init = args.run_dir / "teacher_initialized.pt"
             teacher, report = initialize_addon_model(foundation_best, DEFAULT_CFG, teacher_init)
             (args.run_dir / "audit/teacher_initialization.json").write_text(json.dumps(report, indent=2) + "\n")
-            TinyAwareAddOnTrainer.validator_class = FixedShapeGrayValidator
-            TinyAwareAddOnTrainer.tiny_multiplier = 1.75
+            teacher_trainer.validator_class = FixedShapeGrayValidator
+            teacher_trainer.tiny_multiplier = 1.75
             add_status_callback(teacher, args.run_dir, "train_teacher")
             teacher.train(
-                trainer=TinyAwareAddOnTrainer, project=str(args.run_dir / "teacher"), name="p2p3",
+                trainer=teacher_trainer, project=str(args.run_dir / "teacher"), name="p2p3",
                 lr0=.001, warmup_epochs=1,
                 **common_train(teacher_data, args, args.teacher_epochs),
             )
@@ -366,9 +392,9 @@ def main() -> None:
             )
             (args.run_dir / "audit/student_initialization.json").write_text(json.dumps(report, indent=2) + "\n")
 
-            P3StudentFP32DistillationTrainer.teacher_weights = teacher_best.resolve()
-            P3StudentFP32DistillationTrainer.validator_class = FixedShapeGrayValidator
-            P3StudentFP32DistillationTrainer.loss_options = dict(
+            student_trainer.teacher_weights = teacher_best.resolve()
+            student_trainer.validator_class = FixedShapeGrayValidator
+            student_trainer.loss_options = dict(
                 auxiliary_weight=.25, p3_cls_weight=.10, p3_dfl_weight=.05,
                 p2_cls_weight=.25, p2_box_weight=.10, feature_weight=.10,
                 p2_min_px=0.0, p2_max_px=16.0, feature_min_px=4.0, feature_max_px=8.0,
@@ -377,7 +403,7 @@ def main() -> None:
             )
             add_status_callback(student, args.run_dir, "distill_fp32")
             student.train(
-                trainer=P3StudentFP32DistillationTrainer,
+                trainer=student_trainer,
                 project=str(args.run_dir / "distill_fp32"), name="p3_student",
                 lr0=1e-4, warmup_epochs=0,
                 **common_train(student_data, args, args.student_epochs),
@@ -389,8 +415,8 @@ def main() -> None:
             localization_weights = args.run_dir / "localization/p3_student/weights"
             if not (args.resume and (localization_weights / "best.pt").is_file()):
                 localization = YOLO(str(student_weights / "best.pt"))
-                P3StudentFP32DistillationTrainer.teacher_weights = teacher_best.resolve()
-                P3StudentFP32DistillationTrainer.loss_options = dict(
+                student_trainer.teacher_weights = teacher_best.resolve()
+                student_trainer.loss_options = dict(
                     auxiliary_weight=.25, p3_cls_weight=.10, p3_dfl_weight=.05,
                     p2_cls_weight=.30, p2_box_weight=.15, feature_weight=.10,
                     p2_min_px=0.0, p2_max_px=16.0, feature_min_px=4.0, feature_max_px=16.0,
@@ -399,7 +425,7 @@ def main() -> None:
                 )
                 add_status_callback(localization, args.run_dir, "localization_refinement")
                 localization.train(
-                    trainer=P3StudentFP32DistillationTrainer,
+                    trainer=student_trainer,
                     project=str(args.run_dir / "localization"), name="p3_student",
                     lr0=5e-5, warmup_epochs=0,
                     **common_train(localization_data, args, args.localization_epochs),

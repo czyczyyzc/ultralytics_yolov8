@@ -60,8 +60,10 @@ def support_envelope(alpha, config):
     kernel = config['opening_kernel']
     padding = config['padding_px']
     limit = float(config['max_removed_alpha_fraction'])
+    mode = config.get('mode', 'padded_convex_hull')
     if (not isinstance(kernel, int) or kernel < 3 or kernel % 2 != 1
-            or not isinstance(padding, int) or padding < 0 or not 0 < limit < 1):
+            or not isinstance(padding, int) or padding < 0 or not 0 < limit < 1
+            or mode not in {'padded_convex_hull', 'dilated_core'}):
         raise ValueError('Invalid reviewed support-envelope configuration')
     core = cv2.morphologyEx((alpha >= 128).astype(np.uint8), cv2.MORPH_OPEN,
                            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel, kernel)))
@@ -69,9 +71,11 @@ def support_envelope(alpha, config):
     if count < 2 or stats[1:, cv2.CC_STAT_AREA].max() < 32:
         raise ValueError('No solid airframe core for reviewed support cleanup')
     main = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-    ys, xs = np.where(labels == main)
-    gate = np.zeros(alpha.shape, np.uint8)
-    cv2.fillConvexPoly(gate, cv2.convexHull(np.column_stack((xs, ys)).astype(np.int32)), 1)
+    gate = (labels == main).astype(np.uint8)
+    if mode == 'padded_convex_hull':
+        ys, xs = np.where(gate)
+        gate.fill(0)
+        cv2.fillConvexPoly(gate, cv2.convexHull(np.column_stack((xs, ys)).astype(np.int32)), 1)
     if padding:
         size = padding * 2 + 1
         gate = cv2.dilate(gate, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))

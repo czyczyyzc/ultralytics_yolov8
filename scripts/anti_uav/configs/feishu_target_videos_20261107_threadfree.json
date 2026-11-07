@@ -1,0 +1,29 @@
+{
+  "expected_inputs": 70,
+  "segment_input_ids": ["3", "10", "13", "20", "35", "44", "46", "54", "57", "66"],
+  "model_names": {
+    "3": "ATOMRC Beluga / suspended underside capture",
+    "10": "ATOMRC Beluga / suspended underside capture",
+    "13": "ATOMRC Beluga / suspended underside capture",
+    "20": "ATOMRC Beluga / suspended underside capture",
+    "35": "ATOMRC Beluga / suspended underside capture",
+    "44": "ATOMRC Beluga / suspended underside capture",
+    "46": "ATOMRC Beluga / suspended underside capture",
+    "54": "ATOMRC Beluga / suspended underside capture",
+    "57": "ATOMRC Beluga / suspended underside capture",
+    "66": "ATOMRC Beluga / suspended underside capture"
+  },
+  "reviewed_rigid_airframe_envelope": {
+    "3": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "10": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "13": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "20": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "35": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "44": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "46": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "54": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "57": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08},
+    "66": {"mode": "dilated_core", "opening_kernel": 7, "padding_px": 6, "max_removed_alpha_fraction": 0.08}
+  },
+  "policy": "Opt-in subtractive alpha cleanup for reviewed rigid fixed-wing airframes only. Dilate the opened solid-airframe core, not its convex hull, to avoid retaining suspension lines in the concave gaps between tail and wings. Intersect with original alpha: never fill holes or regenerate RGB. Reject excessive alpha removal, clipped real structures or visible residual supports. Not applied to old drone/rotor assets."
+}

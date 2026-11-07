@@ -28,3 +28,16 @@ def test_multiple_solid_objects_or_empty_core_require_rejection():
         support_envelope(np.zeros_like(mask), dict(opening_kernel=7, padding_px=2, max_removed_alpha_fraction=.08))
     with pytest.raises(ValueError, match='configuration'):
         support_envelope(mask, dict(opening_kernel=4, padding_px=2, max_removed_alpha_fraction=.08))
+
+
+def test_body_shaped_gate_removes_thread_in_concave_airframe_gap():
+    mask = np.zeros((120, 120), np.uint8)
+    mask[20:100, 50:70] = 255
+    mask[20:35, 25:95] = 255
+    mask[65:85, 10:110] = 255
+    mask[35:65, 35] = 255
+    result = support_envelope(mask, dict(mode='dilated_core', opening_kernel=7,
+                                        padding_px=2, max_removed_alpha_fraction=.08))
+    assert result[50, 35] == 0
+    assert np.array_equal(result[40:90, 52:68], mask[40:90, 52:68])
+    assert (result <= mask).all()

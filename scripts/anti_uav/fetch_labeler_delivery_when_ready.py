@@ -36,6 +36,7 @@ def unpack_verified(archive, destination):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--host", required=True)
+    p.add_argument("--ssh-config", type=Path, help="Explicit SSH configuration, e.g. /dev/null for a direct connection")
     p.add_argument("--workflow", required=True)
     p.add_argument("--expected-archive", required=True)
     p.add_argument("--destination", type=Path, required=True)
@@ -48,9 +49,10 @@ def main():
     a.destination.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + 72*3600
     errors = 0
+    ssh_options = ["-F", str(a.ssh_config)] if a.ssh_config else []
     while time.monotonic() < deadline:
         try:
-            result = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", a.host,
+            result = subprocess.run(["ssh", *ssh_options, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", a.host,
                 "cat " + shlex.quote(a.workflow)], text=True, capture_output=True, timeout=30, check=True)
             record = json.loads(result.stdout)
             dump(a.status_dir / "remote_workflow_status.json", record)
@@ -66,7 +68,8 @@ def main():
                     raise ValueError("Completed archive does not match the requested experiment")
                 archive = a.destination / PurePosixPath(a.expected_archive).name
                 dump(a.status_dir / "fetch_status.json", dict(stage="downloading", archive=str(archive)))
-                subprocess.run(["rsync", "-az", "--partial", "--timeout=600", a.host + ":" + a.expected_archive,
+                transport = shlex.join(["ssh", *ssh_options, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"])
+                subprocess.run(["rsync", "-az", "--partial", "--timeout=600", "-e", transport, a.host + ":" + a.expected_archive,
                                 str(a.destination) + "/"], check=True)
                 if sha256(archive) != record["sha256"]:
                     raise ValueError("Downloaded archive SHA256 differs from completed workflow")

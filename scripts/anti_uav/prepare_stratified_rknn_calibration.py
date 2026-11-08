@@ -178,6 +178,15 @@ def letterbox(image: np.ndarray, height: int, width: int) -> np.ndarray:
     return canvas
 
 
+def calibration_pixels(image: np.ndarray, height: int, width: int, input_color: str) -> np.ndarray:
+    canvas = letterbox(image, height, width)
+    if input_color == "gray3":
+        canvas = cv2.cvtColor(cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR)
+    elif input_color != "source":
+        raise ValueError(f"Unsupported calibration input color: {input_color}")
+    return canvas
+
+
 def main() -> None:
     args = parse_args()
     data_path = args.data.expanduser().resolve()
@@ -191,6 +200,9 @@ def main() -> None:
     image_dir.mkdir(exist_ok=True)
 
     data = yaml.safe_load(data_path.read_text())
+    input_color = data.get("input_color", "source")
+    if input_color not in ("source", "gray3"):
+        raise ValueError(f"Unsupported calibration input color: {input_color}")
     train_list = resolve_from_yaml(data["train"], data_path)
     source_paths = [Path(line.strip()).expanduser().resolve() for line in train_list.read_text().splitlines() if line.strip()]
     source_paths = list(dict.fromkeys(source_paths))
@@ -257,7 +269,7 @@ def main() -> None:
         if image is None:
             raise RuntimeError(f"Unable to decode calibration image: {source}")
         destination = image_dir / f"calib_{index:04d}.png"
-        if not cv2.imwrite(str(destination), letterbox(image, args.height, args.width)):
+        if not cv2.imwrite(str(destination), calibration_pixels(image, args.height, args.width, input_color)):
             raise RuntimeError(f"Unable to write calibration image: {destination}")
         row["calibration_image"] = str(destination)
         manifest.append(str(destination))
@@ -273,6 +285,7 @@ def main() -> None:
         label_cache_sha256=sha256(cache_path) if cache_path else None,
         unique_training_images=len(source_paths),
         input_hw=[args.height, args.width],
+        input_color=input_color,
         samples=len(selected),
         seed=args.seed,
         excluded_tokens=list(excluded),

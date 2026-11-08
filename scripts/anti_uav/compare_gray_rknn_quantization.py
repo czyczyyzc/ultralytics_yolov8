@@ -120,13 +120,13 @@ def raw_prediction(outputs, input_hw=(544, 960)):
     return torch.from_numpy(np.concatenate(branches, axis=2))
 
 
-def make_validator(listing, output):
+def make_validator(listing, output, input_color="source"):
     validator = SimulatorPairValidator(save_dir=output, args=dict(imgsz=[544, 960], rect=False,
         batch=1, workers=4, conf=.001, iou=.45, max_det=100, half=False, plots=False))
     validator.device = torch.device("cpu")
     validator.training = False
     validator.stride = 32
-    validator.data = dict(val=str(listing), names={0: "drone"}, nc=1)
+    validator.data = dict(val=str(listing), names={0: "drone"}, nc=1, input_color=input_color)
     validator.init_metrics(SimpleNamespace(names={0: "drone"}))
     return validator
 
@@ -139,6 +139,7 @@ def report(output, result):
         f"Target: {protocol['target']}; RKNN Toolkit2 {protocol['toolkit_version']} host simulator.",
         "Not a board accuracy or FPS measurement. Tracking is excluded.",
         "Identical validation-loader RGB pixels for all backends: 960x544, padding 114.",
+        f"Input color: {protocol.get('input_color', 'source')}.",
         "Common NMS IoU .45, max_det 100; fixed metrics conf .01/.03/.05; AP floor .001.",
         "Video00004 is held-out test; Video00009 selected checkpoints and is NOT independent test.",
         "Native frames only: zoom validation views excluded. Pooled AP is globally recomputed.",
@@ -172,6 +173,7 @@ def merge_shards(output, shards):
         quantized_algorithm="normal",
         quantized_method="channel",
         auto_hybrid=False,
+        input_color="source",
     )
     shard_count = reference["shards"]
     if len(records) != shard_count or {r["protocol"]["shard_index"] for r in records} != set(range(shard_count)):
@@ -183,6 +185,7 @@ def merge_shards(output, shards):
         for key in (
             "artifacts", "target", "toolkit_version", "input_hw", "padding", "thresholds", "shards",
             "quantized_dtype", "quantized_algorithm", "quantized_method", "auto_hybrid",
+            "input_color",
         ):
             if p.get(key, quantization_defaults.get(key)) != reference.get(key, quantization_defaults.get(key)):
                 raise ValueError(f"Shard protocol differs: {key}")
@@ -269,6 +272,7 @@ def main():
     parser.add_argument("--rknn-only", action="store_true",
                         help="Evaluate one rebuilt RKNN model without rerunning PT/ONNX baselines")
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--input-color", choices=("source", "gray3"), default="source")
     parser.add_argument("--limit-per-split", type=int, default=0, help="Smoke only; 0 evaluates all native frames")
     parser.add_argument("--shards", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
@@ -318,6 +322,7 @@ def main():
             if not Path(path).is_file():
                 raise FileNotFoundError(path)
         protocol = dict(target=args.target, toolkit_version=version("rknn-toolkit2"),
+            input_color=args.input_color,
             input_hw=[544, 960], padding=114, conf_floor=.001, nms_iou=.45, max_det=100,
             thresholds=[.01, .03, .05], matching_iou=.5, calibration_frames=len(calibration),
             quantized_dtype=args.quantized_dtype, quantized_algorithm=args.quantized_algorithm,
@@ -396,7 +401,7 @@ def main():
         entries = {backend: [] for backend in backends}
         started = time.monotonic()
         for split, listing in manifests.items():
-            validators = {backend: make_validator(listing, args.output / "metrics" / split / backend)
+            validators = {backend: make_validator(listing, args.output / "metrics" / split / backend, args.input_color)
                           for backend in backends}
             reference = validators[backends[0]]
             loader = reference.get_dataloader(str(listing), 1)
@@ -406,6 +411,9 @@ def main():
                 raise ValueError("Missing/corrupt image: loader coverage differs from manifest")
             for index, batch in enumerate(loader):
                 rgb = np.ascontiguousarray(batch["img"].numpy().transpose(0, 2, 3, 1))
+                if args.input_color == "gray3" and not (
+                        np.array_equal(rgb[..., 0], rgb[..., 1]) and np.array_equal(rgb[..., 1], rgb[..., 2])):
+                    raise ValueError("Gray3 evaluation produced nonidentical input channels")
                 batch = reference.preprocess(batch)
                 quantized = raw_prediction(runtime.inference(inputs=[rgb], data_format=["nhwc"]))
                 raw_predictions = (quantized,)

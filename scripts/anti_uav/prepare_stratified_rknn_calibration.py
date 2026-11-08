@@ -7,6 +7,7 @@ import argparse
 from collections import defaultdict, deque
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -204,10 +205,18 @@ def main() -> None:
     if input_color not in ("source", "gray3"):
         raise ValueError(f"Unsupported calibration input color: {input_color}")
     train_list = resolve_from_yaml(data["train"], data_path)
-    source_paths = [Path(line.strip()).expanduser().resolve() for line in train_list.read_text().splitlines() if line.strip()]
+    # The curated alias owns the YOLO label; the resolved raw image often has no label.
+    source_paths = [Path(os.path.abspath(Path(line.strip()).expanduser()))
+                    for line in train_list.read_text().splitlines() if line.strip()]
     source_paths = list(dict.fromkeys(source_paths))
+    canonical = {str(path): str(path.resolve()) for path in source_paths}
+    unique_files = {}
+    for path in source_paths:
+        unique_files.setdefault(canonical[str(path)], path)
+    source_paths = list(unique_files.values())
     excluded = tuple(args.exclude_token)
-    if any(excluded_calibration_source(path, token) for path in source_paths for token in excluded):
+    if any(excluded_calibration_source(value, token) for path in source_paths
+           for value in (path, canonical[str(path)]) for token in excluded):
         raise ValueError(f"Training list contains an excluded evaluation source: {excluded}")
     excluded_lists = [resolve_from_yaml(data["val"], data_path)] if data.get("val") else []
     excluded_lists.extend(path.expanduser().resolve() for path in args.exclude_list)
@@ -217,7 +226,7 @@ def main() -> None:
         for line in listing.read_text().splitlines()
         if line.strip()
     }
-    overlap = excluded_paths.intersection(str(path) for path in source_paths)
+    overlap = excluded_paths.intersection(canonical[str(path)] for path in source_paths)
     if overlap:
         raise ValueError(f"Training list overlaps excluded evaluation manifests by {len(overlap)} images")
 
@@ -286,6 +295,7 @@ def main() -> None:
         unique_training_images=len(source_paths),
         input_hw=[args.height, args.width],
         input_color=input_color,
+        source_identity_policy="canonical files deduplicated/excluded; original curated paths retain YOLO labels/cache keys",
         samples=len(selected),
         seed=args.seed,
         excluded_tokens=list(excluded),

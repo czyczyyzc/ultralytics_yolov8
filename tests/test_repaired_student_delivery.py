@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 
 import cv2
 import numpy as np
@@ -9,6 +10,7 @@ from scripts.anti_uav.deliver_regression_repair_student import (
     evaluated_binary, interpreter_path, metric_table, ready_state, sha256, validate_inputs,
 )
 from scripts.anti_uav.prepare_stratified_rknn_calibration import calibration_pixels, letterbox
+from scripts.anti_uav import prepare_stratified_rknn_calibration as calibration
 
 
 def write(path, value):
@@ -44,6 +46,55 @@ def test_source_color_calibration_remains_unchanged():
     assert np.array_equal(calibration_pixels(image, 32, 64, "source"), letterbox(image, 32, 64))
     with pytest.raises(ValueError, match="input color"):
         calibration_pixels(image, 32, 64, "invalid")
+
+
+def symlink_calibration_dataset(tmp_path):
+    raw = tmp_path / "unlabelled_raw"
+    images, labels = tmp_path / "curated/images/train", tmp_path / "curated/labels/train"
+    for directory in (raw, images, labels):
+        directory.mkdir(parents=True)
+    paths, rows = [], []
+    for index in range(5):
+        source = raw / f"raw_{index}.png"
+        assert cv2.imwrite(str(source), np.full((20, 40, 3), [10, 90, 210], dtype=np.uint8))
+        alias = images / f"curated_{index}.png"
+        alias.symlink_to(source)
+        (labels / f"curated_{index}.txt").write_text("0 .5 .5 .1 .1\n")
+        paths.append(str(alias))
+        rows.append(dict(im_file=str(alias), shape=(20, 40), bbox_format="xywh", normalized=True,
+                         bboxes=np.asarray([[.5, .5, .1, .1]], dtype=np.float32)))
+    listing = tmp_path / "curated/train.txt"
+    listing.write_text("\n".join(paths) + "\n")
+    with listing.with_suffix(".cache").open("wb") as stream:
+        np.save(stream, dict(labels=rows))
+    data = tmp_path / "curated/data.yaml"
+    write(data, dict(train=str(listing), input_color="gray3"))
+    return data, paths
+
+
+def test_symlink_images_keep_curated_labels_and_cached_metadata(tmp_path, monkeypatch):
+    data, paths = symlink_calibration_dataset(tmp_path)
+    output = tmp_path / "calibration"
+    monkeypatch.setattr(sys, "argv", ["calibration", "--data", str(data), "--output-dir", str(output),
+                                      "--samples", "5", "--height", "32", "--width", "64"])
+    calibration.main()
+    audit = json.loads((output / "audit.json").read_text())
+    assert audit["label_cache"] is not None
+    assert {row["image"] for row in audit["rows"]} == set(paths)
+    assert all("curated/labels/train" in row["label"] for row in audit["rows"])
+    assert all(Path(row["label"]).is_file() for row in audit["rows"])
+    assert audit["input_color"] == "gray3"
+
+
+def test_symlink_cannot_hide_validation_leakage(tmp_path, monkeypatch):
+    data, paths = symlink_calibration_dataset(tmp_path)
+    val = tmp_path / "validation.txt"
+    val.write_text(str(Path(paths[0]).resolve()) + "\n")
+    write(data, dict(train=str(data.parent / "train.txt"), val=str(val), input_color="gray3"))
+    monkeypatch.setattr(sys, "argv", ["calibration", "--data", str(data), "--output-dir", str(tmp_path / "out"),
+                                      "--samples", "5"])
+    with pytest.raises(ValueError, match="overlaps excluded"):
+        calibration.main()
 
 
 @pytest.mark.parametrize("training,supervisor,ready", [
@@ -129,7 +180,7 @@ def test_partial_quantization_or_broken_export_cannot_be_shipped(tmp_path):
 
 
 def test_handover_has_no_claimed_board_speed_and_puts_recall_first():
-    template = Path("scripts/anti_uav/templates/RK3576_REPAIR_HANDOVER_ZH.md").read_text()
+    template = (Path(__file__).resolve().parents[1] / "scripts/anti_uav/templates/RK3576_REPAIR_HANDOVER_ZH.md").read_text()
     assert "尚未进行本版本 RK3576 真机" in template
     assert "--workers 2 --inflight 2 --npu-masks 0,1" in template
     assert "observations" in template

@@ -28,6 +28,11 @@ def read(path):
     return json.loads(Path(path).read_text())
 
 
+def interpreter_path(path):
+    # Resolving a venv's python symlink bypasses that environment entirely.
+    return Path(os.path.abspath(Path(path).expanduser()))
+
+
 def validate_inputs(training):
     protocol = read(training / "protocol.json")
     contract = read(training / "experiment_contract.json")
@@ -100,8 +105,9 @@ def main():
     parser.add_argument("--poll-seconds", type=int, default=60)
     parser.add_argument("--wait-hours", type=float, default=48)
     args = parser.parse_args()
-    for key in ("training", "work_dir", "delivery_dir", "toolkit_python"):
+    for key in ("training", "work_dir", "delivery_dir"):
         setattr(args, key, getattr(args, key).resolve())
+    args.toolkit_python = interpreter_path(args.toolkit_python)
     if args.poll_seconds < 30 or args.wait_hours <= 0:
         parser.error("Require a bounded, nonaggressive wait")
     if args.work_dir == args.training or args.delivery_dir.exists():
@@ -134,12 +140,17 @@ def main():
         if version != "2.3.2":
             raise ValueError(f"Expected RKNN Toolkit2 2.3.2, got {version}")
         plan = dict(training=str(args.training), data=protocol["data"], target="rk3576", toolkit_version=version,
+                    toolkit_python=str(args.toolkit_python),
                     training_videos=74, input_hw=[544, 960], input_color="gray3", qat=False,
                     quantization="W8A8 PTQ, normal/channel", git_commit=commit,
                     protocol_sha256=sha256(args.training / "protocol.json"),
                     contract_sha256=sha256(args.training / "experiment_contract.json"),
                     code_snapshot="committed release only; unrelated working-tree edits excluded",
                     board_validation_complete=False, commercial_dataset_authorizations_verified=False)
+        plan["export_source_sha256"] = {str(ROOT / relative): sha256(ROOT / relative) for relative in (
+            "scripts/anti_uav/export_detector_rkopt_onnx.py", "scripts/anti_uav/build_rknn.py",
+            "scripts/anti_uav/compare_gray_rknn_quantization.py",
+            "scripts/anti_uav/templates/RK3576_REPAIR_HANDOVER_ZH.md")}
         dump(args.work_dir / "workflow_protocol.json", plan)
         calibration = args.work_dir / "calibration"
         execute("prepare_calibration", [sys.executable, str(ROOT / "scripts/anti_uav/prepare_stratified_rknn_calibration.py"),
@@ -159,6 +170,9 @@ def main():
                    comparison_stage=supervisor["stage"], training_pid=state.get("pid"))
             time.sleep(args.poll_seconds)
         validate_inputs(args.training)
+        for path, expected in plan["export_source_sha256"].items():
+            if sha256(Path(path)) != expected:
+                raise ValueError(f"Export implementation changed while waiting: {path}")
         if (sha256(args.training / "protocol.json") != plan["protocol_sha256"]
                 or sha256(args.training / "experiment_contract.json") != plan["contract_sha256"]):
             raise ValueError("Training identity changed while waiting")
@@ -168,6 +182,11 @@ def main():
         selected = comparison["approved74_regression_repair_student"]
         if selected["sha256"] != completed["student_sha256"] or Path(selected["weights"]).resolve() != student:
             raise ValueError("Final FP32 comparison does not cover the selected pure-P3 Student")
+        for name in ("native69_student", "approved74_legacy_loss_student", "approved74_regression_repair_student"):
+            metrics = comparison[name]["splits"]["pooled"]
+            q = "native/c0.03/"
+            if (metrics[q + "FRAMES"], metrics[q + "TP"] + metrics[q + "FN"]) != (3780, 1245):
+                raise ValueError("Final FP32 comparison coverage changed")
         onnx = args.work_dir / "detector_960x544_rkopt.onnx"
         execute("export_onnx", [sys.executable, str(ROOT / "scripts/anti_uav/export_detector_rkopt_onnx.py"),
             "--weights", str(student), "--imgsz", "544,960", "--device", "cpu", "--output", str(onnx)])

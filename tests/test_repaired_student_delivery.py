@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from scripts.anti_uav.deliver_regression_repair_student import (
-    evaluated_binary, metric_table, ready_state, sha256, validate_inputs,
+    evaluated_binary, interpreter_path, metric_table, ready_state, sha256, validate_inputs,
 )
 from scripts.anti_uav.prepare_stratified_rknn_calibration import calibration_pixels, letterbox
 
@@ -14,6 +14,16 @@ from scripts.anti_uav.prepare_stratified_rknn_calibration import calibration_pix
 def write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value))
+
+
+def test_venv_interpreter_keeps_its_environment_path(tmp_path):
+    real = tmp_path / "system-python"
+    real.write_text("placeholder")
+    venv = tmp_path / "venv/bin/python"
+    venv.parent.mkdir(parents=True)
+    venv.symlink_to(real)
+    assert interpreter_path(venv) == venv
+    assert interpreter_path(venv) != venv.resolve()
 
 
 def test_gray_calibration_matches_gray_after_letterbox_and_preserves_padding():

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from scripts.anti_uav.deliver_regression_repair_student import (
-    evaluated_binary, interpreter_path, metric_table, ready_state, sha256, validate_inputs,
+    evaluated_binary, interpreter_path, metric_table, ready_state, resume_quantization_inputs, sha256, validate_inputs,
 )
 from scripts.anti_uav.prepare_stratified_rknn_calibration import calibration_pixels, letterbox
 from scripts.anti_uav import prepare_stratified_rknn_calibration as calibration
@@ -113,6 +113,27 @@ def test_failed_training_or_comparison_cannot_trigger_delivery(tmp_path, failed)
         write(tmp_path / name, dict(stage="failed" if name == failed else "complete"))
     with pytest.raises(RuntimeError, match="failed"):
         ready_state(tmp_path)
+
+
+def test_quantization_resume_preserves_and_checks_compiled_artifacts(tmp_path):
+    artifact = tmp_path / "detector.onnx"
+    artifact.write_bytes(b"verified-export")
+    write(tmp_path / "workflow_status.json", dict(stage="failed", failed_stage="quantization_smoke"))
+    write(tmp_path / "workflow_protocol.json", dict(git_commit="original"))
+    write(tmp_path / "quantization_smoke/protocol.json", dict(target="rk3576", input_color="gray3",
+        quantized_dtype="w8a8", auto_hybrid=False,
+        artifacts={name: dict(path=str(artifact), sha256=sha256(artifact))
+                   for name in ("weights", "onnx", "rknn", "calibration")}))
+    assert resume_quantization_inputs(tmp_path)[0]["git_commit"] == "original"
+    artifact.write_bytes(b"different-export")
+    with pytest.raises(ValueError, match="artifact changed"):
+        resume_quantization_inputs(tmp_path)
+
+
+def test_quantization_resume_cannot_overwrite_a_completed_release(tmp_path):
+    write(tmp_path / "workflow_status.json", dict(stage="complete"))
+    with pytest.raises(ValueError, match="failed quantization"):
+        resume_quantization_inputs(tmp_path)
 
 
 def test_data_contract_rejects_qat_rgb_or_unpinned_files(tmp_path):

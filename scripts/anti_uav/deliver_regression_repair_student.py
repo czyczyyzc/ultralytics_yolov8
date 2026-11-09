@@ -84,6 +84,22 @@ def evaluated_binary(evaluation):
     return binary, result
 
 
+def resume_quantization_inputs(work_dir):
+    state = read(work_dir / "workflow_status.json")
+    if state.get("stage") != "failed" or state.get("failed_stage") != "quantization_smoke":
+        raise ValueError("Quantization-only resume requires a failed quantization_smoke stage")
+    protocol = read(work_dir / "quantization_smoke/protocol.json")
+    if (protocol.get("target") != "rk3576" or protocol.get("input_color") != "gray3"
+            or protocol.get("quantized_dtype") != "w8a8" or protocol.get("auto_hybrid")):
+        raise ValueError("Interrupted quantization protocol differs from the requested release")
+    if set(protocol["artifacts"]) != {"weights", "onnx", "rknn", "calibration"}:
+        raise ValueError("Interrupted quantization is missing required artifact hashes")
+    for name, record in protocol["artifacts"].items():
+        if sha256(Path(record["path"])) != record["sha256"]:
+            raise ValueError(f"Interrupted export artifact changed: {name}")
+    return read(work_dir / "workflow_protocol.json"), protocol
+
+
 def metric_table(records, split, names):
     lines = ["| 模型 | Recall | Precision | FP | mAP50 | mAP50-95 |",
              "| --- | ---: | ---: | ---: | ---: | ---: |"]
@@ -104,6 +120,8 @@ def main():
     parser.add_argument("--toolkit-python", type=Path, required=True)
     parser.add_argument("--poll-seconds", type=int, default=60)
     parser.add_argument("--wait-hours", type=float, default=48)
+    parser.add_argument("--resume-quantization", action="store_true",
+                        help="Retry only a failed quantization check, preserving verified compiled inputs")
     args = parser.parse_args()
     for key in ("training", "work_dir", "delivery_dir"):
         setattr(args, key, getattr(args, key).resolve())
@@ -112,11 +130,11 @@ def main():
         parser.error("Require a bounded, nonaggressive wait")
     if args.work_dir == args.training or args.delivery_dir.exists():
         raise ValueError("Do not overwrite training or an existing delivery")
-    args.work_dir.mkdir(parents=True, exist_ok=False)
+    args.work_dir.mkdir(parents=True, exist_ok=args.resume_quantization)
     lock = (args.work_dir / "delivery.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     logs = args.work_dir / "logs"
-    logs.mkdir()
+    logs.mkdir(exist_ok=args.resume_quantization)
     environment = dict(os.environ, OMP_NUM_THREADS="4", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="4",
                        MPLBACKEND="Agg", WANDB_MODE="disabled", PYTHONPATH=str(ROOT))
     environment.pop("CUDA_VISIBLE_DEVICES", None)
@@ -128,10 +146,11 @@ def main():
 
     def execute(stage, command):
         status(stage, command=command)
-        with (logs / (stage + ".log")).open("x") as stream:
+        with (logs / (stage + ".log")).open("a" if args.resume_quantization else "x") as stream:
             subprocess.run(command, cwd=ROOT, env=environment, stdout=stream, stderr=subprocess.STDOUT, check=True)
 
     try:
+        resumed = resume_quantization_inputs(args.work_dir) if args.resume_quantization else None
         status("preflight")
         protocol, contract, data = validate_inputs(args.training)
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
@@ -139,8 +158,12 @@ def main():
             "from importlib.metadata import version; print(version('rknn-toolkit2'))"], text=True).strip()
         if version != "2.3.2":
             raise ValueError(f"Expected RKNN Toolkit2 2.3.2, got {version}")
+        packages = json.loads(subprocess.check_output([str(args.toolkit_python), "-c",
+            "import json, dill, torch, onnxruntime; from importlib.metadata import version; "
+            "print(json.dumps({n:version(n) for n in ('rknn-toolkit2','dill','torch','onnxruntime')}))"], text=True))
         plan = dict(training=str(args.training), data=protocol["data"], target="rk3576", toolkit_version=version,
                     toolkit_python=str(args.toolkit_python),
+                    toolkit_packages=packages,
                     training_videos=74, input_hw=[544, 960], input_color="gray3", qat=False,
                     quantization="W8A8 PTQ, normal/channel", git_commit=commit,
                     protocol_sha256=sha256(args.training / "protocol.json"),
@@ -151,11 +174,20 @@ def main():
             "scripts/anti_uav/export_detector_rkopt_onnx.py", "scripts/anti_uav/build_rknn.py",
             "scripts/anti_uav/compare_gray_rknn_quantization.py",
             "scripts/anti_uav/templates/RK3576_REPAIR_HANDOVER_ZH.md")}
+        if resumed:
+            old, _ = resumed
+            for key in ("training", "data", "target", "input_hw", "input_color", "protocol_sha256",
+                        "contract_sha256", "export_source_sha256", "quantization", "toolkit_version"):
+                if old[key] != plan[key]:
+                    raise ValueError(f"Resume identity differs: {key}")
+            plan["resumed_from_commit"] = old["git_commit"]
+            dump(args.work_dir / "workflow_protocol_before_resume.json", old)
         dump(args.work_dir / "workflow_protocol.json", plan)
         calibration = args.work_dir / "calibration"
-        execute("prepare_calibration", [sys.executable, str(ROOT / "scripts/anti_uav/prepare_stratified_rknn_calibration.py"),
-            "--data", protocol["data"], "--output-dir", str(calibration), "--samples", "384",
-            "--exclude-token", "Video00004", "Video00009", "zoom_val", "zoom_train"])
+        if not resumed:
+            execute("prepare_calibration", [sys.executable, str(ROOT / "scripts/anti_uav/prepare_stratified_rknn_calibration.py"),
+                "--data", protocol["data"], "--output-dir", str(calibration), "--samples", "384",
+                "--exclude-token", "Video00004", "Video00009", "zoom_val", "zoom_train"])
         audit = read(calibration / "audit.json")
         if audit.get("input_color") != "gray3" or audit["samples"] != 384:
             raise ValueError("Calibration does not match gray3 deployment")
@@ -178,6 +210,8 @@ def main():
             raise ValueError("Training identity changed while waiting")
         completed = completed_student_metadata(args.training)
         student = Path(completed["student"])
+        if resumed and completed["student_sha256"] != resumed[1]["artifacts"]["weights"]["sha256"]:
+            raise ValueError("Resumed export belongs to a different selected Student")
         comparison = read(args.training / "comparison/results.json")
         selected = comparison["approved74_regression_repair_student"]
         if selected["sha256"] != completed["student_sha256"] or Path(selected["weights"]).resolve() != student:
@@ -188,17 +222,22 @@ def main():
             if (metrics[q + "FRAMES"], metrics[q + "TP"] + metrics[q + "FN"]) != (3780, 1245):
                 raise ValueError("Final FP32 comparison coverage changed")
         onnx = args.work_dir / "detector_960x544_rkopt.onnx"
-        execute("export_onnx", [sys.executable, str(ROOT / "scripts/anti_uav/export_detector_rkopt_onnx.py"),
-            "--weights", str(student), "--imgsz", "544,960", "--device", "cpu", "--output", str(onnx)])
+        if not resumed:
+            execute("export_onnx", [sys.executable, str(ROOT / "scripts/anti_uav/export_detector_rkopt_onnx.py"),
+                "--weights", str(student), "--imgsz", "544,960", "--device", "cpu", "--output", str(onnx)])
         shapes = read(onnx.with_suffix(".rkopt.json"))["validation"]
         if shapes["output_count"] != 9 or shapes["branch_count"] != 3:
             raise ValueError("Deployment graph still contains auxiliary P2")
         reference = args.work_dir / "reference_rk3576_w8a8.rknn"
-        execute("build_rk3576_int8", [str(args.toolkit_python), str(ROOT / "scripts/anti_uav/build_rknn.py"),
-            "--onnx", str(onnx), "--output", str(reference), "--target", "rk3576", "--quantize",
-            "--dataset", str(calibration / "dataset.txt"), "--quantized-dtype", "w8a8",
-            "--quantized-algorithm", "normal", "--quantized-method", "channel"])
+        if not resumed:
+            execute("build_rk3576_int8", [str(args.toolkit_python), str(ROOT / "scripts/anti_uav/build_rknn.py"),
+                "--onnx", str(onnx), "--output", str(reference), "--target", "rk3576", "--quantize",
+                "--dataset", str(calibration / "dataset.txt"), "--quantized-dtype", "w8a8",
+                "--quantized-algorithm", "normal", "--quantized-method", "channel"])
         evaluation = args.work_dir / "quantization_smoke"
+        if resumed:
+            stamp = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%dT%H%M%S")
+            evaluation.rename(args.work_dir / ("quantization_smoke.failed_" + stamp))
         execute("quantization_smoke", [str(args.toolkit_python), "-u",
             str(ROOT / "scripts/anti_uav/compare_gray_rknn_quantization.py"), "--weights", str(student),
             "--onnx", str(onnx), "--rknn", str(reference), "--calibration", str(calibration / "dataset.txt"),

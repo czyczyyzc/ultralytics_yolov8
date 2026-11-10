@@ -116,6 +116,8 @@ def main():
     parser.add_argument("--conf", type=float, default=.03)
     parser.add_argument("--cache-conf", type=float, help="Optional lower prediction floor for AP; display stays at --conf")
     parser.add_argument("--input-color", choices=("source", "gray3"), default="source")
+    parser.add_argument("--timing-policy", choices=("cfr", "uniform-average"), default="cfr",
+                        help="Uniform-average keeps every decoded frame and total duration, not original VFR timestamps")
     parser.add_argument("--nms-iou", type=float, default=.45)
     parser.add_argument("--max-frames", type=int, help="Explicit smoke-test prefix; default the entire video")
     args = parser.parse_args()
@@ -133,7 +135,7 @@ def main():
         raise ValueError("This layout requires a 16:9 source; refusing to distort other aspect ratios")
     numerator, denominator = map(int, src["avg_frame_rate"].split("/"))
     fps = numerator / denominator
-    if fps <= 0 or src["avg_frame_rate"] != src["r_frame_rate"]:
+    if fps <= 0 or (args.timing_policy == "cfr" and src["avg_frame_rate"] != src["r_frame_rate"]):
         raise ValueError("This renderer requires constant-rate source video")
     expected = int(src["nb_frames"])
     limit = min(expected, args.max_frames) if args.max_frames else expected
@@ -156,6 +158,7 @@ def main():
     stats = dict(source_video=str(args.source_video), source_sha256=sha256(args.source_video), source_info=src,
         weights=str(args.model), weights_sha256=sha256(args.model), input_hw=[544, 960], conf=args.conf,
         cache_conf=cache_conf, input_color=args.input_color,
+        timing_policy=args.timing_policy, original_frame_timestamps_preserved=args.timing_policy == "cfr",
         nms_iou=args.nms_iou, max_det=100, precision="PT FP32", device=args.device,
         full_source_video=args.max_frames is None, ground_truth_used=False, tracker_used=False,
         output_fps=fps, frame_stride=1, audio_included=False,

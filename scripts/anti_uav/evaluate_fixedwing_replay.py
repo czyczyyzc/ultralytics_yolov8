@@ -34,10 +34,13 @@ def restore_video(item, source, output):
     subprocess.run(["ffmpeg", "-v", "error", "-n", "-i", str(source), "-map", "0:v:0",
                     "-an", "-c:v", "copy", "-movflags", "+faststart", str(target)], check=True)
     before, after = decoded_hashes(source), decoded_hashes(target)
-    if before != after or len(after) != item["frame_count"]:
+    if not before or before != after:
         raise ValueError("Restored source changed decoded frames")
+    if len(after) != item["frame_count"] and item["annotations"]:
+        raise ValueError("Restored source cannot reuse labels from a different frame count")
     return target, dict(original_ts=str(source), original_ts_sha256=sha256(source),
                         remux_sha256=sha256(target), decoded_frames=len(after), decoded_frames_bit_exact=True,
+                        reference_frame_count=item["frame_count"], timing_policy="uniform-average",
                         missing_reference_mp4_sha256=item["source_sha256"])
 
 
@@ -175,6 +178,7 @@ def write_report(output, protocol, results, aggregate):
         "GT采用本次只读数据库冻结的审核版本；uncertain、未标注、无效框帧和未审核任务均不计入精度。",
         "旧73版缓存按同一份当前GT重新计数，不沿用过去标签版本的指标；旧缓存只保留conf≥0.03，因此不计算旧版mAP。",
         "原先已删除的尾随1/00000从本机原始TS无重编码remux恢复，逐帧MD5验证一致；当前无审核任务，仅提供可视化。",
+        "该TS实际1796帧，不沿用旧平台转码版1800帧、不人为补帧；可视化按平均帧率均匀播放，保留全部画面与总时长，但不保留原始VFR逐帧时间戳。",
         "", "## 合并指标", "", "| 模型 | Recall | Precision | TP | FP | FN | mAP50 | mAP50-95 |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for name, metrics in aggregate.items():
@@ -236,7 +240,12 @@ def main():
             if item["key"] not in restores:
                 raise FileNotFoundError(item["video"])
             target, proof = restore_video(item, Path(restores[item["key"]]), sources)
-            item.update(video=str(target), restoration=proof)
+            info = probe(target)
+            if (info["width"], info["height"]) != (item["frame_width"], item["frame_height"]):
+                raise ValueError("Restored source geometry differs from the reference")
+            numerator, denominator = map(int, info["avg_frame_rate"].split("/"))
+            item.update(video=str(target), restoration=proof, frame_count=proof["decoded_frames"],
+                        fps=numerator/denominator)
         elif sha256(Path(item["video"])) != item["source_sha256"]:
             raise ValueError("Video bytes changed since the reference cohort")
     protocol = dict(created_at=datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(), model=str(args.model),
@@ -256,6 +265,8 @@ def main():
                 "--source-video", item["video"], "--model", str(args.model), "--output", str(directory),
                 "--output-name", item["key"] + "_P3_repaired74_FP32_conf003.mp4", "--label", "P3 repaired74 | " + item["key"],
                 "--device", args.device, "--batch", str(args.batch), "--conf", ".03", "--cache-conf", ".001", "--input-color", "gray3"]
+            if item.get("restoration"):
+                command.extend(["--timing-policy", "uniform-average"])
             with (args.output / (item["key"] + ".log")).open("x") as log:
                 subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
             rendered = json.loads((directory / "summary.json").read_text())
@@ -265,7 +276,8 @@ def main():
             new, arrays = score_cache(item, directory / "predictions.jsonl", calculate_ap=True)
             baseline = None
             old_cache = Path(item["baseline_cache"])
-            if old_cache.is_file() and rendered["source_non_gray_frames"] == 0:
+            if (old_cache.is_file() and rendered["source_non_gray_frames"] == 0
+                    and not item.get("restoration")):
                 old_summary = json.loads((old_cache.parent / "summary.json").read_text())
                 if (old_summary["conf"] != .03 or old_summary["nms_iou"] != .45
                         or old_summary["input_hw"] != [544, 960] or old_summary["frames"] != item["frame_count"]

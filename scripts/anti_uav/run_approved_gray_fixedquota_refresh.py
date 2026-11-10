@@ -46,14 +46,86 @@ def choose_shared_gpu(text, allowed, allow_shared):
 
 def verify_existing_approval_scope(database, source):
     previous=source.get('current_approved_scope',{})
-    if not previous.get('snapshot'):raise ValueError('Missing audited existing approval scope')
-    snapshot=json.loads(Path(previous['snapshot']).read_text())
-    if sha256(previous['snapshot'])!=previous['sha256']:raise ValueError('Previous approval snapshot changed')
+    tasks={}
+    def collect(scope):
+        if not isinstance(scope,dict):raise ValueError('Invalid approved scope')
+        if scope.get('previous_scope'):collect(scope['previous_scope'])
+        for path_key,hash_key in [('snapshot','sha256'),('additions_snapshot','additions_snapshot_sha256')]:
+            if not scope.get(path_key):continue
+            path=Path(scope[path_key])
+            if sha256(path)!=scope[hash_key]:raise ValueError('Previous approval snapshot changed')
+            for item in json.loads(path.read_text())['videos']:
+                old=tasks.get(item['task_id'])
+                if old and (old['revision'],old['approved_revision'])!=(item['revision'],item['approved_revision']):
+                    raise ValueError('Conflicting frozen approval revisions')
+                tasks[item['task_id']]=item
+    collect(previous)
+    if not tasks or len(tasks)!=previous.get('approved_training_videos',len(tasks)):
+        raise ValueError('Missing audited existing approval scope')
     with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as con:
-        for item in snapshot['videos']:
-            row=con.execute('SELECT status,revision,approved_revision FROM tasks WHERE id=?',(item['task_id'],)).fetchone()
-            if row!=('approved',item['revision'],item['approved_revision']):
+        con.execute('BEGIN')
+        for item in tasks.values():
+            row=con.execute('''SELECT t.status,t.revision,t.approved_revision,v.source_sha256
+                FROM tasks t JOIN videos v ON v.id=t.video_id WHERE t.id=?''',(item['task_id'],)).fetchone()
+            if row!=('approved',item['revision'],item['approved_revision'],item['source_sha256']):
                 raise ValueError('An existing approved task changed; do not silently reuse old labels')
+        con.rollback()
+    return len(tasks)
+
+
+def public_manifest_path(source_dir,config):
+    sampling=config.get('tiny_sampling',{})
+    path=Path(sampling.get('public_manifest',source_dir/'public_accepted.json'))
+    expected=sampling.get('public_manifest_sha256')
+    if expected and sha256(path)!=expected:raise ValueError('Pinned public manifest changed')
+    return path
+
+
+def training_command(protocol,data,foundation,run,device,videos):
+    expected=dict(foundation=30,teacher=12,student=15,localization=0)
+    if (protocol['epochs']!=expected or protocol.get('qat') or protocol.get('task_specific_initialization')
+            or protocol['input_hw']!=[544,960] or protocol['batch']!=64 or protocol['nbs']!=128):
+        raise ValueError('Only the audited public-initialized 30/12/15 FP32 recipe may be refreshed')
+    command=[sys.executable,'-u',str(ROOT/'scripts/anti_uav/run_p3_independent_curriculum_training.py'),
+        '--data',str(data),'--foundation',str(foundation),'--run-dir',str(run),'--device',str(device),
+        '--batch','64','--workers','16','--foundation-epochs','30','--teacher-epochs','12',
+        '--student-epochs','15','--localization-epochs','0','--expected-training-videos',str(videos),
+        '--replacement-probability','0.5']
+    repair=protocol.get('regression_repair')
+    if repair:
+        options=repair['options']
+        if options['tiny_log_size_weight']!=.5:raise ValueError('Unsupported source repair size weight')
+        command.extend(['--regression-repair','--repair-balance-mix',str(options['balance_mix']),
+                        '--repair-warmup-epochs',str(options['warmup_epochs'])])
+    return command
+
+
+def audit_background_requirement(data_dir,previous_index,output):
+    manifest=json.loads((data_dir/'manifest.json').read_text())
+    old_hashes={row['source_sha256']:image for image,row in previous_index['images'].items()}
+    rows=[]
+    for video in manifest['latest_appended_videos']:
+        count=covered=duplicates=0;examples=[]
+        for label in Path(video['label_directory']).glob('*.txt'):
+            if not label.stat().st_size:continue
+            image=Path(video['image_directory'])/(label.stem+'.jpg');count+=1
+            covered+=str(image) in previous_index['images']
+            digest=sha256(image)
+            if digest in old_hashes:
+                duplicates+=1
+                if len(examples)<3:examples.append(dict(new_image=str(image),old_image=old_hashes[digest]))
+        if count!=video['positive_samples']:raise ValueError('New positive export coverage changed')
+        rows.append(dict(video_sha256=video['sha256'],positive_frames=count,already_cached=covered,
+                         exact_image_matches_in_old_ready_cache=duplicates,match_examples=examples))
+    result=dict(new_positive_frames=sum(r['positive_frames'] for r in rows),
+        already_cached=sum(r['already_cached'] for r in rows),negative_frames_need_no_target_erasure=True,
+        old_ready_backgrounds=len(previous_index['images']),old_catalog_reused=True,
+        need_new_backgrounds=any(r['already_cached']<r['positive_frames'] for r in rows),videos=rows,
+        duplicate_check_scope='Exact frozen JPEG bytes against the old ready background index; not a near-duplicate guarantee')
+    dump(output,result)
+    if any(r['positive_frames']>=100 and r['exact_image_matches_in_old_ready_cache']>=.95*r['positive_frames'] for r in rows):
+        raise ValueError('A new source repeats old positive pixels; reconcile it instead of silently doubling exposure')
+    return result
 
 
 def configure(data_dir, cache_dir, source_config, source_dir, output):
@@ -62,7 +134,7 @@ def configure(data_dir, cache_dir, source_config, source_dir, output):
     from scripts.anti_uav.audit_labeler_expansion_regression import AuditDataset
     from scripts.anti_uav.label_pool_sampling import FixedDomainQuotaSampler
     config=yaml.safe_load((data_dir/'train_online_gray_monitor.yaml').read_text())
-    public=source_dir/'public_accepted.json'
+    public=public_manifest_path(source_dir,source_config)
     public_rows=json.loads(public.read_text());public_paths={r['image'] for r in public_rows}
     source_publics={p for p in Path(config['train']).read_text().splitlines() if p in public_paths}
     if source_publics!=public_paths:raise ValueError('Original public positives were lost')
@@ -110,7 +182,16 @@ def configure(data_dir, cache_dir, source_config, source_dir, output):
         additions_snapshot=str(data_dir/'annotation_snapshot.json'),additions_snapshot_sha256=sha256(data_dir/'annotation_snapshot.json'),
         captured_at=latest_scope['captured_at'],approved_training_videos=previous_scope['approved_training_videos']+len(latest_scope['videos']),
         historical_sources=previous_scope['historical_sources'])
+    manifest.update(background_cache=str(cache_dir),online_replacement=config['online_replacement'],
+                    augmentation_catalog=json.loads((cache_dir/'index.json').read_text())['catalog'])
     dump(data_dir/'manifest.json',manifest)
+    state=json.loads((data_dir/'status.json').read_text());cache_state=json.loads((cache_dir/'summary.json').read_text())
+    state.update(cache_ready=True,new_ready_backgrounds=cache_state['new_ready_backgrounds'],
+                 new_original_only=cache_state['new_original_only'],asset_count=cache_state['asset_count'],
+                 actual_sampling_policy='fixed_domain_v1',epoch_slots=len(sampler),
+                 negative_fraction=sampler.audit['negative_fraction'],
+                 replacement_policy='p=0.5 on safe cached positives; unsafe positives retained unchanged')
+    dump(data_dir/'status.json',state)
     return result
 
 
@@ -186,11 +267,18 @@ def main():
     p.add_argument('--approved-sha256',nargs='+',required=True)
     p.add_argument('--gpus',nargs='+',type=int,default=[2,6])
     p.add_argument('--allow-shared-gpu',action='store_true')
+    p.add_argument('--background-workers',type=int,default=16)
+    p.add_argument('--extraction-workers',type=int,default=5)
+    p.add_argument('--expected-training-videos',type=int)
+    p.add_argument('--source-arm-label')
+    p.add_argument('--comparison-arm-label')
     p.add_argument('--prepare-only',action='store_true')
     p.add_argument('--train-prepared',action='store_true')
     p.add_argument('--resume-preparation',action='store_true',
                    help='Reuse completed frozen extraction/backgrounds, retry only QA/configuration')
     a=p.parse_args()
+    if not 1<=a.background_workers<=32 or not 1<=a.extraction_workers<=16:
+        p.error('Use 1..32 background and 1..16 extraction workers')
     for key,value in vars(a).items():
         if isinstance(value,Path):setattr(a,key,value.resolve())
     a.run_dir.mkdir(parents=True,exist_ok=a.train_prepared or a.resume_preparation)
@@ -207,10 +295,38 @@ def main():
     import yaml
     source_yaml=Path(protocol['data']);source_dir=source_yaml.parent
     source=json.loads((source_dir/'manifest.json').read_text());source_config=yaml.safe_load(source_yaml.read_text())
+    expected_videos=len(source['train_video_hashes'])+len(a.approved_sha256)
+    if a.expected_training_videos is not None and a.expected_training_videos!=expected_videos:
+        raise ValueError('Requested final video count differs from the frozen addition scope')
+    a.source_arm_label=a.source_arm_label or f'approved{len(source["train_video_hashes"])}_source'
+    a.comparison_arm_label=a.comparison_arm_label or f'approved{expected_videos}_refreshed'
+    a.comparison_intentional_changes=[f'{len(a.approved_sha256)}_new_current_approved_videos',
+        'training_only_background_extension','same_gray3_and_per_batch_quotas',
+        'same_frozen_cutout_catalog','same_source_regression_loss_and_curriculum']
+    previous_index=json.loads((a.previous_cache/'index.json').read_text())
+    if Path(source_config['online_replacement']['cache']).resolve()!=a.previous_cache:
+        raise ValueError('Background cache must match the source training configuration')
     blocked=set(source['train_video_hashes'])|{source['test_sha256'],source['validation_sha256']}
     requested=a.run_dir/'audit/requested_scope.json'
     try:
         verify_existing_approval_scope(a.database,source)
+        if not a.train_prepared and not a.resume_preparation:
+            dump(a.run_dir/'refresh_contract.json',dict(source_run=str(a.source_run),
+                source_protocol_sha256=sha256(a.source_run/'protocol.json'),
+                source_data_sha256=sha256(source_yaml),source_manifest_sha256=sha256(source_dir/'manifest.json'),
+                previous_cache=str(a.previous_cache),previous_index_sha256=sha256(a.previous_cache/'index.json'),
+                catalog=previous_index['catalog'],catalog_sha256=previous_index['catalog_sha256'],
+                asset_count=len(previous_index['asset_ids']),requested_sha256=sorted(a.approved_sha256),
+                expected_training_videos=expected_videos,epochs=protocol['epochs'],qat=False,
+                input_color=source_config.get('input_color','source'),batch_quotas=source_config['tiny_sampling']['batch_quotas'],
+                regression_repair=protocol.get('regression_repair'),old_task_weights_not_used=True,
+                holdouts_unchanged=True,intentional_changes=a.comparison_intentional_changes))
+        contract=json.loads((a.run_dir/'refresh_contract.json').read_text())
+        for path,key in [(a.source_run/'protocol.json','source_protocol_sha256'),
+                         (source_yaml,'source_data_sha256'),(source_dir/'manifest.json','source_manifest_sha256'),
+                         (a.previous_cache/'index.json','previous_index_sha256')]:
+            if sha256(path)!=contract[key]:raise ValueError('Frozen source changed during extension')
+        if contract['requested_sha256']!=sorted(a.approved_sha256):raise ValueError('Requested addition scope changed')
         if not a.train_prepared:
             status('freezing_approved_scope')
             items=select_requested(snapshot_tasks(a.database,a.video_root,blocked),a.approved_sha256,source)
@@ -225,15 +341,21 @@ def main():
                     source_manifest_sha256=sha256(source_dir/'manifest.json'),source_database=str(a.database)))
                 command('extract_approved',[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_labeler_training_expansion.py',
                     '--source',source_dir,'--source-yaml',source_yaml.name,'--baseline-protocol',a.source_run/'protocol.json',
-                    '--database',a.database,'--video-root',a.video_root,'--output',a.data_output,'--workers','5','--task-snapshot',requested])
+                    '--database',a.database,'--video-root',a.video_root,'--output',a.data_output,
+                    '--workers',a.extraction_workers,'--task-snapshot',requested])
             data_manifest=json.loads((a.data_output/'manifest.json').read_text())
             if set(data_manifest['train_video_hashes'])!=set(source['train_video_hashes'])|set(a.approved_sha256):raise ValueError('Appended video scope differs from request')
+            audit_background_requirement(a.data_output,previous_index,a.run_dir/'audit/background_requirement.json')
             if not a.resume_preparation:
                 command('prepare_backgrounds',[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_snapshot_replacement_cache.py',
                     '--data-dir',a.data_output,'--previous-cache',a.previous_cache,'--output',a.cache_output,
-                    '--workers','16','--chunk-size','128','--donors-from-frozen-frames'])
+                    '--workers',a.background_workers,'--chunk-size','128','--donors-from-frozen-frames'])
             summary=json.loads((a.cache_output/'summary.json').read_text())
-            if summary['stage']!='complete' or summary['asset_count']!=342:raise ValueError('New cache or assets incomplete')
+            new_index=json.loads((a.cache_output/'index.json').read_text())
+            if (summary['stage']!='complete' or summary['asset_count']!=len(previous_index['asset_ids'])
+                    or new_index['asset_ids']!=previous_index['asset_ids']
+                    or new_index['catalog_sha256']!=previous_index['catalog_sha256']):
+                raise ValueError('New cache incomplete or frozen cutouts changed')
             from scripts.anti_uav.verify_snapshot_replacement_cache import verify_cache
             if summary['new_ready_backgrounds']:
                 qa_path=a.run_dir/('replacement_QA_retry' if a.resume_preparation else 'replacement_QA')
@@ -271,13 +393,24 @@ def main():
             gpu=choose_shared_gpu(usage,a.gpus,a.allow_shared_gpu)
             if gpu is not None:break
             status('waiting_for_allowed_gpu',allowed_gpus=a.gpus,usage=usage);time.sleep(60)
-        cmd=[sys.executable,'-u',str(ROOT/'scripts/anti_uav/run_p3_independent_curriculum_training.py'),
-            '--data',prepared['data'],'--foundation',protocol['foundation'],'--run-dir',str(a.run_dir),
-            '--device',str(gpu),'--batch','64','--workers','16','--foundation-epochs','30','--teacher-epochs','12',
-            '--student-epochs','15','--localization-epochs','0','--expected-training-videos',str(prepared['training_videos']),
-            '--replacement-probability','0.5']
+        if protocol.get('regression_repair'):
+            command('regression_preflight',[sys.executable,'-u',ROOT/'scripts/anti_uav/preflight_regression_repair.py',
+                '--data',prepared['data'],'--foundation',protocol['foundation'],
+                '--output',a.run_dir/'preflight','--device',gpu])
+            acceptance=json.loads((a.run_dir/'preflight/acceptance.json').read_text())
+            if not acceptance['complete'] or acceptance['audit']['balance_mix']!=protocol['regression_repair']['options']['balance_mix']:
+                raise ValueError('New-data full-repair preflight failed')
+            while True:
+                usage=subprocess.check_output(['nvidia-smi','--query-gpu=index,memory.used,memory.free,utilization.gpu',
+                    '--format=csv,noheader,nounits'],text=True)
+                gpu=choose_shared_gpu(usage,a.gpus,a.allow_shared_gpu)
+                if gpu is not None:break
+                status('waiting_for_allowed_gpu_after_preflight',allowed_gpus=a.gpus);time.sleep(60)
+        cmd=training_command(protocol,prepared['data'],protocol['foundation'],a.run_dir,gpu,prepared['training_videos'])
         dump(a.run_dir/'launch.json',dict(command=cmd,gpu=gpu,usage_before_launch=usage,allow_shared_gpu=a.allow_shared_gpu,
             shared_memory_limit_mib=32768,minimum_free_mib=40000,previous_run_unchanged=str(a.source_run)))
+        manifest=json.loads((a.data_output/'manifest.json').read_text());manifest['training_started']=True
+        dump(a.data_output/'manifest.json',manifest)
         status('training',gpu=gpu,training_videos=prepared['training_videos'])
         with (a.run_dir/'training.log').open('x') as f:subprocess.run(cmd,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT,check=True)
         compare(a,gpu)

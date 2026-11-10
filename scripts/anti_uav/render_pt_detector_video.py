@@ -39,6 +39,19 @@ def probe(path):
     return data["streams"][0]
 
 
+def inference_frames(frames, input_color):
+    if input_color == "source":
+        return frames, 0
+    if input_color != "gray3":
+        raise ValueError("Unsupported input color")
+    changed, converted = 0, []
+    for image in frames:
+        changed += not (np.array_equal(image[..., 0], image[..., 1])
+                        and np.array_equal(image[..., 1], image[..., 2]))
+        converted.append(cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.COLOR_GRAY2BGR))
+    return converted, changed
+
+
 def panel(frame, boxes, index, count, fps, title, *, tracks=None):
     from scripts.anti_uav.render_pt_detector_pair_video import draw_corner_box, boxes_in_crop
 
@@ -101,11 +114,16 @@ def main():
     parser.add_argument("--device", default="6")
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--conf", type=float, default=.03)
+    parser.add_argument("--cache-conf", type=float, help="Optional lower prediction floor for AP; display stays at --conf")
+    parser.add_argument("--input-color", choices=("source", "gray3"), default="source")
     parser.add_argument("--nms-iou", type=float, default=.45)
     parser.add_argument("--max-frames", type=int, help="Explicit smoke-test prefix; default the entire video")
     args = parser.parse_args()
     if args.batch < 1 or not 0 < args.conf < 1 or (args.max_frames is not None and args.max_frames < 1):
         raise ValueError("Invalid batch, confidence or frame limit")
+    cache_conf = args.conf if args.cache_conf is None else args.cache_conf
+    if not 0 < cache_conf <= args.conf:
+        raise ValueError("Cache confidence must be positive and no higher than display confidence")
     if args.output.exists():
         raise FileExistsError(args.output)
     if Path(args.output_name).name != args.output_name or not args.output_name.endswith(".mp4"):
@@ -134,9 +152,10 @@ def main():
         "-preset", "veryfast", "-crf", "18", "-threads", "4", "-pix_fmt", "yuv420p",
         "-movflags", "+faststart", str(destination)]
     started = time.monotonic()
-    frames_written = detections = detected_frames = 0
+    frames_written = detections = detected_frames = source_non_gray_frames = 0
     stats = dict(source_video=str(args.source_video), source_sha256=sha256(args.source_video), source_info=src,
         weights=str(args.model), weights_sha256=sha256(args.model), input_hw=[544, 960], conf=args.conf,
+        cache_conf=cache_conf, input_color=args.input_color,
         nms_iou=args.nms_iou, max_det=100, precision="PT FP32", device=args.device,
         full_source_video=args.max_frames is None, ground_truth_used=False, tracker_used=False,
         output_fps=fps, frame_stride=1, audio_included=False,
@@ -154,7 +173,9 @@ def main():
                     if not ok:
                         raise RuntimeError(f"Source ended at frame {frames_written+len(batch)}, expected {limit}")
                     batch.append(image)
-                results = model.predict(source=batch, imgsz=[544, 960], rect=False, conf=args.conf,
+                inputs, changed = inference_frames(batch, args.input_color)
+                source_non_gray_frames += changed
+                results = model.predict(source=inputs, imgsz=[544, 960], rect=False, conf=cache_conf,
                     iou=args.nms_iou, max_det=100, device=args.device, half=False, batch=args.batch,
                     verbose=False, save=False, stream=False)
                 if len(results) != len(batch):
@@ -165,7 +186,8 @@ def main():
                     else:
                         boxes = np.column_stack((result.boxes.xyxy.cpu().numpy(), result.boxes.conf.cpu().numpy()))
                         boxes = boxes[np.argsort(-boxes[:, 4], kind="stable")]
-                    rendered = panel(frame, boxes, frames_written, limit, fps, title)
+                    visible = boxes[boxes[:, 4] >= args.conf]
+                    rendered = panel(frame, visible, frames_written, limit, fps, title)
                     encoder.stdin.write(rendered.tobytes())
                     predictions.write(json.dumps(dict(frame_index=frames_written, time_seconds=frames_written/fps,
                         boxes_xyxy_score=boxes.tolist())) + "\n")
@@ -173,8 +195,8 @@ def main():
                         if not cv2.imwrite(str(args.output / f"preview_{frames_written:06d}.jpg"), rendered):
                             raise RuntimeError("Failed to write preview")
                     frames_written += 1
-                    detections += len(boxes)
-                    detected_frames += bool(len(boxes))
+                    detections += len(visible)
+                    detected_frames += bool(len(visible))
                 progress = dict(stage="rendering", frames=frames_written, total=limit, detections=detections,
                                 seconds=round(time.monotonic()-started, 2))
                 dump(args.output / "status.json", progress)
@@ -187,6 +209,7 @@ def main():
             if int(out["nb_frames"]) != limit or abs(float(out["duration"])-limit/fps) > .02:
                 raise AssertionError("Encoded video frame count/duration mismatch")
             stats.update(frames=frames_written, total_detections=detections, frames_with_detections=detected_frames,
+                source_non_gray_frames=source_non_gray_frames,
                 output_info=out, seconds=round(time.monotonic()-started, 2), output_sha256=sha256(destination),
                 note="Source playback FPS is not measured board inference FPS. Full-frame video is not the sampled evaluation set.")
             dump(args.output / "summary.json", stats)

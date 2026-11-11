@@ -2,12 +2,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import torch
+import pytest
 
 from scripts.anti_uav.p3_student_distillation import (
     P3OutputRetentionLoss,
     P3StudentDistillationLoss,
+    P3StudentFP32DistillationTrainer,
+    attach_tiny_feature_projection,
     transfer_student_to_p3,
 )
+from scripts.anti_uav.gray_deployment_trainer import FixedShapeGrayP3Trainer
 from scripts.anti_uav.tiny_aware_loss import TinyAwareAddOnP2DetectionLoss, TinyAwareDetectionLoss
 from scripts.anti_uav.rknn_qat import (
     RKNNFakeQuantConv2d,
@@ -37,6 +41,29 @@ def build_pair():
     )
     transfer_frozen_p3_weights(p3, addon)
     return p3, addon
+
+
+def test_fp32_student_resume_restores_trained_projection(monkeypatch):
+    _, saved = build_pair()
+    with torch.no_grad():
+        attach_tiny_feature_projection(saved).weight.fill_(.123)
+    _, destination = build_pair()
+    monkeypatch.setattr(FixedShapeGrayP3Trainer, "get_model", lambda self, **kwargs: destination)
+    trainer = object.__new__(P3StudentFP32DistillationTrainer)
+    trainer.resume = True
+    model = trainer.get_model(weights=saved, verbose=False)
+    torch.testing.assert_close(model.tiny_feature_projection.weight, saved.tiny_feature_projection.weight,
+                               rtol=0, atol=0)
+
+
+def test_student_resume_rejects_checkpoint_without_projection(monkeypatch):
+    _, saved = build_pair()
+    _, destination = build_pair()
+    monkeypatch.setattr(FixedShapeGrayP3Trainer, "get_model", lambda self, **kwargs: destination)
+    trainer = object.__new__(P3StudentFP32DistillationTrainer)
+    trainer.resume = True
+    with pytest.raises(ValueError, match="feature projection"):
+        trainer.get_model(weights=saved, verbose=False)
 
 
 def test_auxiliary_p2_is_not_used_for_student_validation():

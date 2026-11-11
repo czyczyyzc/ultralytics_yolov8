@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from copy import deepcopy
+import csv
 import fcntl
 import hashlib
 import json
@@ -143,8 +144,42 @@ def common_train(data: Path, args, epochs: int, patience: int = 0) -> dict:
         plots=True, single_cls=True, mosaic=0., mixup=0., copy_paste=0., degrees=0.,
         translate=.05, scale=.2, shear=0., perspective=0., flipud=0., fliplr=.5,
         hsv_h=0. if gray_input else .015, hsv_s=0. if gray_input else .4,
-        hsv_v=.3, close_mosaic=0, verbose=True, exist_ok=False,
+        hsv_v=.3, close_mosaic=0, verbose=True, exist_ok=bool(getattr(args, "resume", False)),
     )
+
+
+def stage_resume_state(stage_dir: Path, epochs: int, resume: bool) -> dict:
+    """A best checkpoint is not a completion marker; resume partial stages from last."""
+    result = dict(complete=False, completed_epochs=0, checkpoint=None)
+    if not resume:
+        return result
+    csv_path = stage_dir / "results.csv"
+    recorded = []
+    if csv_path.is_file():
+        with csv_path.open() as stream:
+            recorded = [int(float(row["epoch"])) for row in csv.DictReader(stream, skipinitialspace=True)]
+    if recorded != list(range(1, len(recorded) + 1)) or len(recorded) > epochs:
+        raise ValueError(f"Invalid epoch history for {stage_dir}")
+    last, best = stage_dir / "weights/last.pt", stage_dir / "weights/best.pt"
+    if not last.is_file():
+        if recorded or best.exists():
+            raise ValueError(f"Missing last checkpoint for partial stage {stage_dir}")
+        return result
+    checkpoint = torch.load(last, map_location="cpu", weights_only=False)
+    saved_epoch = int(checkpoint.get("epoch", -1))
+    if int(checkpoint["train_args"]["epochs"]) != epochs:
+        raise ValueError(f"Saved epoch budget differs for {stage_dir}")
+    stripped = saved_epoch == -1 and checkpoint.get("optimizer") is None
+    if not stripped and saved_epoch + 1 != len(recorded):
+        raise ValueError(f"Checkpoint and CSV epoch history differ for {stage_dir}")
+    if len(recorded) == epochs:
+        if not best.is_file():
+            raise ValueError(f"Completed stage has no best checkpoint: {stage_dir}")
+        return dict(result, complete=True, completed_epochs=len(recorded))
+    if (saved_epoch < 0 or checkpoint.get("optimizer") is None
+            or checkpoint.get("ema") is None):
+        raise ValueError(f"Partial stage lacks resumable optimizer/EMA state: {stage_dir}")
+    return dict(result, completed_epochs=len(recorded), checkpoint=str(last), checkpoint_sha256=sha256(last))
 
 
 def validate(
@@ -166,8 +201,18 @@ def validate(
 
 
 def add_status_callback(model: YOLO, run_dir: Path, stage: str) -> None:
+    def record_resume(trainer):
+        if not trainer.resume:
+            return
+        value = dict(stage=stage, device=str(trainer.args.device),
+                     checkpoint=str(trainer.args.resume), start_epoch_zero_based=trainer.start_epoch,
+                     batch=trainer.batch_size, optimizer_state_entries=len(trainer.optimizer.state),
+                     ema_updates=trainer.ema.updates if trainer.ema else None)
+        (run_dir / f"audit/active_resume_{stage}.json").write_text(json.dumps(value, indent=2) + "\n")
+
+    model.add_callback("on_train_start", record_resume)
     model.add_callback("on_fit_epoch_end", lambda trainer: write_status(
-        run_dir, stage, epoch=trainer.epoch + 1, fitness=float(trainer.fitness)
+        run_dir, stage, epoch=trainer.epoch + 1, fitness=float(trainer.fitness), device=str(trainer.args.device)
     ))
 
 
@@ -328,7 +373,8 @@ def main() -> None:
         previous = json.loads(protocol_path.read_text())
         if previous.get("regression_repair") != protocol.get("regression_repair"):
             raise ValueError("Resume regression repair differs from saved experiment")
-        for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation"):
+        for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation",
+                    "batch", "nbs", "seed", "qat", "trusted_label_caches"):
             if previous.get(key) != protocol.get(key):
                 raise ValueError(f"Resume protocol mismatch for {key}")
         if previous.get("input_color", "source") != protocol["input_color"]:
@@ -339,19 +385,37 @@ def main() -> None:
         protocol_path.write_text(json.dumps(protocol, indent=2) + "\n")
 
     try:
+        progress = {
+            name: stage_resume_state(args.run_dir / relative, epochs, args.resume)
+            for name, relative, epochs in (
+                ("foundation", "foundation/p3", args.foundation_epochs),
+                ("teacher", "teacher/p2p3", args.teacher_epochs),
+                ("student", "distill_fp32/p3_student", args.student_epochs),
+                ("localization", "localization/p3_student", args.localization_epochs),
+            ) if epochs
+        }
+        ordered = list(progress.values())
+        for index, state in enumerate(ordered):
+            if state["completed_epochs"] and any(not earlier["complete"] for earlier in ordered[:index]):
+                raise ValueError("Downstream checkpoints exist before the upstream stage completed")
+        if args.resume:
+            (args.run_dir / "audit/resume_plan.json").write_text(json.dumps(
+                dict(device=args.device, stages=progress, optimizer_state_requested=True), indent=2
+            ) + "\n")
         foundation_best = args.run_dir / "foundation/p3/weights/best.pt"
-        if not (args.resume and foundation_best.is_file()):
+        if not progress["foundation"]["complete"]:
             p3_trainer.validator_class = FixedShapeGrayValidator
             p3_trainer.tiny_multiplier = 1.75
             p3_trainer.localization_weight = .12
             p3_trainer.localization_min_px = 4.0
             p3_trainer.localization_max_px = 64.0
-            foundation = YOLO(str(args.foundation))
+            foundation = YOLO(progress["foundation"]["checkpoint"] or str(args.foundation))
             add_status_callback(foundation, args.run_dir, "train_native_p3_foundation")
-            write_status(args.run_dir, "train_native_p3_foundation", epoch=0)
+            write_status(args.run_dir, "train_native_p3_foundation",
+                         epoch=progress["foundation"]["completed_epochs"], device=args.device)
             foundation.train(
                 trainer=p3_trainer, project=str(args.run_dir / "foundation"), name="p3",
-                lr0=.001, warmup_epochs=1,
+                lr0=.001, warmup_epochs=1, resume=bool(progress["foundation"]["checkpoint"]),
                 **common_train(foundation_data, args, args.foundation_epochs),
             )
 
@@ -363,34 +427,40 @@ def main() -> None:
             return
 
         teacher_best = args.run_dir / "teacher/p2p3/weights/best.pt"
-        if not (args.resume and teacher_best.is_file()):
+        if not progress["teacher"]["complete"]:
             write_status(args.run_dir, "initialize_teacher")
-            teacher_init = args.run_dir / "teacher_initialized.pt"
-            teacher, report = initialize_addon_model(foundation_best, DEFAULT_CFG, teacher_init)
-            (args.run_dir / "audit/teacher_initialization.json").write_text(json.dumps(report, indent=2) + "\n")
+            if progress["teacher"]["checkpoint"]:
+                teacher = YOLO(progress["teacher"]["checkpoint"])
+            else:
+                teacher_init = args.run_dir / "teacher_initialized.pt"
+                teacher, report = initialize_addon_model(foundation_best, DEFAULT_CFG, teacher_init)
+                (args.run_dir / "audit/teacher_initialization.json").write_text(json.dumps(report, indent=2) + "\n")
             teacher_trainer.validator_class = FixedShapeGrayValidator
             teacher_trainer.tiny_multiplier = 1.75
             add_status_callback(teacher, args.run_dir, "train_teacher")
             teacher.train(
                 trainer=teacher_trainer, project=str(args.run_dir / "teacher"), name="p2p3",
-                lr0=.001, warmup_epochs=1,
+                lr0=.001, warmup_epochs=1, resume=bool(progress["teacher"]["checkpoint"]),
                 **common_train(teacher_data, args, args.teacher_epochs),
             )
-            frozen = verify_legacy_outputs(YOLO(str(foundation_best)).model, YOLO(str(teacher_best)).model)
-            (args.run_dir / "audit/teacher_frozen_p3.json").write_text(json.dumps(frozen, indent=2) + "\n")
+        frozen = verify_legacy_outputs(YOLO(str(foundation_best)).model, YOLO(str(teacher_best)).model)
+        (args.run_dir / "audit/teacher_frozen_p3.json").write_text(json.dumps(frozen, indent=2) + "\n")
 
         student_weights = args.run_dir / "distill_fp32/p3_student/weights"
-        if not (args.resume and (student_weights / "best.pt").is_file()):
+        if not progress["student"]["complete"]:
             write_status(args.run_dir, "initialize_student")
-            student_init = args.run_dir / "student_four_scale_initialized.pt"
-            student, report = initialize_addon_model(foundation_best, DEFAULT_CFG, student_init)
-            report["teacher_auxiliary_copy"] = copy_teacher_auxiliary(YOLO(str(teacher_best)).model, student.model)
-            student.model.model[-1].auxiliary_training_only = True
-            student.save(student_init)
-            report["post_copy_legacy_regression"] = verify_legacy_outputs(
-                YOLO(str(foundation_best)).model, student.model
-            )
-            (args.run_dir / "audit/student_initialization.json").write_text(json.dumps(report, indent=2) + "\n")
+            if progress["student"]["checkpoint"]:
+                student = YOLO(progress["student"]["checkpoint"])
+            else:
+                student_init = args.run_dir / "student_four_scale_initialized.pt"
+                student, report = initialize_addon_model(foundation_best, DEFAULT_CFG, student_init)
+                report["teacher_auxiliary_copy"] = copy_teacher_auxiliary(YOLO(str(teacher_best)).model, student.model)
+                student.model.model[-1].auxiliary_training_only = True
+                student.save(student_init)
+                report["post_copy_legacy_regression"] = verify_legacy_outputs(
+                    YOLO(str(foundation_best)).model, student.model
+                )
+                (args.run_dir / "audit/student_initialization.json").write_text(json.dumps(report, indent=2) + "\n")
 
             student_trainer.teacher_weights = teacher_best.resolve()
             student_trainer.validator_class = FixedShapeGrayValidator
@@ -405,16 +475,19 @@ def main() -> None:
             student.train(
                 trainer=student_trainer,
                 project=str(args.run_dir / "distill_fp32"), name="p3_student",
-                lr0=1e-4, warmup_epochs=0,
+                lr0=1e-4, warmup_epochs=0, resume=bool(progress["student"]["checkpoint"]),
                 **common_train(student_data, args, args.student_epochs),
             )
+        if not (args.resume and (args.run_dir / "audit/student_exports.json").is_file()
+                and all((args.run_dir / f"p3_student_distilled_{key}_fp32.pt").is_file()
+                        for key in ("best", "last"))):
             exports = export_student_pair(student_weights, args.run_dir, "distilled")
             (args.run_dir / "audit/student_exports.json").write_text(json.dumps(exports, indent=2) + "\n")
 
         if args.localization_epochs:
             localization_weights = args.run_dir / "localization/p3_student/weights"
-            if not (args.resume and (localization_weights / "best.pt").is_file()):
-                localization = YOLO(str(student_weights / "best.pt"))
+            if not progress["localization"]["complete"]:
+                localization = YOLO(progress["localization"]["checkpoint"] or str(student_weights / "best.pt"))
                 student_trainer.teacher_weights = teacher_best.resolve()
                 student_trainer.loss_options = dict(
                     auxiliary_weight=.25, p3_cls_weight=.10, p3_dfl_weight=.05,
@@ -427,9 +500,12 @@ def main() -> None:
                 localization.train(
                     trainer=student_trainer,
                     project=str(args.run_dir / "localization"), name="p3_student",
-                    lr0=5e-5, warmup_epochs=0,
+                    lr0=5e-5, warmup_epochs=0, resume=bool(progress["localization"]["checkpoint"]),
                     **common_train(localization_data, args, args.localization_epochs),
                 )
+            if not (args.resume and (args.run_dir / "audit/localization_exports.json").is_file()
+                    and all((args.run_dir / f"p3_student_localization_{key}_fp32.pt").is_file()
+                            for key in ("best", "last"))):
                 exports = export_student_pair(localization_weights, args.run_dir, "localization")
                 (args.run_dir / "audit/localization_exports.json").write_text(
                     json.dumps(exports, indent=2) + "\n"

@@ -318,7 +318,12 @@ class P3StudentDistillationTrainer(FixedShapeGrayP3Trainer):
         if not isinstance(detector, FrozenP3AddOnP2Detect):
             raise TypeError("Distillation trainer requires the temporary four-scale student graph")
         detector.auxiliary_training_only = True
-        attach_tiny_feature_projection(model)
+        projection = attach_tiny_feature_projection(model)
+        if self.resume:
+            saved_projection = getattr(weights, "tiny_feature_projection", None)
+            if saved_projection is None:
+                raise ValueError("Student resume checkpoint lacks its trained feature projection")
+            projection.load_state_dict(saved_projection.state_dict())
         if self.enable_qat:
             wrapped = prepare_rknn_qat(model)
             if wrapped == 0:

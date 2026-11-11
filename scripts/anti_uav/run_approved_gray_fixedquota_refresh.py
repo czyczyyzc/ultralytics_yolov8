@@ -274,9 +274,13 @@ def main():
     p.add_argument('--comparison-arm-label')
     p.add_argument('--prepare-only',action='store_true')
     p.add_argument('--train-prepared',action='store_true')
+    p.add_argument('--resume-training',action='store_true',
+                   help='Resume the interrupted curriculum using unchanged prepared data and optimizer states')
     p.add_argument('--resume-preparation',action='store_true',
                    help='Reuse completed frozen extraction/backgrounds, retry only QA/configuration')
     a=p.parse_args()
+    if a.resume_training and (not a.train_prepared or a.prepare_only or a.resume_preparation):
+        p.error('--resume-training requires --train-prepared only')
     if not 1<=a.background_workers<=32 or not 1<=a.extraction_workers<=16:
         p.error('Use 1..32 background and 1..16 extraction workers')
     for key,value in vars(a).items():
@@ -394,9 +398,10 @@ def main():
             if gpu is not None:break
             status('waiting_for_allowed_gpu',allowed_gpus=a.gpus,usage=usage);time.sleep(60)
         if protocol.get('regression_repair'):
-            command('regression_preflight',[sys.executable,'-u',ROOT/'scripts/anti_uav/preflight_regression_repair.py',
-                '--data',prepared['data'],'--foundation',protocol['foundation'],
-                '--output',a.run_dir/'preflight','--device',gpu])
+            if not (a.resume_training and (a.run_dir/'preflight/acceptance.json').is_file()):
+                command('regression_preflight',[sys.executable,'-u',ROOT/'scripts/anti_uav/preflight_regression_repair.py',
+                    '--data',prepared['data'],'--foundation',protocol['foundation'],
+                    '--output',a.run_dir/'preflight','--device',gpu])
             acceptance=json.loads((a.run_dir/'preflight/acceptance.json').read_text())
             if not acceptance['complete'] or acceptance['audit']['balance_mix']!=protocol['regression_repair']['options']['balance_mix']:
                 raise ValueError('New-data full-repair preflight failed')
@@ -407,12 +412,26 @@ def main():
                 if gpu is not None:break
                 status('waiting_for_allowed_gpu_after_preflight',allowed_gpus=a.gpus);time.sleep(60)
         cmd=training_command(protocol,prepared['data'],protocol['foundation'],a.run_dir,gpu,prepared['training_videos'])
+        if a.resume_training:
+            if not (a.run_dir/'protocol.json').is_file() or not (a.run_dir/'training.log').is_file():
+                raise ValueError('No interrupted curriculum exists to resume')
+            cmd.append('--resume')
+            stamp=datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y%m%dT%H%M%S')
+            dump(a.run_dir/'audit'/('recovery_before_'+stamp+'.json'),dict(
+                previous_launch=json.loads((a.run_dir/'launch.json').read_text()),
+                previous_status=json.loads((a.run_dir/'status.json').read_text()),
+                previous_log_sha256=sha256(a.run_dir/'training.log'),new_command=cmd,gpu=gpu,
+                prepared_data_sha256=prepared['data_sha256'],prepared_background_index_sha256=cache_summary['index_sha256']))
         dump(a.run_dir/'launch.json',dict(command=cmd,gpu=gpu,usage_before_launch=usage,allow_shared_gpu=a.allow_shared_gpu,
-            shared_memory_limit_mib=32768,minimum_free_mib=40000,previous_run_unchanged=str(a.source_run)))
+            shared_memory_limit_mib=32768,minimum_free_mib=40000,previous_run_unchanged=str(a.source_run),
+            resuming=a.resume_training))
         manifest=json.loads((a.data_output/'manifest.json').read_text());manifest['training_started']=True
         dump(a.data_output/'manifest.json',manifest)
-        status('training',gpu=gpu,training_videos=prepared['training_videos'])
-        with (a.run_dir/'training.log').open('x') as f:subprocess.run(cmd,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT,check=True)
+        status('training',gpu=gpu,training_videos=prepared['training_videos'],resuming=a.resume_training)
+        with (a.run_dir/'training.log').open('a' if a.resume_training else 'x') as f:
+            if a.resume_training:
+                f.write('\nRESUMING ON GPU '+str(gpu)+' AT '+stamp+'; previous failure log retained\n');f.flush()
+            subprocess.run(cmd,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT,check=True)
         compare(a,gpu)
         status('complete',student=str(a.run_dir/'p3_student_distilled_best_fp32.pt'))
     except BaseException as error:

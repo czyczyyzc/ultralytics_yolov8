@@ -64,7 +64,7 @@ def snapshot_temporal(item, boxes, heldout, frozen_frames=False, snapshot_sha256
     temporal.records = {Path(item["video"]).stem: dict(video=Path(item["video"]), metadata=item,
         boxes=boxes, eligible=set(boxes), capture=capture, video_sha256=item["source_sha256"],
         coco_sha256="frozen_labeler_snapshot", approved_manifest_sha256="not_claimed_approved",
-        annotation_provenance="approved_labeler_snapshot_sequential_frozen_frames" if frozen_frames
+        annotation_provenance=f"{item['status']}_labeler_snapshot_frozen_frames" if frozen_frames
             else "frozen_human_confirmed_labels_pending_tasks_explicitly_allowed",
         frame_directory=item.get("frame_directory"), frozen_snapshot_sha256=snapshot_sha256)}
     return temporal

@@ -83,7 +83,7 @@ def frame_plan(annotations, frame_count, width, height, approved):
     return plan, dict(excluded)
 
 
-def snapshot_tasks(database, video_root, blocked):
+def snapshot_tasks(database, video_root, blocked, submitted_positives_only=False):
     con = sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
     try:
@@ -94,7 +94,9 @@ def snapshot_tasks(database, video_root, blocked):
              ORDER BY mi.created_at DESC LIMIT 1) original_path
             FROM tasks t JOIN videos v ON v.id=t.video_id
             WHERE t.is_published=1 AND t.status IN ('approved','submitted','in_progress')
-            ORDER BY t.created_at,t.id""").fetchall()
+              AND (?=0 OR t.status!='in_progress')
+            ORDER BY CASE WHEN ?=1 AND t.status='approved' THEN 0 ELSE 1 END,t.created_at,t.id""",
+            (submitted_positives_only, submitted_positives_only)).fetchall()
         selected, seen = [], set()
         for row in rows:
             item = dict(row)
@@ -174,6 +176,47 @@ def approved_frame_binding(database, assets, item):
                 frame_manifest_sha256=frame_digest), fingerprints
 
 
+def submitted_frame_binding(database, assets, item):
+    """Bind provisional positives to the frames actually shown in the labeler."""
+    with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as con:
+        rows = con.execute("""
+            SELECT s.id,s.manifest_relpath,s.manifest_sha256,s.mode
+            FROM tasks t JOIN task_frame_sets b ON b.task_id=t.id JOIN frame_sets s ON s.id=b.frame_set_id
+            WHERE t.id=? AND t.revision=? AND t.status='submitted' AND t.is_published=1
+              AND s.video_id=t.video_id AND s.source_sha256=?
+        """, (item["task_id"], item["revision"], item["source_sha256"])).fetchall()
+    if len(rows) != 1:
+        raise ValueError("Missing or changed submitted task frame binding")
+    frame_set, relative, digest, mode = rows[0]
+    assets = assets.resolve()
+    path = (assets / relative).resolve()
+    path.relative_to(assets)
+    if sha256(path) != digest:
+        raise ValueError("Submitted frame manifest hash differs")
+    spec = json.loads(path.read_text())
+    if (mode not in ("sequential", "legacy_display") or spec["mode"] != mode or spec["frameSetId"] != frame_set
+            or spec["sourceSha256"] != item["source_sha256"]
+            or (spec["frameCount"], spec["width"], spec["height"]) !=
+            (item["frame_count"], item["frame_width"], item["frame_height"])
+            or len(spec["frames"]) != item["frame_count"]):
+        raise ValueError("Submitted frame manifest does not describe the frozen task")
+    records = []
+    for i, row in enumerate(spec["frames"]):
+        if row["ordinal"] != i:
+            raise ValueError("Submitted frame ordinals are not contiguous")
+        if mode == "sequential":
+            if row["sourceOrdinals"] != [i] or len(row.get("decodedBgrSha256") or "") != 64:
+                raise ValueError("Submitted sequential frame does not pin decoded pixels")
+            records.append(row["decodedBgrSha256"])
+        else:
+            image = (assets / row["imagePath"]).resolve()
+            image.relative_to(assets)
+            if len(row.get("imageSha256") or "") != 64 or image.suffix.lower() not in (".jpg", ".jpeg"):
+                raise ValueError("Legacy displayed frame does not pin JPEG bytes")
+            records.append((image, row["imageSha256"]))
+    return dict(frame_set=frame_set, frame_manifest_sha256=digest, provisional=True, decode_mode=mode), records
+
+
 def extract(item, output, binding=None, free_reserve=0):
     import cv2
     import numpy as np
@@ -189,27 +232,44 @@ def extract(item, output, binding=None, free_reserve=0):
     images, labels = output / "images/labeler_snapshot" / key, output / "labels/labeler_snapshot" / key
     images.mkdir(parents=True)
     labels.mkdir(parents=True)
+    displayed = bool(binding and binding[0].get("decode_mode") == "legacy_display")
     opts = [cv2.CAP_PROP_N_THREADS, 1] if hasattr(cv2, "CAP_PROP_N_THREADS") else []
-    cap = cv2.VideoCapture(str(video), cv2.CAP_FFMPEG, opts) if binding else cv2.VideoCapture(str(video))
-    if not cap.isOpened():
+    cap = (cv2.VideoCapture(str(video), cv2.CAP_FFMPEG, opts) if binding else cv2.VideoCapture(str(video))) if not displayed else None
+    if cap is not None and not cap.isOpened():
         raise RuntimeError(f"Cannot decode {video}")
     positive, negative, cached = [], [], []
     index = 0
     try:
         while True:
-            ok, image = cap.read()
-            if not ok:
-                break
+            if displayed:
+                if index >= len(binding[1]):
+                    break
+                if index not in plan:
+                    index += 1
+                    continue
+                asset, digest = binding[1][index]
+                payload = asset.read_bytes()
+                if hashlib.sha256(payload).hexdigest() != digest:
+                    raise ValueError(f"Displayed JPEG changed: {asset}")
+                image = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if image is None:
+                    raise ValueError(f"Cannot decode displayed JPEG: {asset}")
+            else:
+                ok, image = cap.read()
+                if not ok:
+                    break
             if image.shape[:2] != (item["frame_height"], item["frame_width"]):
                 raise ValueError(f"Frame geometry differs from annotation source: {video}")
-            if binding and (index >= len(binding[1]) or hashlib.sha256(image.tobytes()).hexdigest() != binding[1][index]):
+            if binding and not displayed and (index >= len(binding[1]) or hashlib.sha256(image.tobytes()).hexdigest() != binding[1][index]):
                 raise ValueError(f"Decoded source pixels do not match the approved frame: {video}:{index}")
             if index in plan:
                 if free_reserve and index % 16 == 0 and shutil.disk_usage(output).free < free_reserve:
                     raise OSError("Extraction stopped to preserve shared disk headroom")
                 path = images / f"{index:09d}.jpg"
                 boxes = plan[index]
-                if not cv2.imwrite(str(path), image, [cv2.IMWRITE_JPEG_QUALITY, 95]):
+                if displayed:
+                    path.write_bytes(payload)
+                elif not cv2.imwrite(str(path), image, [cv2.IMWRITE_JPEG_QUALITY, 95]):
                     raise OSError(path)
                 text = "".join("0 " + " ".join(f"{v:.10f}" for v in box) + "\n" for box in boxes)
                 (labels / f"{index:09d}.txt").write_text(text)
@@ -220,7 +280,8 @@ def extract(item, output, binding=None, free_reserve=0):
                     normalized=True, bbox_format="xywh"))
             index += 1
     finally:
-        cap.release()
+        if cap is not None:
+            cap.release()
     if index != item["frame_count"] or len(cached) != len(plan):
         raise ValueError(f"Frame coverage mismatch: {video}: {index} vs {item['frame_count']}")
     record = dict(task_id=item["task_id"], included=True, status=item["status"], revision=item["revision"],
@@ -228,7 +289,8 @@ def extract(item, output, binding=None, free_reserve=0):
         decoded_frames=index, positive_samples=len(positive), negative_samples=len(negative),
         included_frames=len(cached), excluded=excluded, image_directory=str(images), label_directory=str(labels))
     if binding:
-        record.update(frame_alignment=dict(binding[0], decoded_pixels_verified=index, gt_matches_approval=True))
+        record.update(frame_alignment=dict(binding[0], decoded_pixels_verified=0 if displayed else index,
+            display_jpegs_verified=len(cached) if displayed else 0, gt_matches_approval=item["status"] == "approved"))
     print(json.dumps(record, ensure_ascii=False), flush=True)
     return record, positive, negative, cached
 
@@ -245,12 +307,16 @@ def main():
     p.add_argument("--task-snapshot", type=Path, help="Refresh only the videos in this previous frozen snapshot")
     p.add_argument("--approved-frame-assets", type=Path, help="Require all decoded frames to match approved pixel hashes")
     p.add_argument("--bounded-disk", action="store_true", help="Use the guarded reserve for small frozen approved additions")
+    p.add_argument("--include-submitted-positives", action="store_true",
+                   help="Allow frozen submitted tasks, using only confirmed positives bound to labeler frames")
     a = p.parse_args()
     a.source, a.output = a.source.resolve(), a.output.resolve()
     if a.output.exists() or not 1 <= a.workers <= 16:
         raise ValueError("Use a fresh output directory and 1-16 extraction workers")
     if a.bounded_disk and not (a.task_snapshot and a.approved_frame_assets):
         p.error("--bounded-disk requires a frozen approved scope and frame assets")
+    if a.include_submitted_positives and not (a.task_snapshot and a.approved_frame_assets):
+        p.error("--include-submitted-positives requires a frozen task scope and frame assets")
     required_gib = 30 if a.bounded_disk else 80
     if shutil.disk_usage(a.output.parent).free < required_gib * (1 << 30):
         raise OSError(f"Less than {required_gib} GiB free; refuse extraction")
@@ -267,11 +333,11 @@ def main():
         listing = Path(config[split])
         record = baseline_protocol["trusted_label_caches"][str(listing)]
         if sha256(listing) != record["source_sha256"] or sha256(listing.with_suffix(".cache")) != record["cache_sha256"]:
-            raise ValueError(f"Baseline {split} cache/list differs from the 52-video training protocol")
+            raise ValueError(f"Baseline {split} cache/list differs from the pinned training protocol")
     base = Path(config["train"]).read_text().splitlines()
     validation = Path(config["val"]).read_text().splitlines()
     blocked = set(source["train_video_hashes"]) | {source["test_sha256"], source["validation_sha256"]}
-    items = snapshot_tasks(a.database, a.video_root, blocked)
+    items = snapshot_tasks(a.database, a.video_root, blocked, a.include_submitted_positives)
     if a.task_snapshot:
         frozen = json.loads(a.task_snapshot.read_text())
         items = restrict_task_scope(items, frozen)
@@ -280,10 +346,16 @@ def main():
             verify_frozen_scope(frozen["videos"], items)
     if not items:
         raise ValueError("No new labelled videos")
-    if a.bounded_disk and sum(x["frame_count"] for x in items) > 20000:
-        raise ValueError("Bounded extraction supports at most 20,000 decoded frames")
-    bindings = {x["task_id"]: approved_frame_binding(a.database, a.approved_frame_assets, x)
-                for x in items} if a.approved_frame_assets else {}
+    limit = 40000 if a.include_submitted_positives else 20000
+    if a.bounded_disk and sum(x["frame_count"] for x in items) > limit:
+        raise ValueError(f"Bounded extraction supports at most {limit} frames")
+    if a.include_submitted_positives and any(x["status"] not in ("approved", "submitted") for x in items):
+        raise ValueError("Only approved and submitted tasks may enter the mixed comparison")
+    bindings = {}
+    if a.approved_frame_assets:
+        for x in items:
+            bind = submitted_frame_binding if x["status"] == "submitted" and a.include_submitted_positives else approved_frame_binding
+            bindings[x["task_id"]] = bind(a.database, a.approved_frame_assets, x)
     a.output.mkdir(parents=True)
     snapshot = dict(captured_at=datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
         source_database=str(a.database), baseline_manifest=str(a.source / "manifest.json"),

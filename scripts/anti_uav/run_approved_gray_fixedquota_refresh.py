@@ -55,6 +55,8 @@ def verify_existing_approval_scope(database, source):
             path=Path(scope[path_key])
             if sha256(path)!=scope[hash_key]:raise ValueError('Previous approval snapshot changed')
             for item in json.loads(path.read_text())['videos']:
+                if item['status']=='submitted':
+                    continue
                 old=tasks.get(item['task_id'])
                 if old and (old['revision'],old['approved_revision'])!=(item['revision'],item['approved_revision']):
                     raise ValueError('Conflicting frozen approval revisions')
@@ -181,8 +183,11 @@ def configure(data_dir, cache_dir, source_config, source_dir, output, visible_bo
         additional_negatives_per_epoch=sampler.rotating_budget,final_negative_fraction=sampler.audit['negative_fraction'])
     manifest['current_approved_scope']=dict(previous_scope=previous_scope,
         additions_snapshot=str(data_dir/'annotation_snapshot.json'),additions_snapshot_sha256=sha256(data_dir/'annotation_snapshot.json'),
-        captured_at=latest_scope['captured_at'],approved_training_videos=previous_scope['approved_training_videos']+len(latest_scope['videos']),
+        captured_at=latest_scope['captured_at'],approved_training_videos=previous_scope['approved_training_videos']+
+            sum(x['status']=='approved' for x in latest_scope['videos']),
         historical_sources=previous_scope['historical_sources'])
+    manifest['provisional_submitted_training_videos']=manifest.get('provisional_submitted_training_videos',0)+sum(
+        x['status']=='submitted' for x in latest_scope['videos'])
     manifest.update(background_cache=str(cache_dir),online_replacement=config['online_replacement'],
                     augmentation_catalog=json.loads((cache_dir/'index.json').read_text())['catalog'])
     dump(data_dir/'manifest.json',manifest)
@@ -308,7 +313,8 @@ def main():
     p.add_argument('--data-output',type=Path,required=True)
     p.add_argument('--cache-output',type=Path,required=True)
     p.add_argument('--run-dir',type=Path,required=True)
-    p.add_argument('--approved-sha256',nargs='+',required=True)
+    scope=p.add_mutually_exclusive_group(required=True)
+    scope.add_argument('--approved-sha256',nargs='+')
     p.add_argument('--gpus',nargs='+',type=int,default=[2,6])
     p.add_argument('--allow-shared-gpu',action='store_true')
     p.add_argument('--background-workers',type=int,default=16)
@@ -319,6 +325,8 @@ def main():
     p.add_argument('--visible-box-guard',choices=['affine_fallback_v1','affine_keep_subpixel_v2'])
     p.add_argument('--approved-frame-assets',type=Path)
     p.add_argument('--bounded-disk',action='store_true')
+    scope.add_argument('--all-approved-and-submitted',action='store_true',
+                       help='Prepare all additional approved videos and submitted positive frames for a separate experiment')
     p.add_argument('--acceptance-baseline-run',type=Path)
     p.add_argument('--prepare-only',action='store_true')
     p.add_argument('--train-prepared',action='store_true')
@@ -331,6 +339,8 @@ def main():
         p.error('--resume-training requires --train-prepared only')
     if a.bounded_disk and not a.approved_frame_assets:
         p.error('--bounded-disk requires --approved-frame-assets')
+    if a.all_approved_and_submitted and (not a.prepare_only or not a.approved_frame_assets):
+        p.error('--all-approved-and-submitted requires --prepare-only and --approved-frame-assets')
     if not 1<=a.background_workers<=32 or not 1<=a.extraction_workers<=16:
         p.error('Use 1..32 background and 1..16 extraction workers')
     for key,value in vars(a).items():
@@ -349,12 +359,20 @@ def main():
     import yaml
     source_yaml=Path(protocol['data']);source_dir=source_yaml.parent
     source=json.loads((source_dir/'manifest.json').read_text());source_config=yaml.safe_load(source_yaml.read_text())
+    blocked=set(source['train_video_hashes'])|{source['test_sha256'],source['validation_sha256']}
+    mixed_items=None
+    if a.all_approved_and_submitted:
+        mixed_items=snapshot_tasks(a.database,a.video_root,blocked,submitted_positives_only=True)
+        if not mixed_items:
+            raise ValueError('No additional approved/submitted videos')
+        a.approved_sha256=[x['source_sha256'] for x in mixed_items]
     expected_videos=len(source['train_video_hashes'])+len(a.approved_sha256)
     if a.expected_training_videos is not None and a.expected_training_videos!=expected_videos:
         raise ValueError('Requested final video count differs from the frozen addition scope')
     a.source_arm_label=a.source_arm_label or f'approved{len(source["train_video_hashes"])}_source'
     a.comparison_arm_label=a.comparison_arm_label or f'approved{expected_videos}_refreshed'
-    a.comparison_intentional_changes=[f'{len(a.approved_sha256)}_new_current_approved_videos',
+    additions_scope='approved_and_submitted' if a.all_approved_and_submitted else 'approved'
+    a.comparison_intentional_changes=[f'{len(a.approved_sha256)}_new_{additions_scope}_videos',
         'training_only_background_extension','same_gray3_and_per_batch_quotas',
         'same_frozen_cutout_catalog','same_source_regression_loss_and_curriculum']
     if a.visible_box_guard:
@@ -363,7 +381,6 @@ def main():
     previous_index=json.loads((a.previous_cache/'index.json').read_text())
     if Path(source_config['online_replacement']['cache']).resolve()!=a.previous_cache:
         raise ValueError('Background cache must match the source training configuration')
-    blocked=set(source['train_video_hashes'])|{source['test_sha256'],source['validation_sha256']}
     requested=a.run_dir/'audit/requested_scope.json'
     try:
         verify_existing_approval_scope(a.database,source)
@@ -389,7 +406,8 @@ def main():
             raise ValueError('Prepared guard or acceptance baseline changed')
         if not a.train_prepared:
             status('freezing_approved_scope')
-            items=select_requested(snapshot_tasks(a.database,a.video_root,blocked),a.approved_sha256,source)
+            items=mixed_items if mixed_items is not None else select_requested(
+                snapshot_tasks(a.database,a.video_root,blocked),a.approved_sha256,source)
             if a.resume_preparation:
                 from scripts.anti_uav.run_approved_data_only_refresh import verify_frozen_scope
                 frozen=json.loads(requested.read_text())
@@ -405,6 +423,7 @@ def main():
                     '--workers',a.extraction_workers,'--task-snapshot',requested]
                 if a.approved_frame_assets:extract_cmd.extend(['--approved-frame-assets',a.approved_frame_assets])
                 if a.bounded_disk:extract_cmd.append('--bounded-disk')
+                if a.all_approved_and_submitted:extract_cmd.append('--include-submitted-positives')
                 command('extract_approved',extract_cmd)
             data_manifest=json.loads((a.data_output/'manifest.json').read_text())
             if set(data_manifest['train_video_hashes'])!=set(source['train_video_hashes'])|set(a.approved_sha256):raise ValueError('Appended video scope differs from request')

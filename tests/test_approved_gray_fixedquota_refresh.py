@@ -1,13 +1,14 @@
 from pathlib import Path
 import json
 import sqlite3
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
 import pytest
 
 from scripts.anti_uav.run_approved_gray_fixedquota_refresh import (
-    audit_background_requirement,choose_shared_gpu,public_manifest_path,select_requested,
+    audit_background_requirement,choose_shared_gpu,comparison_arms,public_manifest_path,select_requested,
     sha256,training_command,verify_existing_approval_scope,
     video00009_acceptance,
 )
@@ -30,6 +31,21 @@ def test_shared_gpu_selection_never_uses_disallowed_or_low_headroom_cards():
     assert choose_shared_gpu(usage,[2,6],False) is None
     assert choose_shared_gpu('6,35000,46000,0',[6],True) is None
     assert choose_shared_gpu('6,10000,20000,0',[6],True) is None
+
+
+def test_cancelled_source_does_not_block_explicit_acceptance_baseline(tmp_path):
+    source=tmp_path/'source';source.mkdir()
+    reference=tmp_path/'reference'
+    candidate=tmp_path/'candidate'
+    args=SimpleNamespace(source_run=source,run_dir=candidate,source_arm_label='source',
+                         acceptance_baseline_run=reference,native_control_run=tmp_path/'native')
+    assert len(comparison_arms(args,'reference','candidate')[0])==3
+    (source/'refresh_status.json').write_text(json.dumps(dict(stage='stopped_by_user')))
+    arms,skipped=comparison_arms(args,'reference','candidate')
+    assert arms==[('reference',reference),('candidate',candidate)]
+    assert skipped=={'source':{'run':str(source),'reason':'stopped_by_user'}}
+    args.acceptance_baseline_run=None
+    assert ('source',source) in comparison_arms(args,'reference','candidate')[0]
 
 
 def test_frozen_ts_donors_use_exact_export_indices_without_video_seek(tmp_path):

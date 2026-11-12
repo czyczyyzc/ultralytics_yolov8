@@ -228,6 +228,22 @@ def video00009_acceptance(result, baseline, candidate):
                 automatic_deployment=False)
 
 
+def comparison_arms(a, baseline_label, new_label):
+    reference=getattr(a,'acceptance_baseline_run',None)
+    arms=[(baseline_label,reference)] if reference else [('native69',a.native_control_run)]
+    source_label=getattr(a,'source_arm_label','public69_before_repair')
+    skipped={}
+    status=a.source_run/'refresh_status.json'
+    if reference and status.is_file() and json.loads(status.read_text()).get('stage')=='stopped_by_user':
+        skipped[source_label]=dict(run=str(a.source_run),reason='stopped_by_user')
+    else:
+        arms.append((source_label,a.source_run))
+    arms.append((new_label,a.run_dir))
+    if len({label for label,_ in arms})!=len(arms):
+        raise ValueError('Duplicate comparison arm labels')
+    return arms,skipped
+
+
 def compare(a, device):
     import numpy as np
     import torch
@@ -247,13 +263,9 @@ def compare(a, device):
     torch.set_num_threads(4);torch.backends.cuda.matmul.allow_tf32=False;torch.backends.cudnn.allow_tf32=False
     result={}
     new_label=getattr(a,'comparison_arm_label','approved74_fixedgray')
-    source_label=getattr(a,'source_arm_label','public69_before_repair')
     reference=getattr(a,'acceptance_baseline_run',None)
     baseline_label='approved74_regression_repair'
-    arms=[(baseline_label,reference)] if reference else [('native69',a.native_control_run)]
-    arms.extend(((source_label,a.source_run),(new_label,a.run_dir)))
-    if len({label for label,_ in arms})!=len(arms):
-        raise ValueError('Duplicate comparison arm labels')
+    arms,skipped=comparison_arms(a,baseline_label,new_label)
     for arm,run in arms:
         for stage,relative in [('p3_initial','foundation/p3/weights/best.pt'),('teacher','teacher/p2p3/weights/best.pt'),
                                ('student','p3_student_distilled_best_fp32.pt')]:
@@ -277,7 +289,7 @@ def compare(a, device):
             dump(output/'results.json',result)
     dump(output/'protocol.json',dict(input_color='gray3',input_hw=[544,960],precision='FP32',tracker=False,
         conf=.03,ap_floor=.001,nms_iou=.45,match_iou=.5,pooled_frames=3780,pooled_gt=1245,
-        pooled_contains_selection_validation=True,external_fixedwing_positive_frames_only=True,
+        pooled_contains_selection_validation=True,external_fixedwing_positive_frames_only=True,skipped_arms=skipped,
         intentional_changes=getattr(a,'comparison_intentional_changes',
             ['five_new_approved_videos','fixed_source_size_quotas','gray3_input','brightness_only','new_background_caches'])))
     if reference:

@@ -11,13 +11,13 @@ OFFSET_LOSS_WEIGHT = .5
 
 
 @torch.no_grad()
-def reserve_p3_points(assignment, p3_pixels, labels, gt_boxes, valid):
+def reserve_p3_points(assignment, p3_pixels, labels, gt_boxes, valid, *, eligible=None, can_express=None):
     """Add one nearest free P3 point per unmatched tiny GT without overwriting TAL."""
     target_labels, targets, scores, foreground, indices = assignment
     points = len(p3_pixels)
     forced = torch.zeros_like(foreground, dtype=torch.bool)
-    eligible = valid & ((gt_boxes[..., 2:] - gt_boxes[..., :2]) > 0).all(-1)
-    eligible &= (gt_boxes[..., 2:] - gt_boxes[..., :2]).amax(-1) <= TINY_MAX_PX
+    wh = gt_boxes[..., 2:] - gt_boxes[..., :2]
+    eligible = (wh.amax(-1) <= TINY_MAX_PX if eligible is None else eligible) & valid & (wh > 0).all(-1)
     if not gt_boxes.shape[1]:
         zero = torch.zeros((), device=gt_boxes.device, dtype=torch.long)
         return forced, torch.stack((zero, zero, zero))
@@ -34,6 +34,8 @@ def reserve_p3_points(assignment, p3_pixels, labels, gt_boxes, valid):
         centers = (boxes[:, :2] + boxes[:, 2:]) * .5
         distances = (p3_pixels.float()[None] - centers[:, None].float()).square().sum(-1)
         distances.masked_fill_(foreground[batch_ids, :points].bool(), float("inf"))
+        if can_express is not None:
+            distances.masked_fill_(~can_express(p3_pixels.float()[None], boxes[:, None].float()), float("inf"))
         best, anchor_ids = distances.min(1)
         remaining[batch_ids, gt_ids] = False
         free = best.isfinite()

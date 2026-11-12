@@ -140,12 +140,18 @@ def evaluate(arms, splits, device, output, budgets=(100, 200, 400)):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for arg in ("control", "offset", "video00004", "video00009", "output"):
+    for arg in ("control", "offset", "video00009", "output"):
         p.add_argument(f"--{arg}", required=True, type=Path)
+    p.add_argument("--video00004", type=Path)
+    p.add_argument("--candidate-label", default="offset")
     p.add_argument("--device", required=True)
     a = p.parse_args()
-    evaluate(dict(control=a.control, offset=a.offset),
-             dict(Video00004=a.video00004, Video00009=a.video00009), a.device, a.output)
+    if a.candidate_label == "control":
+        p.error("Candidate must not overwrite the control")
+    splits = dict(Video00009=a.video00009)
+    if a.video00004:
+        splits["Video00004"] = a.video00004
+    evaluate({"control": a.control, a.candidate_label: a.offset}, splits, a.device, a.output)
 
 
 if __name__ == "__main__":

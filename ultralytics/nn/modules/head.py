@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import constant_, xavier_uniform_
 
+from ultralytics.utils.signed_dfl import signed_dfl_decode, signed_dfl_logits
 from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
 
 from .block import DFL, BNContrastiveHead, ContrastiveHead, Proto
@@ -66,8 +67,8 @@ class Detect(nn.Module):
             return y              
 
         if self.export and self.format == 'rknn':
-            if hasattr(self, "p3_offset"):
-                raise RuntimeError("The shifted P3 head is incompatible with the existing raw RKNN decoder")
+            if hasattr(self, "p3_offset") or hasattr(self, "p3_negative_bin"):
+                raise RuntimeError("The modified P3 head is incompatible with the existing raw RKNN decoder")
             y = []
             for i in range(self.nl):
                 y.append(self.cv2[i](x[i]))
@@ -81,7 +82,12 @@ class Detect(nn.Module):
             return self.forward_end2end(x)
 
         for i in range(self.nl):
-            reg = self.cv2[i](x[i])
+            tower = self.cv2[i]
+            if i == 0 and hasattr(self, "p3_negative_bin"):
+                features = tower[1](tower[0](x[i]))
+                reg = torch.cat((tower[2](features), self.p3_negative_bin(features)), 1)
+            else:
+                reg = tower(x[i])
             if i == 0 and hasattr(self, "p3_offset"):
                 reg = torch.cat((reg, self.p3_offset(x[i])), 1)
             x[i] = torch.cat((reg, self.cv3[i](x[i])), 1)
@@ -116,8 +122,12 @@ class Detect(nn.Module):
 
     def _inference(self, x):
         """Decode predicted bounding boxes and class probabilities based on multiple-level feature maps."""
-        offset = None
-        if hasattr(self, "p3_offset"):
+        offset = negative = None
+        if hasattr(self, "p3_negative_bin"):
+            n = self.reg_max * 4
+            negative = x[0][:, n:n + 4].flatten(2)
+            x = [torch.cat((x[0][:, :n], x[0][:, n + 4:]), 1), *x[1:]]
+        elif hasattr(self, "p3_offset"):
             n = self.reg_max * 4
             offset = x[0][:, n:n + 2].flatten(2)
             x = [torch.cat((x[0][:, :n], x[0][:, n + 2:]), 1), *x[1:]]
@@ -134,6 +144,13 @@ class Detect(nn.Module):
         else:
             box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
 
+        distances = self.dfl(box)
+        if negative is not None:
+            points = negative.shape[-1]
+            p3 = signed_dfl_logits(box[:, :, :points].transpose(1, 2), negative.transpose(1, 2))
+            p3 = signed_dfl_decode(p3).transpose(1, 2).to(distances.dtype)
+            distances = torch.cat((p3, distances[:, :, points:]), 2)
+
         if self.export and self.format in {"tflite", "edgetpu"}:
             # Precompute normalization factor to increase numerical stability
             # See https://github.com/ultralytics/ultralytics/issues/7371
@@ -141,11 +158,11 @@ class Detect(nn.Module):
             grid_w = shape[3]
             grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box.device).reshape(1, 4, 1)
             norm = self.strides / (self.stride[0] * grid_size)
-            dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
+            dbox = self.decode_bboxes(distances * norm, self.anchors.unsqueeze(0) * norm[:, :2])
             if offset is not None:
                 offset = offset * norm[:, :2, :offset.shape[-1]]
         else:
-            dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
+            dbox = self.decode_bboxes(distances, self.anchors.unsqueeze(0)) * self.strides
             if offset is not None:
                 offset = offset * self.strides[:, :offset.shape[-1]]
 
@@ -164,6 +181,17 @@ class Detect(nn.Module):
             self.p3_offset = nn.Conv2d(self.cv2[0][0].conv.in_channels, 2, 1)
         nn.init.zeros_(self.p3_offset.weight)
         nn.init.zeros_(self.p3_offset.bias)
+
+    def enable_p3_signed_dfl(self):
+        """Keep the pretrained 0..15 logits and add one low-prior logit per edge."""
+        if type(self) is not Detect or tuple(int(s) for s in self.stride) != (8, 16, 32):
+            raise ValueError("Signed P3 DFL requires the standard three-level detector")
+        if hasattr(self, "p3_offset"):
+            raise ValueError("Signed P3 DFL and reference shift are mutually exclusive")
+        with torch.random.fork_rng(devices=[]):
+            self.p3_negative_bin = nn.Conv2d(self.cv2[0][-1].in_channels, 4, 1)
+        nn.init.zeros_(self.p3_negative_bin.weight)
+        nn.init.constant_(self.p3_negative_bin.bias, -8.)
 
     def bias_init(self):
         """Initialize Detect() biases, WARNING: requires stride availability."""

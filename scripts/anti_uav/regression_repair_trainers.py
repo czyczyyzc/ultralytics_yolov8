@@ -78,16 +78,21 @@ class RegressionRepairP3Trainer(RepairMixin, TinyAwareP3Trainer):
     def _setup_train(self, world_size):
         super()._setup_train(world_size)
         model = de_parallel(self.model)
-        if hasattr(model.model[-1], "p3_offset"):
+        head = model.model[-1]
+        loss_type = BalancedRegressionDetectionLoss
+        if hasattr(head, "p3_negative_bin"):
+            from scripts.anti_uav.p3_signed_dfl import P3SignedDFLLoss
+
+            loss_type = P3SignedDFLLoss
+        elif hasattr(head, "p3_offset"):
             from scripts.anti_uav.p3_nearest_offset import P3NearestOffsetLoss
 
-            previous = model.criterion
-            model.criterion = repaired_loss(model, self.data, previous, self.repair_options,
-                                            loss_type=P3NearestOffsetLoss)
+            loss_type = P3NearestOffsetLoss
+        previous = model.criterion
+        model.criterion = repaired_loss(model, self.data, previous, self.repair_options, loss_type=loss_type)
+        if loss_type is not BalancedRegressionDetectionLoss:
             self.ema.ema.criterion = repaired_loss(self.ema.ema, self.data, previous, self.repair_options,
-                                                   loss_type=P3NearestOffsetLoss)
-        else:
-            model.criterion = repaired_loss(model, self.data, model.criterion, self.repair_options)
+                                                   loss_type=loss_type)
         self.install_repair_callbacks()
 
 

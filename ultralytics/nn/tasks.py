@@ -334,6 +334,8 @@ class DetectionModel(BaseModel):
             m.bias_init()  # only run once
             if self.yaml.get("p3_nearest_offset_v1"):
                 m.enable_p3_reference_shift()
+            if self.yaml.get("p3_signed_dfl_v1"):
+                m.enable_p3_signed_dfl()
         else:
             self.stride = torch.Tensor([32])  # default stride for i.e. RTDETR
 
@@ -387,8 +389,8 @@ class DetectionModel(BaseModel):
 
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
-        if hasattr(self.model[-1], "p3_offset"):
-            raise RuntimeError("The shifted P3 detector requires the P3 offset trainer")
+        if hasattr(self.model[-1], "p3_offset") or hasattr(self.model[-1], "p3_negative_bin"):
+            raise RuntimeError("The modified P3 detector requires its custom regression trainer")
         if isinstance(self.model[-1], FrozenP3AddOnP2Detect):
             return v8AddOnP2DetectionLoss(self)
         return E2EDetectLoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)

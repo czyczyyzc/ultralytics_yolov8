@@ -39,7 +39,7 @@ def gt_groups(boxes, valid, domains):
 
 
 @torch.no_grad()
-def regression_shares(scores, foreground, target_index, groups, valid):
+def regression_shares(scores, foreground, target_index, groups, valid, *, matched_only=False):
     """One image credit, then one quality-weighted GT credit within each bucket.
 
     Missing assignments receive zero loss, not fabricated boxes. Their budget is
@@ -55,6 +55,8 @@ def regression_shares(scores, foreground, target_index, groups, valid):
     mass = scores.new_zeros((batch, count)).scatter_add_(1, indices, scores)
     quality = scores.new_zeros((batch, count)).scatter_reduce_(
         1, indices, scores, reduce='amax', include_self=True)
+    if matched_only:
+        valid = valid & (mass > 0)
     credit = valid.float() / valid.sum(1, keepdim=True).clamp_min(1)
     budget = scores.new_zeros(len(GROUPS)).scatter_add_(0, groups[valid], credit[valid])
     budget /= valid.any(1).sum().clamp_min(1)
@@ -88,6 +90,8 @@ def repair_progress(epoch, warmup_epochs):
 
 class BalancedRegressionDetectionLoss(TinyAwareDetectionLoss):
     """Leave classification/assignment intact; repair box/DFL and tiny-size supervision."""
+
+    matched_regression_budget = False
 
     def __init__(self, model, source, balance_mix=.5, warmup_epochs=3,
                  tiny_log_size_weight=.5, first_level_only=False, **legacy_options):
@@ -201,7 +205,8 @@ class BalancedRegressionDetectionLoss(TinyAwareDetectionLoss):
         legacy_scores = target_scores * multiplier.unsqueeze(-1)
         domains = self.image_domains(batch['im_file'], gt_boxes.device)
         groups = gt_groups(gt_boxes, valid, domains)
-        balanced, mass, _ = regression_shares(target_scores.sum(-1), fg, indices, groups, valid)
+        balanced, mass, _ = regression_shares(target_scores.sum(-1), fg, indices, groups, valid,
+                                             matched_only=self.matched_regression_budget)
         mixed = (1-self.balance_mix*self.progress) * (legacy_scores.sum(-1)/normalizer) + self.balance_mix*self.progress*balanced
         geometry = interior_grid_coverage(gt_boxes.float(), valid, self._stride_values, image_hw)
         self.record_audit(target_scores.sum(-1), fg, indices, groups, valid, mass, geometry, mixed)

@@ -245,12 +245,15 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--foundation-only", action="store_true", help="Validate the repaired foundation before training Teacher/Student")
     parser.add_argument("--regression-repair", action="store_true", help="Opt-in source/scale-normalized regression; legacy defaults unchanged")
-    parser.add_argument("--p3-nearest-offset", action="store_true", help="Test P3-only off-grid tiny fallback and DFL reference shift")
+    p3_variant = parser.add_mutually_exclusive_group()
+    p3_variant.add_argument("--p3-nearest-offset", action="store_true", help="Test P3-only off-grid tiny fallback and DFL reference shift")
+    p3_variant.add_argument("--p3-signed-dfl", action="store_true", help="Test off-grid P3 fallback, signed DFL, and matched-only regression budget")
     parser.add_argument("--repair-balance-mix", type=float, default=.5)
     parser.add_argument("--repair-warmup-epochs", type=int, default=3)
     args = parser.parse_args()
-    if args.p3_nearest_offset and not (args.foundation_only and args.regression_repair and args.localization_epochs == 0):
-        parser.error("--p3-nearest-offset requires foundation-only regression repair with no localization stage")
+    if (args.p3_nearest_offset or args.p3_signed_dfl) and not (
+            args.foundation_only and args.regression_repair and args.localization_epochs == 0):
+        parser.error("P3 variants require foundation-only regression repair with no localization stage")
 
     p3_trainer, teacher_trainer, student_trainer = TinyAwareP3Trainer, TinyAwareAddOnTrainer, P3StudentFP32DistillationTrainer
     repair = None
@@ -387,10 +390,19 @@ def main() -> None:
         protocol["regression_repair"].update(classification_unchanged=False, assigner_unchanged=False,
             inference_graph_unchanged=False)
         protocol["final_graph"] = "P3-P5 with a signed P3 DFL reference shift; no P2"
+    if args.p3_signed_dfl:
+        from scripts.anti_uav.p3_signed_dfl import FALLBACK_SCORE, MAX_BIN, MIN_BIN
+
+        protocol["p3_signed_dfl"] = dict(bins=[MIN_BIN, MAX_BIN], fallback_score=FALLBACK_SCORE,
+            eligible="no_interior_p3_grid_point", fallback="nearest_free_representable_point",
+            normal_tal_unchanged=True, matched_gt_only_regression_budget=True, no_reference_offset=True)
+        protocol["regression_repair"].update(classification_unchanged=False, assigner_unchanged=False,
+            inference_graph_unchanged=False, stages=["foundation"])
+        protocol["final_graph"] = "P3 signed DFL (-1..15), P4/P5 legacy DFL (0..15); no P2"
     if protocol_path.exists():
         previous = json.loads(protocol_path.read_text())
-        if (previous.get("regression_repair") != protocol.get("regression_repair")
-                or previous.get("p3_nearest_offset") != protocol.get("p3_nearest_offset")):
+        if any(previous.get(key) != protocol.get(key) for key in
+               ("regression_repair", "p3_nearest_offset", "p3_signed_dfl")):
             raise ValueError("Resume regression repair differs from saved experiment")
         for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation",
                     "batch", "nbs", "seed", "qat", "trusted_label_caches"):
@@ -431,6 +443,8 @@ def main() -> None:
             foundation = YOLO(progress["foundation"]["checkpoint"] or str(args.foundation))
             if args.p3_nearest_offset and not progress["foundation"]["checkpoint"]:
                 foundation.model.yaml["p3_nearest_offset_v1"] = True
+            if args.p3_signed_dfl and not progress["foundation"]["checkpoint"]:
+                foundation.model.yaml["p3_signed_dfl_v1"] = True
             add_status_callback(foundation, args.run_dir, "train_native_p3_foundation")
             write_status(args.run_dir, "train_native_p3_foundation",
                          epoch=progress["foundation"]["completed_epochs"], device=args.device)

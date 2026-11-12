@@ -78,7 +78,7 @@ def summarize(records, budgets):
     output = {}
     for budget in budgets:
         allowed = int(budget*len(records)//1000)
-        n = cutoffs[fp_prefix[cutoffs] <= allowed][-1]
+        n = int(cutoffs[fp_prefix[cutoffs] <= allowed][-1])
         fp = int(fp_prefix[n])
         row = dict(conf_threshold=float(scores[n-1]) if n else None, frames=len(records),
             fp=fp, fp_per_1000=1000*fp/len(records), budget_fp=allowed,

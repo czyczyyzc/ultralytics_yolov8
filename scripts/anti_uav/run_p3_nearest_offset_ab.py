@@ -24,12 +24,19 @@ def main():
     for name in ("source-run", "preparation", "run-dir", "video00004"):
         p.add_argument(f"--{name}", required=True, type=lambda path: Path(path).resolve())
     p.add_argument("--gpus", type=int, nargs="+", default=list(range(8)))
+    p.add_argument("--data-root", type=Path)
+    p.add_argument("--video-root", type=Path)
+    p.add_argument("--frame-assets", type=Path)
+    p.add_argument("--gray-batch-quotas", type=int, nargs=3)
+    p.add_argument("--automatic-cache-qa", action="store_true", help="Accept verified composition samples without a separate visual sign-off")
     a = p.parse_args()
+    if a.gray_batch_quotas and not (a.data_root and a.video_root and a.frame_assets):
+        p.error("Quota recovery requires --data-root, --video-root and --frame-assets")
     a.run_dir.mkdir(parents=True, exist_ok=True)
     lock = (a.run_dir/"ab.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     logs = a.run_dir/"ab_logs"
-    logs.mkdir(exist_ok=False)
+    logs.mkdir(exist_ok=True)
 
     def status(stage, **more):
         dump(a.run_dir/"ab_status.json", dict(stage=stage, pid=os.getpid(), updated=time.time(), **more))
@@ -53,6 +60,23 @@ def main():
         while not (a.preparation/"preparation.json").is_file():
             preparation = read(a.preparation/"refresh_status.json")
             if preparation["stage"] == "failed":
+                if a.gray_batch_quotas and "Native quota exceeds its bounded replay limit" in preparation["error"]:
+                    contract = read(a.preparation/"refresh_contract.json")
+                    frozen = read(a.preparation/"audit/requested_scope.json")
+                    cache = a.data_root.resolve()/"backgrounds"
+                    if read(cache/"summary.json")["stage"] != "complete":
+                        raise ValueError("Quota-only recovery requires the original frozen cache")
+                    status("configuring_common_gray_quotas", gray_batch_quotas=a.gray_batch_quotas)
+                    with (logs/"quota_recovery.log").open("x") as stream:
+                        subprocess.run(list(map(str, [sys.executable,"-u","-m","scripts.anti_uav.run_approved_gray_fixedquota_refresh",
+                            "--source-run",a.source_run,"--native-control-run",a.source_run,
+                            "--database",frozen["source_database"],"--video-root",a.video_root,
+                            "--previous-cache",contract["previous_cache"],"--data-output",a.data_root.resolve()/"dataset",
+                            "--cache-output",cache,"--run-dir",a.preparation,"--all-approved-and-submitted",
+                            "--approved-frame-assets",a.frame_assets,"--visible-box-guard","affine_keep_subpixel_v2",
+                            "--gray-batch-quotas",*a.gray_batch_quotas,"--prepare-only","--resume-preparation"])),
+                            cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, check=True)
+                    continue
                 raise ValueError(f'Dataset preparation failed: {preparation["error"]}')
             status("waiting_for_frozen_data", preparation_stage=preparation["stage"])
             time.sleep(30)
@@ -61,6 +85,16 @@ def main():
             raise ValueError("Data preparation incomplete")
         audit = a.preparation/"audit"
         while prepared["visual_review_pending"]:
+            if a.automatic_cache_qa:
+                qa = audit/"composition_acceptance.json"
+                composition = read(qa)
+                if (composition["stage"] != "complete" or composition["rendered"] < 1
+                        or len(composition["original_gt_previews"]) != len(prepared["requested_sha256"])):
+                    raise ValueError("Automated frozen composition/GT coverage is incomplete")
+                dump(a.run_dir/"cache_qa.json", dict(method="automated_frozen_sample_checks_not_human_review",
+                    composition_acceptance_sha256=sha256(qa), verified_compositions=composition["rendered"],
+                    gt_preview_count=len(composition["original_gt_previews"])))
+                break
             path = audit/"visual_review.json"
             if path.is_file():
                 review = read(path)

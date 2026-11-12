@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -87,6 +88,7 @@ def test_equal_fp_curve_uses_ties_and_actual_input_sizes():
         preds=[[0, 0, 6, 6, .9, 0], [20, 20, 29, 29, .8, 0], [40, 40, 50, 50, .8, 0]])
     empty = dict(frame, boxes=[], classes=[], preds=[])
     budgets = summarize([frame, empty], (0, 500))
+    json.dumps(budgets, allow_nan=False)
     assert budgets["0"]["sizes"]["long_lt4px"]["recall50"] == 1
     assert budgets["0"]["sizes"]["long_4to8px"]["recall50"] == 0
     assert budgets["500"]["fp"] == 1

@@ -130,7 +130,7 @@ def audit_background_requirement(data_dir,previous_index,output):
     return result
 
 
-def configure(data_dir, cache_dir, source_config, source_dir, output, visible_box_guard=None):
+def configure(data_dir, cache_dir, source_config, source_dir, output, visible_box_guard=None, gray_batch_quotas=None):
     import numpy as np
     import yaml
     from scripts.anti_uav.audit_labeler_expansion_regression import AuditDataset
@@ -147,6 +147,12 @@ def configure(data_dir, cache_dir, source_config, source_dir, output, visible_bo
         config['visible_box_guard']=visible_box_guard
     config['online_replacement']=dict(config['online_replacement'],cache=str(cache_dir),replacement_probability=.5)
     base_tiny=dict(source_config['tiny_sampling'])
+    if gray_batch_quotas is not None:
+        keys=('gray_tiny','gray_sub4','gray_other')
+        quotas=dict(base_tiny['batch_quotas'])
+        if min(gray_batch_quotas)<1 or sum(gray_batch_quotas)!=sum(quotas[k] for k in keys):
+            raise ValueError('Gray scale quota adjustment must keep the same total gray share')
+        base_tiny['batch_quotas']=dict(quotas,**dict(zip(keys,gray_batch_quotas)))
     reference=json.loads((data_dir/'manifest.json').read_text())['final_entries']
     if base_tiny.get('policy')!='fixed_domain_v1':
         raise ValueError('Refresh requires the existing fixed-domain sampler')
@@ -325,6 +331,7 @@ def main():
     p.add_argument('--visible-box-guard',choices=['affine_fallback_v1','affine_keep_subpixel_v2'])
     p.add_argument('--approved-frame-assets',type=Path)
     p.add_argument('--bounded-disk',action='store_true')
+    p.add_argument('--gray-batch-quotas',type=int,nargs=3,metavar=('TINY','SUB4','OTHER'))
     scope.add_argument('--all-approved-and-submitted',action='store_true',
                        help='Prepare all additional approved videos and submitted positive frames for a separate experiment')
     p.add_argument('--acceptance-baseline-run',type=Path)
@@ -341,6 +348,8 @@ def main():
         p.error('--bounded-disk requires --approved-frame-assets')
     if a.all_approved_and_submitted and (not a.prepare_only or not a.approved_frame_assets):
         p.error('--all-approved-and-submitted requires --prepare-only and --approved-frame-assets')
+    if a.gray_batch_quotas and not a.all_approved_and_submitted:
+        p.error('--gray-batch-quotas is restricted to the mixed frozen comparison')
     if not 1<=a.background_workers<=32 or not 1<=a.extraction_workers<=16:
         p.error('Use 1..32 background and 1..16 extraction workers')
     for key,value in vars(a).items():
@@ -362,7 +371,14 @@ def main():
     blocked=set(source['train_video_hashes'])|{source['test_sha256'],source['validation_sha256']}
     mixed_items=None
     if a.all_approved_and_submitted:
-        mixed_items=snapshot_tasks(a.database,a.video_root,blocked,submitted_positives_only=True)
+        if a.resume_preparation:
+            frozen=a.run_dir/'audit/requested_scope.json'
+            extracted=json.loads((a.data_output/'annotation_snapshot.json').read_text())
+            if extracted['requested_task_snapshot_sha256']!=sha256(frozen):
+                raise ValueError('Prepared labels do not match the frozen approved/submitted snapshot')
+            mixed_items=extracted['videos']
+        else:
+            mixed_items=snapshot_tasks(a.database,a.video_root,blocked,submitted_positives_only=True)
         if not mixed_items:
             raise ValueError('No additional approved/submitted videos')
         a.approved_sha256=[x['source_sha256'] for x in mixed_items]
@@ -445,7 +461,8 @@ def main():
             else:
                 qa=dict(stage='no_safe_replacements',rendered=0,originals_retained=True)
             dump(a.run_dir/'audit/composition_acceptance.json',qa)
-            data=configure(a.data_output,a.cache_output,source_config,source_dir,a.run_dir/'audit',a.visible_box_guard)
+            data=configure(a.data_output,a.cache_output,source_config,source_dir,a.run_dir/'audit',
+                           a.visible_box_guard,a.gray_batch_quotas)
             dump(a.run_dir/'preparation.json',dict(complete=True,data=str(data),data_sha256=sha256(data),
                 requested_sha256=sorted(a.approved_sha256),training_videos=len(data_manifest['train_video_hashes']),
                 foundation=protocol['foundation'],foundation_sha256=protocol['foundation_sha256'],

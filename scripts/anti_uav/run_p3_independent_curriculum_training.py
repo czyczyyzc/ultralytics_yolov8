@@ -265,6 +265,7 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--foundation-only", action="store_true", help="Validate the repaired foundation before training Teacher/Student")
     parser.add_argument("--foundation-compare-epoch", type=int, help="Retain an exact last.pt copy at a matched comparison epoch")
+    parser.add_argument("--accepted-p3-gate", type=Path, help="Use the exact signed P3 checkpoint that passed the matched-step gate")
     parser.add_argument("--regression-repair", action="store_true", help="Opt-in source/scale-normalized regression; legacy defaults unchanged")
     p3_variant = parser.add_mutually_exclusive_group()
     p3_variant.add_argument("--p3-nearest-offset", action="store_true", help="Test P3-only off-grid tiny fallback and DFL reference shift")
@@ -278,6 +279,9 @@ def main() -> None:
     if (args.p3_nearest_offset or args.p3_signed_dfl) and not (
             args.foundation_only and args.regression_repair and args.localization_epochs == 0):
         parser.error("P3 variants require foundation-only regression repair with no localization stage")
+    if args.accepted_p3_gate and (args.foundation_only or not args.regression_repair or args.localization_epochs
+                                 or min(args.teacher_epochs, args.student_epochs) < 1):
+        parser.error("An accepted P3 checkpoint requires the FP32 Teacher/Student regression-repair stages")
 
     p3_trainer, teacher_trainer, student_trainer = TinyAwareP3Trainer, TinyAwareAddOnTrainer, P3StudentFP32DistillationTrainer
     repair = None
@@ -333,12 +337,23 @@ def main() -> None:
     training_videos = len(manifest.get("train_video_hashes", []))
     if training_videos != args.expected_training_videos:
         raise ValueError(f"Expected {args.expected_training_videos} training videos, found {training_videos}")
+    accepted = None
+    if args.accepted_p3_gate:
+        gate_path = args.accepted_p3_gate.resolve()
+        accepted = json.loads(gate_path.read_text())
+        checkpoint = Path(accepted["candidate_checkpoint"])
+        if (accepted["passed"] is not True or sha256(checkpoint) != accepted["candidate_sha256"]
+                or sha256(args.data) != accepted["data_sha256"] or training_videos != accepted["training_videos"]
+                or sha256(Path(accepted["comparison"])) != accepted["comparison_sha256"]
+                or not 1 <= accepted["epoch"] <= args.foundation_epochs
+                or not hasattr(YOLO(str(checkpoint)).model.model[-1], "p3_negative_bin")):
+            raise ValueError("The signed P3 gate or approved checkpoint does not match the training protocol")
 
     offsets = 0
     foundation_data = stage_yaml(
         source, args.run_dir / "configs/foundation.yaml", offsets, args.replacement_probability
     )
-    offsets += args.foundation_epochs
+    offsets += accepted["epoch"] if accepted else args.foundation_epochs
     teacher_data = stage_yaml(source, args.run_dir / "configs/teacher.yaml", offsets, args.replacement_probability)
     offsets += args.teacher_epochs
     student_data = stage_yaml(
@@ -361,6 +376,8 @@ def main() -> None:
         stages.append("FP32 localization refinement")
     if args.foundation_only:
         stages = stages[:2]
+    elif accepted:
+        stages = ["accepted signed-DFL P3 foundation", *stages[2:]]
 
     protocol = dict(
         method=" -> ".join(stages),
@@ -401,6 +418,10 @@ def main() -> None:
     protocol_path = args.run_dir / "protocol.json"
     if args.foundation_compare_epoch is not None:
         protocol["foundation_compare_epoch"] = args.foundation_compare_epoch
+    if accepted:
+        protocol["accepted_p3_gate"] = dict(path=str(gate_path), sha256=sha256(gate_path),
+            checkpoint=str(checkpoint), checkpoint_sha256=accepted["candidate_sha256"], foundation_epochs=accepted["epoch"])
+        protocol["final_graph"] = "P3 signed DFL (-1..15), P4/P5 legacy DFL (0..15); training-only P2 removed"
     if repair is not None:
         protocol["regression_repair"] = dict(options=repair,
             source="per_image_gt_credit_and_augmented_source_scale_buckets",
@@ -428,7 +449,7 @@ def main() -> None:
     if protocol_path.exists():
         previous = json.loads(protocol_path.read_text())
         if any(previous.get(key) != protocol.get(key) for key in
-               ("regression_repair", "p3_nearest_offset", "p3_signed_dfl", "foundation_compare_epoch")):
+               ("regression_repair", "p3_nearest_offset", "p3_signed_dfl", "foundation_compare_epoch", "accepted_p3_gate")):
             raise ValueError("Resume regression repair differs from saved experiment")
         for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation",
                     "batch", "nbs", "seed", "qat", "trusted_label_caches"):
@@ -451,6 +472,8 @@ def main() -> None:
                 ("localization", "localization/p3_student", args.localization_epochs),
             ) if epochs
         }
+        if accepted:
+            progress["foundation"] = dict(complete=True, completed_epochs=accepted["epoch"], checkpoint=str(checkpoint))
         ordered = list(progress.values())
         for index, state in enumerate(ordered):
             if state["completed_epochs"] and any(not earlier["complete"] for earlier in ordered[:index]):
@@ -459,7 +482,7 @@ def main() -> None:
             (args.run_dir / "audit/resume_plan.json").write_text(json.dumps(
                 dict(device=args.device, stages=progress, optimizer_state_requested=True), indent=2
             ) + "\n")
-        foundation_best = args.run_dir / "foundation/p3/weights/best.pt"
+        foundation_best = checkpoint if accepted else args.run_dir / "foundation/p3/weights/best.pt"
         if not progress["foundation"]["complete"]:
             p3_trainer.validator_class = FixedShapeGrayValidator
             p3_trainer.tiny_multiplier = 1.75

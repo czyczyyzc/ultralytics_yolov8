@@ -82,19 +82,22 @@ class Detect(nn.Module):
             return self.forward_end2end(x)
 
         for i in range(self.nl):
-            tower = self.cv2[i]
-            if i == 0 and hasattr(self, "p3_negative_bin"):
-                features = tower[1](tower[0](x[i]))
-                reg = torch.cat((tower[2](features), self.p3_negative_bin(features)), 1)
-            else:
-                reg = tower(x[i])
-            if i == 0 and hasattr(self, "p3_offset"):
-                reg = torch.cat((reg, self.p3_offset(x[i])), 1)
-            x[i] = torch.cat((reg, self.cv3[i](x[i])), 1)
+            x[i] = self._raw_level(x[i], i)
         if self.training:  # Training path
             return x
         y = self._inference(x)
         return y if self.export else (y, x)
+
+    def _raw_level(self, x, i):
+        tower = self.cv2[i]
+        if i == getattr(self, "legacy_start_index", 0) and hasattr(self, "p3_negative_bin"):
+            features = tower[1](tower[0](x))
+            reg = torch.cat((tower[2](features), self.p3_negative_bin(features)), 1)
+        else:
+            reg = tower(x)
+        if i == 0 and hasattr(self, "p3_offset"):
+            reg = torch.cat((reg, self.p3_offset(x)), 1)
+        return torch.cat((reg, self.cv3[i](x)), 1)
 
     def forward_end2end(self, x):
         """
@@ -122,12 +125,9 @@ class Detect(nn.Module):
 
     def _inference(self, x):
         """Decode predicted bounding boxes and class probabilities based on multiple-level feature maps."""
-        offset = negative = None
-        if hasattr(self, "p3_negative_bin"):
-            n = self.reg_max * 4
-            negative = x[0][:, n:n + 4].flatten(2)
-            x = [torch.cat((x[0][:, :n], x[0][:, n + 4:]), 1), *x[1:]]
-        elif hasattr(self, "p3_offset"):
+        offset = None
+        x, signed = self._separate_p3_bin(x, getattr(self, "legacy_start_index", 0))
+        if hasattr(self, "p3_offset"):
             n = self.reg_max * 4
             offset = x[0][:, n:n + 2].flatten(2)
             x = [torch.cat((x[0][:, :n], x[0][:, n + 2:]), 1), *x[1:]]
@@ -144,12 +144,7 @@ class Detect(nn.Module):
         else:
             box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
 
-        distances = self.dfl(box)
-        if negative is not None:
-            points = negative.shape[-1]
-            p3 = signed_dfl_logits(box[:, :, :points].transpose(1, 2), negative.transpose(1, 2))
-            p3 = signed_dfl_decode(p3).transpose(1, 2).to(distances.dtype)
-            distances = torch.cat((p3, distances[:, :, points:]), 2)
+        distances = self._project_dfl(box, signed)
 
         if self.export and self.format in {"tflite", "edgetpu"}:
             # Precompute normalization factor to increase numerical stability
@@ -173,6 +168,26 @@ class Detect(nn.Module):
 
         return torch.cat((dbox, cls.sigmoid()), 1)
 
+    def _separate_p3_bin(self, x, p3_index):
+        if not hasattr(self, "p3_negative_bin"):
+            return x, None
+        n = self.reg_max * 4
+        level = x[p3_index]
+        negative = level[:, n:n + 4].flatten(2)
+        start = sum(v.shape[2] * v.shape[3] for v in x[:p3_index])
+        clean = list(x)
+        clean[p3_index] = torch.cat((level[:, :n], level[:, n + 4:]), 1)
+        return clean, (negative, start, start + negative.shape[-1])
+
+    def _project_dfl(self, box, signed):
+        distances = self.dfl(box)
+        if signed is None:
+            return distances
+        negative, start, stop = signed
+        p3 = signed_dfl_logits(box[:, :, start:stop].transpose(1, 2), negative.transpose(1, 2))
+        p3 = signed_dfl_decode(p3).transpose(1, 2).to(distances.dtype)
+        return torch.cat((distances[:, :, :start], p3, distances[:, :, stop:]), 2)
+
     def enable_p3_reference_shift(self):
         """Start with the exact legacy decoder and add two signed P3 offsets in grid units."""
         if type(self) is not Detect or tuple(int(s) for s in self.stride) != (8, 16, 32):
@@ -184,12 +199,14 @@ class Detect(nn.Module):
 
     def enable_p3_signed_dfl(self):
         """Keep the pretrained 0..15 logits and add one low-prior logit per edge."""
-        if type(self) is not Detect or tuple(int(s) for s in self.stride) != (8, 16, 32):
-            raise ValueError("Signed P3 DFL requires the standard three-level detector")
+        types = {Detect: (8, 16, 32), FrozenP3AddOnP2Detect: (4, 8, 16, 32)}
+        if types.get(type(self)) != tuple(int(s) for s in self.stride):
+            raise ValueError("Signed P3 DFL requires a supported native or add-on detector")
         if hasattr(self, "p3_offset"):
             raise ValueError("Signed P3 DFL and reference shift are mutually exclusive")
         with torch.random.fork_rng(devices=[]):
-            self.p3_negative_bin = nn.Conv2d(self.cv2[0][-1].in_channels, 4, 1)
+            index = getattr(self, "legacy_start_index", 0)
+            self.p3_negative_bin = nn.Conv2d(self.cv2[index][-1].in_channels, 4, 1)
         nn.init.zeros_(self.p3_negative_bin.weight)
         nn.init.constant_(self.p3_negative_bin.bias, -8.)
 
@@ -260,20 +277,18 @@ class FrozenP3AddOnP2Detect(Detect):
 
     def _legacy_inference(self, x):
         """Decode only P3-P5 without mutating the four-scale anchor cache."""
+        x, signed = self._separate_p3_bin(x, 0)
         shape = x[0].shape
         x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
         anchors, strides = (value.transpose(0, 1) for value in make_anchors(x, self.stride[1:], 0.5))
         box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
-        dbox = self.decode_bboxes(self.dfl(box), anchors.unsqueeze(0)) * strides
+        dbox = self.decode_bboxes(self._project_dfl(box, signed), anchors.unsqueeze(0)) * strides
         return torch.cat((dbox, cls.sigmoid()), 1)
 
     def forward(self, x, task_type="Detect"):
         """Use all four levels for training but only P3-P5 for student validation."""
         if not self.training and getattr(self, "auxiliary_training_only", False) and not self.export and task_type == "Detect":
-            legacy = [
-                torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
-                for i in range(self.legacy_start_index, self.nl)
-            ]
+            legacy = [self._raw_level(x[i], i) for i in range(self.legacy_start_index, self.nl)]
             decoded = self._legacy_inference(legacy)
             return decoded, legacy
         return super().forward(x, task_type)

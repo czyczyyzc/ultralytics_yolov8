@@ -110,6 +110,14 @@ class RegressionRepairStudentTrainer(RepairMixin, P3StudentFP32DistillationTrain
         super()._setup_train(world_size)
         model = de_parallel(self.model)
         criterion = model.criterion
-        criterion.primary = repaired_loss(model, self.data, criterion.primary, self.repair_options)
+        previous = criterion.primary
+        loss_type = BalancedRegressionDetectionLoss
+        if criterion.signed_p3:
+            from scripts.anti_uav.p3_signed_dfl import P3SignedDFLLoss
+
+            loss_type = P3SignedDFLLoss
+            self.ema.ema.criterion = repaired_loss(self.ema.ema, self.data, previous, self.repair_options,
+                                                   loss_type=loss_type)
+        criterion.primary = repaired_loss(model, self.data, previous, self.repair_options, loss_type=loss_type)
         criterion.auxiliary = repaired_loss(model, self.data, criterion.auxiliary, self.repair_options)
         self.install_repair_callbacks()

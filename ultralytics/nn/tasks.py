@@ -389,10 +389,13 @@ class DetectionModel(BaseModel):
 
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
-        if hasattr(self.model[-1], "p3_offset") or hasattr(self.model[-1], "p3_negative_bin"):
-            raise RuntimeError("The modified P3 detector requires its custom regression trainer")
-        if isinstance(self.model[-1], FrozenP3AddOnP2Detect):
+        head = self.model[-1]
+        if isinstance(head, FrozenP3AddOnP2Detect) and not (
+            hasattr(head, "p3_negative_bin") and head.auxiliary_training_only
+        ):
             return v8AddOnP2DetectionLoss(self)
+        if hasattr(head, "p3_offset") or hasattr(head, "p3_negative_bin"):
+            raise RuntimeError("The modified P3 detector requires its custom regression trainer")
         return E2EDetectLoss(self) if getattr(self, "end2end", False) else v8DetectionLoss(self)
 
 

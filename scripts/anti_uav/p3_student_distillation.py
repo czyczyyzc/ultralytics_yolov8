@@ -25,9 +25,10 @@ from scripts.anti_uav.rknn_qat import (
 from scripts.anti_uav.tiny_aware_loss import TinyAwareAddOnP2DetectionLoss, TinyAwareDetectionLoss
 from ultralytics import YOLO
 from ultralytics.nn.modules import FrozenP3AddOnP2Detect
-from ultralytics.nn.tasks import DetectionModel
+from ultralytics.nn.tasks import DetectionModel, yaml_model_load
 from ultralytics.utils import LOGGER
 from ultralytics.utils.loss import v8DetectionLoss
+from ultralytics.utils.signed_dfl import signed_dfl_logits
 from ultralytics.utils.torch_utils import de_parallel
 
 
@@ -105,6 +106,9 @@ class P3StudentDistillationLoss:
         self.auxiliary.stride = detector.stride[: detector.legacy_start_index]
         self.reg_max = detector.reg_max
         self.nc = detector.nc
+        self.signed_p3 = hasattr(detector, "p3_negative_bin")
+        if self.signed_p3 != hasattr(teacher.model[-1], "p3_negative_bin"):
+            raise ValueError("Teacher and Student must use the same P3 DFL bins")
         self.weights = dict(
             auxiliary=auxiliary_weight,
             p3_cls=p3_cls_weight,
@@ -126,8 +130,11 @@ class P3StudentDistillationLoss:
         self.student_capture = DetectInputCapture(model.model[-1])
         self.teacher_capture = DetectInputCapture(teacher.model[-1])
 
-    def _split(self, raw: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def _split(self, raw: torch.Tensor, signed=False) -> tuple[torch.Tensor, torch.Tensor]:
         boundary = self.reg_max * 4
+        if signed:
+            reg = signed_dfl_logits(raw[:, :boundary].movedim(1, -1), raw[:, boundary:boundary+4].movedim(1, -1))
+            return reg.flatten(-2).movedim(-1, 1).float(), raw[:, boundary+4:].float()
         return raw[:, :boundary].float(), raw[:, boundary:].float()
 
     @staticmethod
@@ -144,10 +151,11 @@ class P3StudentDistillationLoss:
         return self._weighted_mean(loss, confidence) * temperature**2
 
     def _dfl_kd(self, student: torch.Tensor, teacher: torch.Tensor, confidence: torch.Tensor) -> torch.Tensor:
-        batch, _, height, width = student.shape
+        batch, channels, height, width = student.shape
+        bins = channels // 4
         temperature = self.temperature
-        student = student.view(batch, 4, self.reg_max, height, width).float()
-        teacher = teacher.detach().view(batch, 4, self.reg_max, height, width).float()
+        student = student.reshape(batch, 4, bins, height, width).float()
+        teacher = teacher.detach().reshape(batch, 4, bins, height, width).float()
         teacher_probability = (teacher / temperature).softmax(dim=2)
         loss = F.kl_div(
             (student / temperature).log_softmax(dim=2),
@@ -157,9 +165,11 @@ class P3StudentDistillationLoss:
         return self._weighted_mean(loss, confidence.detach().pow(2)) * temperature**2
 
     def _decode_boxes(self, distribution: torch.Tensor, stride: float) -> torch.Tensor:
-        batch, _, height, width = distribution.shape
-        distribution = distribution.view(batch, 4, self.reg_max, height, width).float().softmax(dim=2)
-        bins = torch.arange(self.reg_max, device=distribution.device, dtype=distribution.dtype).view(1, 1, -1, 1, 1)
+        batch, channels, height, width = distribution.shape
+        bin_count = channels // 4
+        distribution = distribution.reshape(batch, 4, bin_count, height, width).float().softmax(dim=2)
+        start = -1 if bin_count == self.reg_max + 1 else 0
+        bins = torch.arange(start, self.reg_max, device=distribution.device, dtype=distribution.dtype).view(1, 1, -1, 1, 1)
         distance = (distribution * bins).sum(dim=2)
         grid_y, grid_x = torch.meshgrid(
             torch.arange(height, device=distribution.device, dtype=distribution.dtype) + 0.5,
@@ -199,7 +209,7 @@ class P3StudentDistillationLoss:
         teacher_p2: torch.Tensor,
         batch,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        student_box, student_cls = self._split(student_p3)
+        student_box, student_cls = self._split(student_p3, self.signed_p3)
         teacher_box, teacher_cls = self._split(teacher_p2)
         _, _, p2_height, p2_width = teacher_p2.shape
         _, _, p3_height, p3_width = student_p3.shape
@@ -271,9 +281,10 @@ class P3StudentDistillationLoss:
 
         p3_cls = student_raw[0].new_zeros(())
         p3_dfl = student_raw[0].new_zeros(())
-        for student_level, teacher_level in zip(student_raw[1:], teacher_raw[1:]):
-            student_box, student_cls = self._split(student_level)
-            teacher_box, teacher_cls = self._split(teacher_level)
+        for level, (student_level, teacher_level) in enumerate(zip(student_raw[1:], teacher_raw[1:])):
+            signed = level == 0 and self.signed_p3
+            student_box, student_cls = self._split(student_level, signed)
+            teacher_box, teacher_cls = self._split(teacher_level, signed)
             p3_cls = p3_cls + self._classification_kd(student_cls, teacher_cls)
             confidence = teacher_cls.detach().sigmoid().amax(dim=1)
             p3_dfl = p3_dfl + self._dfl_kd(student_box, teacher_box, confidence)
@@ -594,7 +605,7 @@ def transfer_student_to_p3(source: DetectionModel, target: DetectionModel) -> di
         if parts[0] in {"cv2", "cv3"} and len(parts) >= 2 and int(parts[1]) >= 1:
             parts[1] = str(int(parts[1]) - 1)
             target_key = f"model.{target_head}." + ".".join(parts)
-        elif parts[0] == "dfl":
+        elif parts[0] in {"dfl", "p3_negative_bin"}:
             target_key = f"model.{target_head}." + ".".join(parts)
         else:
             continue
@@ -613,7 +624,11 @@ def export_pure_p3_student(qat_checkpoint: Path, output: Path, p3_cfg: Path) -> 
     source_wrapper = YOLO(str(qat_checkpoint))
     source = source_wrapper.model.float().cpu().eval()
     source.model[-1].auxiliary_training_only = True
-    target = DetectionModel(str(p3_cfg), nc=source.nc, verbose=False).float().cpu().eval()
+    config = yaml_model_load(p3_cfg)
+    signed = hasattr(source.model[-1], "p3_negative_bin")
+    if signed:
+        config["p3_signed_dfl_v1"] = True
+    target = DetectionModel(config, nc=source.nc, verbose=False).float().cpu().eval()
     target.names = source.names
     target.args = dict(source.args)
     transfer = transfer_student_to_p3(source, target)
@@ -636,7 +651,8 @@ def export_pure_p3_student(qat_checkpoint: Path, output: Path, p3_cfg: Path) -> 
     wrapper.ckpt = {
         "train_args": dict(target.args),
         "source_qat_checkpoint": str(qat_checkpoint.resolve()),
-        "training_method": "P2 teacher -> P3 student + auxiliary P2 + RKNN INT8 QAT",
+        "training_method": ("P2 teacher -> signed-DFL P3 Student + auxiliary P2, FP32" if signed
+                            else "P2 teacher -> P3 student + auxiliary P2 + RKNN INT8 QAT"),
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     wrapper.save(output)
@@ -659,6 +675,7 @@ def export_pure_p3_student(qat_checkpoint: Path, output: Path, p3_cfg: Path) -> 
         "output": str(output.resolve()),
         "transfer": transfer,
         "levels": 3,
+        "signed_p3_dfl": signed,
         "extraction_max_abs_error": extraction_errors,
         "serialization_max_abs_error": serialization_errors,
         "parameters": sum(parameter.numel() for parameter in reloaded.parameters()),

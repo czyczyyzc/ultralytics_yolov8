@@ -21,7 +21,7 @@ os.environ["PYTHONPATH"] = os.pathsep.join(
 from scripts.anti_uav.frozen_p3_addon_p2_trainer import FrozenP3AddOnP2Trainer
 from ultralytics import YOLO
 from ultralytics.nn.modules import FrozenP3AddOnP2Detect
-from ultralytics.nn.tasks import DetectionModel
+from ultralytics.nn.tasks import DetectionModel, yaml_model_load
 from ultralytics.utils.torch_utils import init_seeds
 
 
@@ -80,7 +80,7 @@ def transfer_frozen_p3_weights(source: DetectionModel, target: DetectionModel) -
         if parts[0] in {"cv2", "cv3"} and len(parts) >= 2:
             parts[1] = str(int(parts[1]) + 1)
             target_key = target_prefix + ".".join(parts)
-        elif parts[0] == "dfl":
+        elif parts[0] in {"dfl", "p3_negative_bin"}:
             target_key = target_prefix + suffix
         else:
             continue
@@ -92,7 +92,7 @@ def transfer_frozen_p3_weights(source: DetectionModel, target: DetectionModel) -
     expected_legacy = {
         key
         for key in target_state
-        if key.startswith(target_prefix + "dfl.")
+        if key.startswith((target_prefix + "dfl.", target_prefix + "p3_negative_bin."))
         or any(key.startswith(target_prefix + f"{branch}.{level}.") for branch in ("cv2", "cv3") for level in (1, 2, 3))
     }
     missing_legacy = expected_legacy.difference(transferred)
@@ -104,11 +104,6 @@ def transfer_frozen_p3_weights(source: DetectionModel, target: DetectionModel) -
         "transferred_tensors": len(transferred),
         "target_tensors": len(target_state),
     }
-
-
-def raw_features(model: DetectionModel, image: torch.Tensor) -> list[torch.Tensor]:
-    output = model(image)
-    return output[1] if isinstance(output, tuple) else output
 
 
 def verify_legacy_outputs(reference: DetectionModel, addon: DetectionModel, size: int = 256) -> dict[str, object]:
@@ -125,8 +120,8 @@ def verify_legacy_outputs(reference: DetectionModel, addon: DetectionModel, size
     image = torch.rand(1, 3, size, size)
     try:
         with torch.inference_mode():
-            reference_raw = raw_features(reference, image)
-            addon_raw = raw_features(addon, image)
+            reference_pred, reference_raw = reference(image)
+            addon_pred, addon_raw = addon(image)
     finally:
         if auxiliary_training_only is not None:
             addon_head.auxiliary_training_only = auxiliary_training_only
@@ -143,6 +138,10 @@ def verify_legacy_outputs(reference: DetectionModel, addon: DetectionModel, size
         "legacy_max_abs_error": maximum_absolute_errors,
         "bit_exact": all(error == 0.0 for error in maximum_absolute_errors),
     }
+    if hasattr(addon_head, "p3_negative_bin"):
+        decoded_error = float((reference_pred - addon_pred[..., -reference_pred.shape[-1]:]).abs().max())
+        report["signed_legacy_decoded_max_abs_error"] = decoded_error
+        report["bit_exact"] &= decoded_error == 0.
     if not report["bit_exact"]:
         raise RuntimeError(f"Frozen P3 regression failed: {report}")
     return report
@@ -152,7 +151,10 @@ def initialize_addon_model(p3_model: Path, model_cfg: Path, output: Path) -> tup
     source = YOLO(str(p3_model))
     target = YOLO(str(model_cfg))
     source_nc = getattr(source.model, "nc", source.model.model[-1].nc)
-    target.model = DetectionModel(str(model_cfg), nc=source_nc, verbose=True)
+    config = yaml_model_load(model_cfg)
+    if hasattr(source.model.model[-1], "p3_negative_bin"):
+        config["p3_signed_dfl_v1"] = True
+    target.model = DetectionModel(config, nc=source_nc, verbose=True)
     if not isinstance(target.model.model[-1], FrozenP3AddOnP2Detect):
         raise TypeError("The add-on model must end with FrozenP3AddOnP2Detect")
     target.model.names = source.model.names

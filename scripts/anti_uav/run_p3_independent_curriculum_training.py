@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -217,6 +218,25 @@ def add_status_callback(model: YOLO, run_dir: Path, stage: str) -> None:
     ))
 
 
+def retain_matched_epoch(model: YOLO, run_dir: Path, epoch: int) -> None:
+    def keep(trainer):
+        if trainer.epoch + 1 != epoch:
+            return
+        directory = run_dir / "audit" / "matched_epoch"
+        directory.mkdir(exist_ok=False)
+        checkpoint = directory / "last.pt"
+        temporary = directory / "last.pt.tmp"
+        shutil.copy2(trainer.last, temporary)
+        temporary.replace(checkpoint)
+        receipt = dict(epoch=epoch, optimizer_updates=trainer.ema.updates,
+                       batches=len(trainer.train_loader), checkpoint=str(checkpoint), sha256=sha256(checkpoint))
+        temporary = directory / "snapshot.json.tmp"
+        temporary.write_text(json.dumps(receipt, indent=2) + "\n")
+        temporary.replace(directory / "snapshot.json")
+
+    model.add_callback("on_model_save", keep)
+
+
 def export_student_pair(source_dir: Path, run_dir: Path, prefix: str) -> dict:
     exports = {}
     for checkpoint in ("best", "last"):
@@ -244,6 +264,7 @@ def main() -> None:
     parser.add_argument("--expected-training-videos", type=int, default=50)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--foundation-only", action="store_true", help="Validate the repaired foundation before training Teacher/Student")
+    parser.add_argument("--foundation-compare-epoch", type=int, help="Retain an exact last.pt copy at a matched comparison epoch")
     parser.add_argument("--regression-repair", action="store_true", help="Opt-in source/scale-normalized regression; legacy defaults unchanged")
     p3_variant = parser.add_mutually_exclusive_group()
     p3_variant.add_argument("--p3-nearest-offset", action="store_true", help="Test P3-only off-grid tiny fallback and DFL reference shift")
@@ -251,6 +272,9 @@ def main() -> None:
     parser.add_argument("--repair-balance-mix", type=float, default=.5)
     parser.add_argument("--repair-warmup-epochs", type=int, default=3)
     args = parser.parse_args()
+    if args.foundation_compare_epoch is not None and not (args.foundation_only and
+            1 <= args.foundation_compare_epoch <= args.foundation_epochs):
+        parser.error("--foundation-compare-epoch requires an epoch within the foundation-only schedule")
     if (args.p3_nearest_offset or args.p3_signed_dfl) and not (
             args.foundation_only and args.regression_repair and args.localization_epochs == 0):
         parser.error("P3 variants require foundation-only regression repair with no localization stage")
@@ -375,6 +399,8 @@ def main() -> None:
         if repair is None:
             raise ValueError("The protected box recipe requires the regression repair trainer audit")
     protocol_path = args.run_dir / "protocol.json"
+    if args.foundation_compare_epoch is not None:
+        protocol["foundation_compare_epoch"] = args.foundation_compare_epoch
     if repair is not None:
         protocol["regression_repair"] = dict(options=repair,
             source="per_image_gt_credit_and_augmented_source_scale_buckets",
@@ -402,7 +428,7 @@ def main() -> None:
     if protocol_path.exists():
         previous = json.loads(protocol_path.read_text())
         if any(previous.get(key) != protocol.get(key) for key in
-               ("regression_repair", "p3_nearest_offset", "p3_signed_dfl")):
+               ("regression_repair", "p3_nearest_offset", "p3_signed_dfl", "foundation_compare_epoch")):
             raise ValueError("Resume regression repair differs from saved experiment")
         for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation",
                     "batch", "nbs", "seed", "qat", "trusted_label_caches"):
@@ -446,6 +472,8 @@ def main() -> None:
             if args.p3_signed_dfl and not progress["foundation"]["checkpoint"]:
                 foundation.model.yaml["p3_signed_dfl_v1"] = True
             add_status_callback(foundation, args.run_dir, "train_native_p3_foundation")
+            if args.foundation_compare_epoch is not None and args.foundation_compare_epoch > progress["foundation"]["completed_epochs"]:
+                retain_matched_epoch(foundation, args.run_dir, args.foundation_compare_epoch)
             write_status(args.run_dir, "train_native_p3_foundation",
                          epoch=progress["foundation"]["completed_epochs"], device=args.device)
             foundation.train(

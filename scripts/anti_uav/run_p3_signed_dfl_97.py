@@ -47,6 +47,7 @@ def main():
     p.add_argument("--control", type=Path, required=True)
     p.add_argument("--run-dir", type=Path, required=True)
     p.add_argument("--gpus", type=int, nargs="+", default=list(range(8)))
+    p.add_argument("--stopped-control-snapshot", type=Path, help="Frozen receipt from an interrupted control; compare at its exact step")
     a = p.parse_args()
     control, run = a.control.resolve(), a.run_dir.resolve()
     run.mkdir(parents=True, exist_ok=True)
@@ -99,17 +100,58 @@ def main():
             raise ValueError("Control is not the matched audited launch")
         batch_count = observed_batches(control, 1)[0]
         updates = scheduled_updates(batch_count, epochs, control_args)
+        stopped = read(a.stopped_control_snapshot) if a.stopped_control_snapshot else None
+        if stopped and (stopped["control"] != str(control) or not 1 <= stopped["epoch"] <= epochs
+                or stopped["batches"] != batch_count or sha256(stopped["checkpoint"]) != stopped["sha256"]
+                or stopped["optimizer_updates"] != scheduled_updates(batch_count, stopped["epoch"], control_args)
+                or observed_batches(control, stopped["epoch"]) != [batch_count]*stopped["epoch"]):
+            raise ValueError("Stopped control snapshot is not the matched scheduled checkpoint")
         dump(run/"comparison_protocol.json", dict(control=str(control), data=str(data), training_videos=97,
             data_sha256=sha256(data), foundation_data_sha256=sha256(control_config), baseline_protocol_sha256=sha256(control/"protocol.json"),
             batch_quotas=source["tiny_sampling"]["batch_quotas"], foundation_epochs=epochs,
             batches_per_epoch=batch_count, optimizer_updates_scheduled=updates,
             candidate="P3 signed DFL + representable fallback + matched-only regression budget",
-            checkpoints="last at equal step budget", validation="Video00009, FP32, native frames, no zoom",
+            checkpoints="last at equal step budget", stopped_control=stopped,
+            validation="Video00009, FP32, native frames, no zoom",
             eval_budgets_fp_per_1000=[100,200,400], teacher_or_student_automatically_started=False))
         gpu = wait_idle()
         command = training_command(baseline, data, foundation, candidate, gpu, 97)
-        status("train_p3_initial", gpu=gpu, training_videos=97, batches_per_epoch=batch_count)
-        run_command("train_p3_initial", command+["--foundation-only","--p3-signed-dfl"])
+        command += ["--foundation-only","--p3-signed-dfl"]
+        status("train_p3_initial", gpu=gpu, training_videos=97, batches_per_epoch=batch_count,
+               matched_epoch=stopped["epoch"] if stopped else epochs)
+        comparison = None
+        if stopped:
+            command += ["--foundation-compare-epoch", str(stopped["epoch"])]
+            receipt_path = candidate/"audit/matched_epoch/snapshot.json"
+            comparison = run/f"comparison_epoch_{stopped['epoch']:04d}"
+            with (logs/"train_p3_initial.log").open("x") as stream:
+                trainer = subprocess.Popen(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
+            evaluation_error = None
+            while not receipt_path.is_file() and trainer.poll() is None:
+                time.sleep(10)
+            if receipt_path.is_file():
+                try:
+                    saved = read(receipt_path)
+                    if (any(saved[key] != stopped[key] for key in ("epoch","optimizer_updates","batches"))
+                            or sha256(saved["checkpoint"]) != saved["sha256"]):
+                        raise ValueError("Comparison checkpoints are not at the same optimizer step")
+                    status("evaluate_matched_epoch_while_training", gpu=gpu, matched_epoch=stopped["epoch"])
+                    run_command("evaluate_matched_epoch", [sys.executable,"-u","-m","scripts.anti_uav.evaluate_p3_equal_fp",
+                        "--control",stopped["checkpoint"],"--offset",saved["checkpoint"],"--candidate-label","p3_signed_dfl",
+                        "--device","cpu","--video00009",data,"--output",comparison])
+                    status("matched_epoch_evaluated_training_continues", gpu=gpu, matched_epoch=stopped["epoch"],
+                           comparison=str(comparison/"comparison.json"))
+                except Exception as error:
+                    evaluation_error = error
+                    status("matched_evaluation_failed_training_continues", gpu=gpu, error=repr(error))
+            if trainer.wait() != 0:
+                raise subprocess.CalledProcessError(trainer.returncode, command)
+            if evaluation_error:
+                raise evaluation_error
+            if not (comparison/"comparison.json").is_file():
+                raise ValueError("Candidate finished without the matched checkpoint evaluation")
+        else:
+            run_command("train_p3_initial", command)
         trained = read(candidate/"status.json")
         if (trained["stage"] != "foundation_complete" or trained["epoch"] != epochs
                 or trained["batches_per_epoch"] != batch_count or trained["optimizer_updates"] != updates):
@@ -121,6 +163,10 @@ def main():
                 raise ValueError(f"Control and candidate differ in training argument {key}")
         if yaml.safe_load((candidate/"configs/foundation.yaml").read_text()) != yaml.safe_load(control_config.read_text()):
             raise ValueError("Candidate training config changed")
+        if comparison:
+            status("complete_awaiting_teacher_student_decision", matched_epoch=stopped["epoch"],
+                   comparison=str(comparison/"comparison.json"), epoch_30_control_unavailable=stopped["epoch"]<epochs)
+            return
         while True:
             control_status = read(control/"status.json")
             if control_status["stage"] not in {"train_native_p3_foundation","initialize_foundation"}:

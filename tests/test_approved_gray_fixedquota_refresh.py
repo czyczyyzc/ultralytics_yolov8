@@ -9,6 +9,7 @@ import pytest
 from scripts.anti_uav.run_approved_gray_fixedquota_refresh import (
     audit_background_requirement,choose_shared_gpu,public_manifest_path,select_requested,
     sha256,training_command,verify_existing_approval_scope,
+    video00009_acceptance,
 )
 from scripts.anti_uav.prepare_snapshot_replacement_cache import snapshot_temporal
 from scripts.anti_uav.gray_temporal_background import BackgroundUnavailable
@@ -111,3 +112,17 @@ def test_new_positive_paths_need_backgrounds_while_negatives_do_not(tmp_path):
     assert audit['new_positive_frames']==1 and audit['already_cached']==0
     assert audit['negative_frames_need_no_target_erasure'] is True
     assert audit['old_catalog_reused'] is True
+
+
+def test_video00009_release_gate_does_not_trade_false_positives_or_tiny_recall():
+    original = {"native/c0.03/R": .68, "native/c0.03/P": .67, "native/c0.03/FP": 250,
+        "native/c0.03/long_lt4px/R": .44, "native/c0.03/long_4to8px/R": .64,
+        "native/mAP50": .7, "native/mAP50-95": .38}
+    results = {f"{arm}_{stage}": {"splits": {"Video00009": dict(original)}}
+        for arm in ("old", "new") for stage in ("p3_initial", "teacher", "student")}
+    assert video00009_acceptance(results,"old","new")["passed"]
+    student = results["new_student"]["splits"]["Video00009"]
+    student.update({"native/c0.03/R": .71, "native/c0.03/FP": 251})
+    assert not video00009_acceptance(results,"old","new")["passed"]
+    student.update({"native/c0.03/FP": 240, "native/c0.03/long_4to8px/R": .63})
+    assert not video00009_acceptance(results,"old","new")["passed"]

@@ -983,7 +983,8 @@ class RandomPerspective:
     """
 
     def __init__(
-        self, degrees=0.0, translate=0.1, scale=0.5, shear=0.0, perspective=0.0, border=(0, 0), pre_transform=None
+        self, degrees=0.0, translate=0.1, scale=0.5, shear=0.0, perspective=0.0, border=(0, 0), pre_transform=None,
+        preserve_visible_boxes=False,
     ):
         """
         Initializes RandomPerspective object with transformation parameters.
@@ -1012,6 +1013,7 @@ class RandomPerspective:
         self.perspective = perspective
         self.border = border  # mosaic border
         self.pre_transform = pre_transform
+        self.preserve_visible_boxes = preserve_visible_boxes
 
     def affine_transform(self, img, border):
         """
@@ -1221,6 +1223,7 @@ class RandomPerspective:
         labels.pop("ratio_pad", None)  # do not need ratio pad
 
         img = labels["img"]
+        original_img = img
         cls = labels["cls"]
         instances = labels.pop("instances")
         # Make sure the coord formats are right
@@ -1248,11 +1251,22 @@ class RandomPerspective:
         new_instances.clip(*self.size)
 
         # Filter instances
-        instances.scale(scale_w=scale, scale_h=scale, bbox_only=True)
         # Make the bboxes have the same scale with new_bboxes
         i = self.box_candidates(
-            box1=instances.bboxes.T, box2=new_instances.bboxes.T, area_thr=0.01 if len(segments) else 0.10
+            box1=instances.bboxes.T * scale, box2=new_instances.bboxes.T, area_thr=0.01 if len(segments) else 0.10
         )
+        if self.preserve_visible_boxes:
+            xyxy = new_instances.bboxes
+            visible = ((xyxy[:, 2:] - xyxy[:, :2]) > 0).all(axis=1)
+            rejected = int((visible & ~i).sum())
+            if rejected:
+                # A box intersection is not proof the warped target pixels survived.
+                # Fall back to the matched pre-affine image and labels, not a negative.
+                labels.update(img=original_img, instances=instances, cls=cls,
+                              resized_shape=original_img.shape[:2],
+                              visible_box_guard=(len(cls), len(cls), 0, rejected))
+                return labels
+            labels["visible_box_guard"] = (len(cls), int(i.sum()), int((~visible).sum()), 0)
         labels["instances"] = new_instances[i]
         labels["cls"] = cls[i]
         labels["img"] = img
@@ -2281,6 +2295,12 @@ def v8_transforms(dataset, imgsz, hyp, stretch=False):
         >>> augmented_data = transforms(dataset[0])
     """
     rectangular = isinstance(imgsz, (list, tuple))
+    guard = dataset.data.get("visible_box_guard")
+    if guard not in (None, "affine_fallback_v1"):
+        raise ValueError("Unknown visible box guard")
+    if guard and (hyp.mosaic or hyp.mixup or hyp.copy_paste
+                  or dataset.use_segments or dataset.use_keypoints or dataset.use_obb):
+        raise ValueError("Visible box guard requires ordinary box-only single-image geometry")
     target_shape = tuple(imgsz) if rectangular else (imgsz, imgsz)
     mosaic_imgsz = max(target_shape) if rectangular else imgsz
     mosaic_border = (
@@ -2299,6 +2319,7 @@ def v8_transforms(dataset, imgsz, hyp, stretch=False):
                 shear=hyp.shear,
                 perspective=hyp.perspective,
                 pre_transform=None if stretch else LetterBox(new_shape=target_shape),
+                preserve_visible_boxes=bool(guard),
             ),
         ]
     )

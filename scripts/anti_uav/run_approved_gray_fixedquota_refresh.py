@@ -128,7 +128,7 @@ def audit_background_requirement(data_dir,previous_index,output):
     return result
 
 
-def configure(data_dir, cache_dir, source_config, source_dir, output):
+def configure(data_dir, cache_dir, source_config, source_dir, output, visible_box_guard=None):
     import numpy as np
     import yaml
     from scripts.anti_uav.audit_labeler_expansion_regression import AuditDataset
@@ -141,15 +141,16 @@ def configure(data_dir, cache_dir, source_config, source_dir, output):
     scope=output/'native_source_scope.txt'
     scope.write_text('\n'.join(p for p in Path(config['train']).read_text().splitlines() if p not in public_paths)+'\n')
     config['input_color']='gray3'
+    if visible_box_guard:
+        config['visible_box_guard']=visible_box_guard
     config['online_replacement']=dict(config['online_replacement'],cache=str(cache_dir),replacement_probability=.5)
     base_tiny=dict(source_config['tiny_sampling'])
     reference=json.loads((data_dir/'manifest.json').read_text())['final_entries']
-    base_tiny.update(policy='fixed_domain_v1',batch_quotas=dict(gray_tiny=19,gray_sub4=3,gray_other=16,
-        antiuav=7,public=9,negative=10),reference_epoch_slots=reference,
+    if base_tiny.get('policy')!='fixed_domain_v1':
+        raise ValueError('Refresh requires the existing fixed-domain sampler')
+    base_tiny.update(reference_epoch_slots=reference,
         public_manifest=str(public),public_manifest_sha256=sha256(public),
-        native_positive_source_list=str(scope),native_positive_source_sha256=sha256(scope),
-        max_extra_copies_per_native_index=1,public_dataset_quotas=dict(dut=1,halmstad=3,uavswarm=1,purdue_uav=3,aod4=1),
-        max_public_copies_per_epoch=2)
+        native_positive_source_list=str(scope),native_positive_source_sha256=sha256(scope))
     config['tiny_sampling']=base_tiny
     labels=np.load(Path(config['train']).with_suffix('.cache'),allow_pickle=True).item()['labels']
     sampler=FixedDomainQuotaSampler(AuditDataset(labels),config['label_sampling'],base_tiny,64,20261015)
@@ -190,6 +191,7 @@ def configure(data_dir, cache_dir, source_config, source_dir, output):
                  new_original_only=cache_state['new_original_only'],asset_count=cache_state['asset_count'],
                  actual_sampling_policy='fixed_domain_v1',epoch_slots=len(sampler),
                  negative_fraction=sampler.audit['negative_fraction'],
+                 visible_box_guard=config.get('visible_box_guard'),new_old_sampling_weights=False,
                  replacement_policy='p=0.5 on safe cached positives; unsafe positives retained unchanged')
     dump(data_dir/'status.json',state)
     return result
@@ -204,6 +206,26 @@ def fixedwing_eval_config(source_yaml):
     target=manifest.parent/'fixedwing_public_holdout.yaml'
     if not target.is_file():raise FileNotFoundError(target)
     return target
+
+
+def video00009_acceptance(result, baseline, candidate):
+    directions = {"native/c0.03/R": 1, "native/c0.03/P": 1,
+                  "native/c0.03/long_lt4px/R": 1, "native/c0.03/long_4to8px/R": 1,
+                  "native/mAP50": 1, "native/mAP50-95": 1, "native/c0.03/FP": -1}
+    stages = {}
+    for stage in ('p3_initial','teacher','student'):
+        a,b=(result[name+'_'+stage]['splits']['Video00009'] for name in (baseline,candidate))
+        metrics={}
+        for key,direction in directions.items():
+            before,after=float(a[key]),float(b[key])
+            if not math.isfinite(before) or not math.isfinite(after):
+                raise ValueError('Missing finite Video00009 acceptance metric')
+            metrics[key]=dict(baseline=before,candidate=after,delta=after-before,
+                              passed=direction*(after-before)>=-1e-12)
+        stages[stage]=dict(passed=all(row['passed'] for row in metrics.values()),metrics=metrics)
+    return dict(passed=stages['student']['passed'],release_stage='student',stages=stages,
+                baseline=baseline,candidate=candidate,split='Video00009',checkpoint_selection_validation=True,
+                automatic_deployment=False)
 
 
 def compare(a, device):
@@ -226,7 +248,13 @@ def compare(a, device):
     result={}
     new_label=getattr(a,'comparison_arm_label','approved74_fixedgray')
     source_label=getattr(a,'source_arm_label','public69_before_repair')
-    for arm,run in [('native69',a.native_control_run),(source_label,a.source_run),(new_label,a.run_dir)]:
+    reference=getattr(a,'acceptance_baseline_run',None)
+    baseline_label='approved74_regression_repair'
+    arms=[(baseline_label,reference)] if reference else [('native69',a.native_control_run)]
+    arms.extend(((source_label,a.source_run),(new_label,a.run_dir)))
+    if len({label for label,_ in arms})!=len(arms):
+        raise ValueError('Duplicate comparison arm labels')
+    for arm,run in arms:
         for stage,relative in [('p3_initial','foundation/p3/weights/best.pt'),('teacher','teacher/p2p3/weights/best.pt'),
                                ('student','p3_student_distilled_best_fp32.pt')]:
             name=arm+'_'+stage;weights=run/relative;digest=sha256(weights)
@@ -252,6 +280,10 @@ def compare(a, device):
         pooled_contains_selection_validation=True,external_fixedwing_positive_frames_only=True,
         intentional_changes=getattr(a,'comparison_intentional_changes',
             ['five_new_approved_videos','fixed_source_size_quotas','gray3_input','brightness_only','new_background_caches'])))
+    if reference:
+        result=video00009_acceptance(result,baseline_label,new_label)
+        dump(output/'video00009_acceptance.json',result)
+        return result['passed']
 
 
 def main():
@@ -272,6 +304,10 @@ def main():
     p.add_argument('--expected-training-videos',type=int)
     p.add_argument('--source-arm-label')
     p.add_argument('--comparison-arm-label')
+    p.add_argument('--visible-box-guard',choices=['affine_fallback_v1'])
+    p.add_argument('--approved-frame-assets',type=Path)
+    p.add_argument('--bounded-disk',action='store_true')
+    p.add_argument('--acceptance-baseline-run',type=Path)
     p.add_argument('--prepare-only',action='store_true')
     p.add_argument('--train-prepared',action='store_true')
     p.add_argument('--resume-training',action='store_true',
@@ -281,6 +317,8 @@ def main():
     a=p.parse_args()
     if a.resume_training and (not a.train_prepared or a.prepare_only or a.resume_preparation):
         p.error('--resume-training requires --train-prepared only')
+    if a.bounded_disk and not a.approved_frame_assets:
+        p.error('--bounded-disk requires --approved-frame-assets')
     if not 1<=a.background_workers<=32 or not 1<=a.extraction_workers<=16:
         p.error('Use 1..32 background and 1..16 extraction workers')
     for key,value in vars(a).items():
@@ -307,6 +345,9 @@ def main():
     a.comparison_intentional_changes=[f'{len(a.approved_sha256)}_new_current_approved_videos',
         'training_only_background_extension','same_gray3_and_per_batch_quotas',
         'same_frozen_cutout_catalog','same_source_regression_loss_and_curriculum']
+    if a.visible_box_guard:
+        a.comparison_intentional_changes.append('same_visible_box_guard_for_all_sources')
+    reference = str(a.acceptance_baseline_run) if a.acceptance_baseline_run else None
     previous_index=json.loads((a.previous_cache/'index.json').read_text())
     if Path(source_config['online_replacement']['cache']).resolve()!=a.previous_cache:
         raise ValueError('Background cache must match the source training configuration')
@@ -324,6 +365,7 @@ def main():
                 expected_training_videos=expected_videos,epochs=protocol['epochs'],qat=False,
                 input_color=source_config.get('input_color','source'),batch_quotas=source_config['tiny_sampling']['batch_quotas'],
                 regression_repair=protocol.get('regression_repair'),old_task_weights_not_used=True,
+                visible_box_guard=a.visible_box_guard,acceptance_baseline_run=reference,
                 holdouts_unchanged=True,intentional_changes=a.comparison_intentional_changes))
         contract=json.loads((a.run_dir/'refresh_contract.json').read_text())
         for path,key in [(a.source_run/'protocol.json','source_protocol_sha256'),
@@ -331,6 +373,8 @@ def main():
                          (a.previous_cache/'index.json','previous_index_sha256')]:
             if sha256(path)!=contract[key]:raise ValueError('Frozen source changed during extension')
         if contract['requested_sha256']!=sorted(a.approved_sha256):raise ValueError('Requested addition scope changed')
+        if contract.get('visible_box_guard')!=a.visible_box_guard or contract.get('acceptance_baseline_run')!=reference:
+            raise ValueError('Prepared guard or acceptance baseline changed')
         if not a.train_prepared:
             status('freezing_approved_scope')
             items=select_requested(snapshot_tasks(a.database,a.video_root,blocked),a.approved_sha256,source)
@@ -343,10 +387,13 @@ def main():
             else:
                 dump(requested,dict(captured_at=datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(),videos=items,
                     source_manifest_sha256=sha256(source_dir/'manifest.json'),source_database=str(a.database)))
-                command('extract_approved',[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_labeler_training_expansion.py',
+                extract_cmd=[sys.executable,'-u',ROOT/'scripts/anti_uav/prepare_labeler_training_expansion.py',
                     '--source',source_dir,'--source-yaml',source_yaml.name,'--baseline-protocol',a.source_run/'protocol.json',
                     '--database',a.database,'--video-root',a.video_root,'--output',a.data_output,
-                    '--workers',a.extraction_workers,'--task-snapshot',requested])
+                    '--workers',a.extraction_workers,'--task-snapshot',requested]
+                if a.approved_frame_assets:extract_cmd.extend(['--approved-frame-assets',a.approved_frame_assets])
+                if a.bounded_disk:extract_cmd.append('--bounded-disk')
+                command('extract_approved',extract_cmd)
             data_manifest=json.loads((a.data_output/'manifest.json').read_text())
             if set(data_manifest['train_video_hashes'])!=set(source['train_video_hashes'])|set(a.approved_sha256):raise ValueError('Appended video scope differs from request')
             audit_background_requirement(a.data_output,previous_index,a.run_dir/'audit/background_requirement.json')
@@ -367,7 +414,7 @@ def main():
             else:
                 qa=dict(stage='no_safe_replacements',rendered=0,originals_retained=True)
             dump(a.run_dir/'audit/composition_acceptance.json',qa)
-            data=configure(a.data_output,a.cache_output,source_config,source_dir,a.run_dir/'audit')
+            data=configure(a.data_output,a.cache_output,source_config,source_dir,a.run_dir/'audit',a.visible_box_guard)
             dump(a.run_dir/'preparation.json',dict(complete=True,data=str(data),data_sha256=sha256(data),
                 requested_sha256=sorted(a.approved_sha256),training_videos=len(data_manifest['train_video_hashes']),
                 foundation=protocol['foundation'],foundation_sha256=protocol['foundation_sha256'],
@@ -432,8 +479,9 @@ def main():
             if a.resume_training:
                 f.write('\nRESUMING ON GPU '+str(gpu)+' AT '+stamp+'; previous failure log retained\n');f.flush()
             subprocess.run(cmd,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT,check=True)
-        compare(a,gpu)
-        status('complete',student=str(a.run_dir/'p3_student_distilled_best_fp32.pt'))
+        passed=compare(a,gpu)
+        status('complete_below_video00009_baseline' if passed is False else 'complete',
+               student=str(a.run_dir/'p3_student_distilled_best_fp32.pt'),video00009_acceptance=passed)
     except BaseException as error:
         status('failed',error=repr(error));raise
 

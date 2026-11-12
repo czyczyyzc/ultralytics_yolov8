@@ -18,6 +18,7 @@ def repair_losses(trainer):
 
 
 def begin_repair_epoch(trainer):
+    trainer.visible_box_guard_totals = None
     for loss in repair_losses(trainer).values():
         loss.begin_epoch(trainer.epoch)
 
@@ -27,6 +28,9 @@ def save_repair_epoch(trainer):
     output.mkdir(exist_ok=True)
     report = dict(epoch=trainer.epoch+1, training_only=True,
                   losses={name: loss.audit_summary() for name, loss in repair_losses(trainer).items()})
+    if trainer.visible_box_guard_totals is not None:
+        keys = ("input_boxes", "retained_boxes", "offscreen_removed", "visible_rejections_rescued", "fallback_images")
+        report["visible_box_guard"] = dict(zip(keys, trainer.visible_box_guard_totals))
     (output/f'epoch_{trainer.epoch+1:04d}.json').write_text(json.dumps(report, indent=2)+'\n')
 
 
@@ -49,6 +53,20 @@ class RepairMixin:
     def install_repair_callbacks(self):
         self.add_callback('on_train_epoch_start', begin_repair_epoch)
         self.add_callback('on_train_epoch_end', save_repair_epoch)
+
+    def preprocess_batch(self, batch):
+        batch = super().preprocess_batch(batch)
+        records = batch.get("visible_box_guard")
+        if self.data.get("visible_box_guard") == "affine_fallback_v1":
+            if records is None:
+                raise ValueError("Missing augmentation guard audit for a protected training batch")
+            before, after, offscreen, rescued = map(sum, zip(*records))
+            if before != after + offscreen or len(batch["cls"]) != after:
+                raise ValueError("A protected label disappeared after the affine stage")
+            totals = getattr(self, "visible_box_guard_totals", None) or [0]*5
+            self.visible_box_guard_totals = [a+b for a,b in zip(
+                totals, (before, after, offscreen, rescued, sum(r[3] > 0 for r in records)))]
+        return batch
 
 
 class RegressionRepairP3Trainer(RepairMixin, TinyAwareP3Trainer):

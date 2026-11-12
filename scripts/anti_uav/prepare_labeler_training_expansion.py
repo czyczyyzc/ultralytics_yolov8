@@ -130,7 +130,51 @@ def restrict_task_scope(items, previous_snapshot):
     return selected
 
 
-def extract(item, output):
+def approved_frame_binding(database, assets, item):
+    """Pin the reviewed annotation and sequential raw-pixel identities before decoding."""
+    with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as con:
+        rows = con.execute("""
+            SELECT a.id,a.annotations_json,a.content_sha256,s.id,s.manifest_relpath,s.manifest_sha256
+            FROM approval_snapshots a JOIN approval_asset_bindings b ON b.snapshot_id=a.id
+            JOIN frame_sets s ON s.id=b.frame_set_id JOIN tasks t ON t.id=a.task_id
+            WHERE a.task_id=? AND a.revision=? AND t.status='approved' AND t.is_published=1
+              AND t.revision=a.revision AND t.approved_revision=a.revision
+              AND s.video_id=t.video_id AND s.mode='sequential' AND s.source_sha256=?
+        """, (item["task_id"], item["revision"], item["source_sha256"])).fetchall()
+    if len(rows) != 1:
+        raise ValueError("Missing or ambiguous approval-to-frame binding")
+    snapshot, text, digest, frame_set, relative, frame_digest = rows[0]
+    if hashlib.sha256(text.encode()).hexdigest() != digest:
+        raise ValueError("Approved annotation snapshot hash differs")
+    approved = []
+    for row in json.loads(text)["annotations"]:
+        box = row["bboxXyxy"] or [None]*4
+        approved.append(dict(frame_index=row["frameIndex"], status=row["status"],
+                             **dict(zip(("bbox_x1","bbox_y1","bbox_x2","bbox_y2"), box))))
+    dimensions = item["frame_count"], item["frame_width"], item["frame_height"]
+    current = frame_plan(item["annotations"], *dimensions, True)
+    if current != frame_plan(approved, *dimensions, True) or current[1].get("invalid_bbox"):
+        raise ValueError("Training annotations do not match the reviewed frame/GT snapshot")
+    assets = assets.resolve()
+    path = (assets / relative).resolve()
+    path.relative_to(assets)
+    if sha256(path) != frame_digest:
+        raise ValueError("Approved frame manifest hash differs")
+    spec = json.loads(path.read_text())
+    if (spec["frameSetId"] != frame_set or spec["sourceSha256"] != item["source_sha256"]
+            or (spec["frameCount"], spec["width"], spec["height"]) != dimensions
+            or len(spec["frames"]) != dimensions[0]):
+        raise ValueError("Approved manifest does not describe the frozen source video")
+    fingerprints = []
+    for i, row in enumerate(spec["frames"]):
+        if row["ordinal"] != i or row["sourceOrdinals"] != [i] or len(row.get("decodedBgrSha256") or "") != 64:
+            raise ValueError("Approved frame manifest is not an exact sequential pixel record")
+        fingerprints.append(row["decodedBgrSha256"])
+    return dict(approval_snapshot=snapshot, approval_snapshot_sha256=digest, frame_set=frame_set,
+                frame_manifest_sha256=frame_digest), fingerprints
+
+
+def extract(item, output, binding=None, free_reserve=0):
     import cv2
     import numpy as np
 
@@ -145,7 +189,8 @@ def extract(item, output):
     images, labels = output / "images/labeler_snapshot" / key, output / "labels/labeler_snapshot" / key
     images.mkdir(parents=True)
     labels.mkdir(parents=True)
-    cap = cv2.VideoCapture(str(video))
+    opts = [cv2.CAP_PROP_N_THREADS, 1] if hasattr(cv2, "CAP_PROP_N_THREADS") else []
+    cap = cv2.VideoCapture(str(video), cv2.CAP_FFMPEG, opts) if binding else cv2.VideoCapture(str(video))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot decode {video}")
     positive, negative, cached = [], [], []
@@ -157,7 +202,11 @@ def extract(item, output):
                 break
             if image.shape[:2] != (item["frame_height"], item["frame_width"]):
                 raise ValueError(f"Frame geometry differs from annotation source: {video}")
+            if binding and (index >= len(binding[1]) or hashlib.sha256(image.tobytes()).hexdigest() != binding[1][index]):
+                raise ValueError(f"Decoded source pixels do not match the approved frame: {video}:{index}")
             if index in plan:
+                if free_reserve and index % 16 == 0 and shutil.disk_usage(output).free < free_reserve:
+                    raise OSError("Extraction stopped to preserve shared disk headroom")
                 path = images / f"{index:09d}.jpg"
                 boxes = plan[index]
                 if not cv2.imwrite(str(path), image, [cv2.IMWRITE_JPEG_QUALITY, 95]):
@@ -178,6 +227,8 @@ def extract(item, output):
         video=str(video), sha256=item["source_sha256"], original_path=item["original_path"],
         decoded_frames=index, positive_samples=len(positive), negative_samples=len(negative),
         included_frames=len(cached), excluded=excluded, image_directory=str(images), label_directory=str(labels))
+    if binding:
+        record.update(frame_alignment=dict(binding[0], decoded_pixels_verified=index, gt_matches_approval=True))
     print(json.dumps(record, ensure_ascii=False), flush=True)
     return record, positive, negative, cached
 
@@ -192,12 +243,17 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--task-snapshot", type=Path, help="Refresh only the videos in this previous frozen snapshot")
+    p.add_argument("--approved-frame-assets", type=Path, help="Require all decoded frames to match approved pixel hashes")
+    p.add_argument("--bounded-disk", action="store_true", help="Use the guarded reserve for small frozen approved additions")
     a = p.parse_args()
     a.source, a.output = a.source.resolve(), a.output.resolve()
     if a.output.exists() or not 1 <= a.workers <= 16:
         raise ValueError("Use a fresh output directory and 1-16 extraction workers")
-    if shutil.disk_usage(a.output.parent).free < 80 * (1 << 30):
-        raise OSError("Less than 80 GiB free; refuse extraction")
+    if a.bounded_disk and not (a.task_snapshot and a.approved_frame_assets):
+        p.error("--bounded-disk requires a frozen approved scope and frame assets")
+    required_gib = 30 if a.bounded_disk else 80
+    if shutil.disk_usage(a.output.parent).free < required_gib * (1 << 30):
+        raise OSError(f"Less than {required_gib} GiB free; refuse extraction")
     import cv2
     import numpy as np
     import yaml
@@ -217,9 +273,17 @@ def main():
     blocked = set(source["train_video_hashes"]) | {source["test_sha256"], source["validation_sha256"]}
     items = snapshot_tasks(a.database, a.video_root, blocked)
     if a.task_snapshot:
-        items = restrict_task_scope(items, json.loads(a.task_snapshot.read_text()))
+        frozen = json.loads(a.task_snapshot.read_text())
+        items = restrict_task_scope(items, frozen)
+        if a.approved_frame_assets:
+            from scripts.anti_uav.run_approved_data_only_refresh import verify_frozen_scope
+            verify_frozen_scope(frozen["videos"], items)
     if not items:
         raise ValueError("No new labelled videos")
+    if a.bounded_disk and sum(x["frame_count"] for x in items) > 20000:
+        raise ValueError("Bounded extraction supports at most 20,000 decoded frames")
+    bindings = {x["task_id"]: approved_frame_binding(a.database, a.approved_frame_assets, x)
+                for x in items} if a.approved_frame_assets else {}
     a.output.mkdir(parents=True)
     snapshot = dict(captured_at=datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
         source_database=str(a.database), baseline_manifest=str(a.source / "manifest.json"),
@@ -233,7 +297,8 @@ def main():
     records, additions, added_negatives, added_cache = [], [], [], []
     positive_count = negative_count = 0
     with ThreadPoolExecutor(max_workers=a.workers) as executor:
-        for record, pos, neg, cache in executor.map(lambda item: extract(item, a.output), items):
+        for record, pos, neg, cache in executor.map(lambda item: extract(
+                item, a.output, bindings.get(item["task_id"]), 26*(1 << 30) if a.bounded_disk else 0), items):
             records.append(record)
             additions.extend(pos + neg)
             added_negatives.extend(neg)

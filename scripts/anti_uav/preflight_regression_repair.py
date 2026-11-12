@@ -48,6 +48,9 @@ def main():
             batch_size=64,amp=True,full_repair_enabled=True,
             loss=t.loss.detach().float().cpu().tolist(),weights_discarded_not_used_for_initialization=True,
             audit=audit)
+        if t.data.get('visible_box_guard'):
+            report['visible_box_guard']=t.data['visible_box_guard']
+            report['visible_box_guard_totals']=t.visible_box_guard_totals
         (a.output/'acceptance.json').write_text(json.dumps(report,indent=2)+'\n')
         if state['batches']>=4:raise PreflightComplete()
     model=YOLO(str(a.foundation))

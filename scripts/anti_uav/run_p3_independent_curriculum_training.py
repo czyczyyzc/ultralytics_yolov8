@@ -361,6 +361,10 @@ def main() -> None:
         final_graph="standard YOLOv8n P3-P5; all P2/projection modules removed",
         git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
     )
+    if source.get("visible_box_guard"):
+        protocol["augmentation"]["visible_box_guard"] = source["visible_box_guard"]
+        if repair is None:
+            raise ValueError("The protected box recipe requires the regression repair trainer audit")
     protocol_path = args.run_dir / "protocol.json"
     if repair is not None:
         protocol["regression_repair"] = dict(options=repair,

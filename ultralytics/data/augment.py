@@ -984,7 +984,7 @@ class RandomPerspective:
 
     def __init__(
         self, degrees=0.0, translate=0.1, scale=0.5, shear=0.0, perspective=0.0, border=(0, 0), pre_transform=None,
-        preserve_visible_boxes=False,
+        preserve_visible_boxes=False, visible_box_guard=None,
     ):
         """
         Initializes RandomPerspective object with transformation parameters.
@@ -1001,6 +1001,7 @@ class RandomPerspective:
             border (Tuple[int, int]): Tuple specifying mosaic border (top/bottom, left/right).
             pre_transform (Callable | None): Function/transform to apply to the image before starting the random
                 transformation.
+            visible_box_guard (str | None): Box preservation policy for single-image detection.
 
         Examples:
             >>> transform = RandomPerspective(degrees=10.0, translate=0.1, scale=0.5, shear=5.0)
@@ -1013,7 +1014,13 @@ class RandomPerspective:
         self.perspective = perspective
         self.border = border  # mosaic border
         self.pre_transform = pre_transform
-        self.preserve_visible_boxes = preserve_visible_boxes
+        self.visible_box_guard = visible_box_guard or ("affine_fallback_v1" if preserve_visible_boxes else None)
+        if self.visible_box_guard not in (None, "affine_fallback_v1", "affine_keep_subpixel_v2"):
+            raise ValueError("Unknown visible box guard")
+        if self.visible_box_guard == "affine_keep_subpixel_v2" and (
+            degrees or shear or perspective or any(border) or not 0 <= scale < 1
+        ):
+            raise ValueError("Subpixel box preservation requires positive scaling and translation only")
 
     def affine_transform(self, img, border):
         """
@@ -1231,6 +1238,9 @@ class RandomPerspective:
         instances.denormalize(*img.shape[:2][::-1])
 
         border = labels.pop("mosaic_border", self.border)
+        keep_subpixel = self.visible_box_guard == "affine_keep_subpixel_v2"
+        if keep_subpixel and (any(border) or len(instances.segments) or instances.keypoints is not None):
+            raise ValueError("Subpixel box preservation requires a single detection image")
         self.size = img.shape[1] + border[1] * 2, img.shape[0] + border[0] * 2  # w, h
         # M is affine matrix
         # Scale for func:`box_candidates`
@@ -1246,16 +1256,33 @@ class RandomPerspective:
 
         if keypoints is not None:
             keypoints = self.apply_keypoints(keypoints, M)
+        if keep_subpixel:
+            valid = np.isfinite(bboxes).all(axis=1) & (bboxes[:, 2:] > bboxes[:, :2]).all(axis=1)
+            if not valid.all():
+                source = instances.bboxes
+                if not np.isfinite(source).all() or not (source[:, 2:] > source[:, :2]).all():
+                    raise ValueError("Invalid source box for subpixel preservation")
+                # Degenerate projections are not evidence that a target left the frame.
+                labels.update(img=original_img, instances=instances, cls=cls, resized_shape=original_img.shape[:2],
+                              visible_box_guard=(len(cls), len(cls), 0, 0, 1))
+                return labels
         new_instances = Instances(bboxes, segments, keypoints, bbox_format="xyxy", normalized=False)
         # Clip
         new_instances.clip(*self.size)
 
         # Filter instances
         # Make the bboxes have the same scale with new_bboxes
-        i = self.box_candidates(
-            box1=instances.bboxes.T * scale, box2=new_instances.bboxes.T, area_thr=0.01 if len(segments) else 0.10
-        )
-        if self.preserve_visible_boxes:
+        if keep_subpixel:
+            # A size threshold cannot tell whether a thin target is still visible.
+            sides = new_instances.bboxes[:, 2:] - new_instances.bboxes[:, :2]
+            i = (sides > 0).all(axis=1)
+            labels["visible_box_guard"] = (len(cls), int(i.sum()), int((~i).sum()),
+                                           int((i & (sides <= 2).any(axis=1)).sum()), 0)
+        else:
+            i = self.box_candidates(
+                box1=instances.bboxes.T * scale, box2=new_instances.bboxes.T, area_thr=0.01 if len(segments) else 0.10
+            )
+        if self.visible_box_guard == "affine_fallback_v1":
             xyxy = new_instances.bboxes
             visible = ((xyxy[:, 2:] - xyxy[:, :2]) > 0).all(axis=1)
             rejected = int((visible & ~i).sum())
@@ -2296,7 +2323,7 @@ def v8_transforms(dataset, imgsz, hyp, stretch=False):
     """
     rectangular = isinstance(imgsz, (list, tuple))
     guard = dataset.data.get("visible_box_guard")
-    if guard not in (None, "affine_fallback_v1"):
+    if guard not in (None, "affine_fallback_v1", "affine_keep_subpixel_v2"):
         raise ValueError("Unknown visible box guard")
     if guard and (hyp.mosaic or hyp.mixup or hyp.copy_paste
                   or dataset.use_segments or dataset.use_keypoints or dataset.use_obb):
@@ -2319,7 +2346,7 @@ def v8_transforms(dataset, imgsz, hyp, stretch=False):
                 shear=hyp.shear,
                 perspective=hyp.perspective,
                 pre_transform=None if stretch else LetterBox(new_shape=target_shape),
-                preserve_visible_boxes=bool(guard),
+                visible_box_guard=guard,
             ),
         ]
     )

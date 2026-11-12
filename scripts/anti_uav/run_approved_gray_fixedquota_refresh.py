@@ -304,7 +304,7 @@ def main():
     p.add_argument('--expected-training-videos',type=int)
     p.add_argument('--source-arm-label')
     p.add_argument('--comparison-arm-label')
-    p.add_argument('--visible-box-guard',choices=['affine_fallback_v1'])
+    p.add_argument('--visible-box-guard',choices=['affine_fallback_v1','affine_keep_subpixel_v2'])
     p.add_argument('--approved-frame-assets',type=Path)
     p.add_argument('--bounded-disk',action='store_true')
     p.add_argument('--acceptance-baseline-run',type=Path)

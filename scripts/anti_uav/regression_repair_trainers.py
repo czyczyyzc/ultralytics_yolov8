@@ -30,6 +30,8 @@ def save_repair_epoch(trainer):
                   losses={name: loss.audit_summary() for name, loss in repair_losses(trainer).items()})
     if trainer.visible_box_guard_totals is not None:
         keys = ("input_boxes", "retained_boxes", "offscreen_removed", "visible_rejections_rescued", "fallback_images")
+        if trainer.data.get("visible_box_guard") == "affine_keep_subpixel_v2":
+            keys = ("input_boxes", "retained_boxes", "offscreen_removed", "at_most_2px_kept", "invalid_projection_fallback")
         report["visible_box_guard"] = dict(zip(keys, trainer.visible_box_guard_totals))
     (output/f'epoch_{trainer.epoch+1:04d}.json').write_text(json.dumps(report, indent=2)+'\n')
 
@@ -57,15 +59,18 @@ class RepairMixin:
     def preprocess_batch(self, batch):
         batch = super().preprocess_batch(batch)
         records = batch.get("visible_box_guard")
-        if self.data.get("visible_box_guard") == "affine_fallback_v1":
+        guard = self.data.get("visible_box_guard")
+        if guard in {"affine_fallback_v1", "affine_keep_subpixel_v2"}:
             if records is None:
                 raise ValueError("Missing augmentation guard audit for a protected training batch")
-            before, after, offscreen, rescued = map(sum, zip(*records))
+            batch_counts = tuple(map(sum, zip(*records)))
+            before, after, offscreen = batch_counts[:3]
             if before != after + offscreen or len(batch["cls"]) != after:
                 raise ValueError("A protected label disappeared after the affine stage")
+            if guard == "affine_fallback_v1":
+                batch_counts += (sum(r[3] > 0 for r in records),)
             totals = getattr(self, "visible_box_guard_totals", None) or [0]*5
-            self.visible_box_guard_totals = [a+b for a,b in zip(
-                totals, (before, after, offscreen, rescued, sum(r[3] > 0 for r in records)))]
+            self.visible_box_guard_totals = [a+b for a,b in zip(totals, batch_counts)]
         return batch
 
 

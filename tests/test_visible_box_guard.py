@@ -10,7 +10,8 @@ def sample(boxes):
     image = np.full((32, 48, 3), 80, np.uint8)
     image[8, 8] = 200
     return dict(img=image, cls=np.zeros((len(boxes), 1), np.float32),
-                instances=Instances(boxes, bbox_format="xyxy", normalized=False))
+                instances=Instances(boxes, segments=np.empty((0, 0, 2), np.float32),
+                                    bbox_format="xyxy", normalized=False))
 
 
 def apply(boxes, matrix, guard, scale=1.0):

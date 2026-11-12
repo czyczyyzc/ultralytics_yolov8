@@ -66,6 +66,8 @@ class Detect(nn.Module):
             return y              
 
         if self.export and self.format == 'rknn':
+            if hasattr(self, "p3_offset"):
+                raise RuntimeError("The shifted P3 head is incompatible with the existing raw RKNN decoder")
             y = []
             for i in range(self.nl):
                 y.append(self.cv2[i](x[i]))
@@ -79,7 +81,10 @@ class Detect(nn.Module):
             return self.forward_end2end(x)
 
         for i in range(self.nl):
-            x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
+            reg = self.cv2[i](x[i])
+            if i == 0 and hasattr(self, "p3_offset"):
+                reg = torch.cat((reg, self.p3_offset(x[i])), 1)
+            x[i] = torch.cat((reg, self.cv3[i](x[i])), 1)
         if self.training:  # Training path
             return x
         y = self._inference(x)
@@ -111,6 +116,11 @@ class Detect(nn.Module):
 
     def _inference(self, x):
         """Decode predicted bounding boxes and class probabilities based on multiple-level feature maps."""
+        offset = None
+        if hasattr(self, "p3_offset"):
+            n = self.reg_max * 4
+            offset = x[0][:, n:n + 2].flatten(2)
+            x = [torch.cat((x[0][:, :n], x[0][:, n + 2:]), 1), *x[1:]]
         # Inference path
         shape = x[0].shape  # BCHW
         x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
@@ -132,10 +142,28 @@ class Detect(nn.Module):
             grid_size = torch.tensor([grid_w, grid_h, grid_w, grid_h], device=box.device).reshape(1, 4, 1)
             norm = self.strides / (self.stride[0] * grid_size)
             dbox = self.decode_bboxes(self.dfl(box) * norm, self.anchors.unsqueeze(0) * norm[:, :2])
+            if offset is not None:
+                offset = offset * norm[:, :2, :offset.shape[-1]]
         else:
             dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
+            if offset is not None:
+                offset = offset * self.strides[:, :offset.shape[-1]]
+
+        if offset is not None:
+            points = offset.shape[-1]
+            p3 = torch.cat((dbox[:, :2, :points] + offset, dbox[:, 2:, :points]), 1)
+            dbox = torch.cat((p3, dbox[:, :, points:]), 2)
 
         return torch.cat((dbox, cls.sigmoid()), 1)
+
+    def enable_p3_reference_shift(self):
+        """Start with the exact legacy decoder and add two signed P3 offsets in grid units."""
+        if type(self) is not Detect or tuple(int(s) for s in self.stride) != (8, 16, 32):
+            raise ValueError("P3 reference shift requires the standard three-level detector")
+        with torch.random.fork_rng(devices=[]):
+            self.p3_offset = nn.Conv2d(self.cv2[0][0].conv.in_channels, 2, 1)
+        nn.init.zeros_(self.p3_offset.weight)
+        nn.init.zeros_(self.p3_offset.bias)
 
     def bias_init(self):
         """Initialize Detect() biases, WARNING: requires stride availability."""

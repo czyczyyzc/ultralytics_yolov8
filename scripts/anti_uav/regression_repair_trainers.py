@@ -36,15 +36,15 @@ def save_repair_epoch(trainer):
     (output/f'epoch_{trainer.epoch+1:04d}.json').write_text(json.dumps(report, indent=2)+'\n')
 
 
-def repaired_loss(model, source, previous, options, first_level_only=False):
+def repaired_loss(model, source, previous, options, first_level_only=False,
+                  loss_type=BalancedRegressionDetectionLoss):
     keys = ('tiny_multiplier', 'tiny_min_px', 'tiny_max_px', 'localization_weight',
             'localization_min_px', 'localization_max_px')
     legacy = {key: getattr(previous, key) for key in keys if hasattr(previous, key)}
     # The Student auxiliary loss was v8DetectionLoss, not a tiny-weighted loss.
     if not hasattr(previous, 'tiny_multiplier'):
         legacy.update(tiny_multiplier=1., localization_weight=0.)
-    result = BalancedRegressionDetectionLoss(model, source, first_level_only=first_level_only,
-                                            **options, **legacy)
+    result = loss_type(model, source, first_level_only=first_level_only, **options, **legacy)
     result.stride = previous.stride
     return result
 
@@ -78,7 +78,16 @@ class RegressionRepairP3Trainer(RepairMixin, TinyAwareP3Trainer):
     def _setup_train(self, world_size):
         super()._setup_train(world_size)
         model = de_parallel(self.model)
-        model.criterion = repaired_loss(model, self.data, model.criterion, self.repair_options)
+        if hasattr(model.model[-1], "p3_offset"):
+            from scripts.anti_uav.p3_nearest_offset import P3NearestOffsetLoss
+
+            previous = model.criterion
+            model.criterion = repaired_loss(model, self.data, previous, self.repair_options,
+                                            loss_type=P3NearestOffsetLoss)
+            self.ema.ema.criterion = repaired_loss(self.ema.ema, self.data, previous, self.repair_options,
+                                                   loss_type=P3NearestOffsetLoss)
+        else:
+            model.criterion = repaired_loss(model, self.data, model.criterion, self.repair_options)
         self.install_repair_callbacks()
 
 

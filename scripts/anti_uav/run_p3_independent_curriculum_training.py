@@ -212,7 +212,8 @@ def add_status_callback(model: YOLO, run_dir: Path, stage: str) -> None:
 
     model.add_callback("on_train_start", record_resume)
     model.add_callback("on_fit_epoch_end", lambda trainer: write_status(
-        run_dir, stage, epoch=trainer.epoch + 1, fitness=float(trainer.fitness), device=str(trainer.args.device)
+        run_dir, stage, epoch=trainer.epoch + 1, fitness=float(trainer.fitness), device=str(trainer.args.device),
+        batches_per_epoch=len(trainer.train_loader), optimizer_updates=trainer.ema.updates,
     ))
 
 
@@ -244,9 +245,12 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--foundation-only", action="store_true", help="Validate the repaired foundation before training Teacher/Student")
     parser.add_argument("--regression-repair", action="store_true", help="Opt-in source/scale-normalized regression; legacy defaults unchanged")
+    parser.add_argument("--p3-nearest-offset", action="store_true", help="Test P3-only off-grid tiny fallback and DFL reference shift")
     parser.add_argument("--repair-balance-mix", type=float, default=.5)
     parser.add_argument("--repair-warmup-epochs", type=int, default=3)
     args = parser.parse_args()
+    if args.p3_nearest_offset and not (args.foundation_only and args.regression_repair and args.localization_epochs == 0):
+        parser.error("--p3-nearest-offset requires foundation-only regression repair with no localization stage")
 
     p3_trainer, teacher_trainer, student_trainer = TinyAwareP3Trainer, TinyAwareAddOnTrainer, P3StudentFP32DistillationTrainer
     repair = None
@@ -328,6 +332,8 @@ def main() -> None:
     ]
     if args.localization_epochs:
         stages.append("FP32 localization refinement")
+    if args.foundation_only:
+        stages = stages[:2]
 
     protocol = dict(
         method=" -> ".join(stages),
@@ -373,9 +379,18 @@ def main() -> None:
             inference_graph_unchanged=True, unmatched_gt_not_fabricated=True,
             extra_size_range_px=[2,16], localization_min_px=2,
             stages=["foundation", "teacher", "student"])
+    if args.p3_nearest_offset:
+        from scripts.anti_uav.p3_nearest_offset import FALLBACK_SCORE, OFFSET_LOSS_WEIGHT, TINY_MAX_PX
+
+        protocol["p3_nearest_offset"] = dict(tiny_long_edge_max_px=TINY_MAX_PX, fallback_score=FALLBACK_SCORE,
+            offset_loss_weight=OFFSET_LOSS_WEIGHT, preserve_dfl=True, preserve_p4_p5=True)
+        protocol["regression_repair"].update(classification_unchanged=False, assigner_unchanged=False,
+            inference_graph_unchanged=False)
+        protocol["final_graph"] = "P3-P5 with a signed P3 DFL reference shift; no P2"
     if protocol_path.exists():
         previous = json.loads(protocol_path.read_text())
-        if previous.get("regression_repair") != protocol.get("regression_repair"):
+        if (previous.get("regression_repair") != protocol.get("regression_repair")
+                or previous.get("p3_nearest_offset") != protocol.get("p3_nearest_offset")):
             raise ValueError("Resume regression repair differs from saved experiment")
         for key in ("data", "foundation", "foundation_sha256", "training_videos", "epochs", "augmentation",
                     "batch", "nbs", "seed", "qat", "trusted_label_caches"):
@@ -414,6 +429,8 @@ def main() -> None:
             p3_trainer.localization_min_px = 4.0
             p3_trainer.localization_max_px = 64.0
             foundation = YOLO(progress["foundation"]["checkpoint"] or str(args.foundation))
+            if args.p3_nearest_offset and not progress["foundation"]["checkpoint"]:
+                foundation.model.yaml["p3_nearest_offset_v1"] = True
             add_status_callback(foundation, args.run_dir, "train_native_p3_foundation")
             write_status(args.run_dir, "train_native_p3_foundation",
                          epoch=progress["foundation"]["completed_epochs"], device=args.device)
@@ -424,10 +441,13 @@ def main() -> None:
             )
 
         if args.foundation_only:
+            training_status = json.loads((args.run_dir / "status.json").read_text())
             metrics_path = args.run_dir / "audit/video00009_foundation_p3.json"
             metrics = validate(foundation_best, foundation_data, args, metrics_path)
             write_status(args.run_dir, "foundation_complete", foundation_best=str(foundation_best),
-                         metrics=str(metrics_path), fitness=metrics["fitness"], teacher_student_started=False)
+                         metrics=str(metrics_path), fitness=metrics["fitness"], teacher_student_started=False,
+                         epoch=training_status.get("epoch"), batches_per_epoch=training_status.get("batches_per_epoch"),
+                         optimizer_updates=training_status.get("optimizer_updates"))
             return
 
         teacher_best = args.run_dir / "teacher/p2p3/weights/best.pt"

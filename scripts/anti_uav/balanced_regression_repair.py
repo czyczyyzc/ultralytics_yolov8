@@ -158,15 +158,25 @@ class BalancedRegressionDetectionLoss(TinyAwareDetectionLoss):
         per_anchor += self.tiny_log_size_weight * size * (edge <= 16)
         return (per_anchor * weights * selected).sum()
 
+    def prediction_parts(self, feats):
+        boxes, scores = torch.cat([x.view(feats[0].shape[0], self.no, -1) for x in feats], 2).split(
+            (self.reg_max * 4, self.nc), 1)
+        return boxes.transpose(1, 2).contiguous(), scores.transpose(1, 2).contiguous()
+
+    def decode_predictions(self, anchors, pred_distri):
+        return self.bbox_decode(anchors, pred_distri)
+
+    def assign_predictions(self, scores, boxes, anchors, stride, labels, gt_boxes, valid, pred_distri):
+        return self.assigner(scores, boxes, anchors * stride, labels, gt_boxes, valid.unsqueeze(-1))
+
+    def regression_terms(self, pred_distri, pred_boxes, anchors, targets, scores, denominator, fg):
+        return self.bbox_loss(pred_distri, pred_boxes, anchors, targets, scores, denominator, fg)
+
     def __call__(self, preds, batch):
         feats = preds[1] if isinstance(preds, tuple) else preds
         if self.first_level_only:
             feats = feats[:1]
-        pred_distri, pred_scores = torch.cat(
-            [x.view(feats[0].shape[0], self.no, -1) for x in feats], 2
-        ).split((self.reg_max * 4, self.nc), 1)
-        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
-        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        pred_distri, pred_scores = self.prediction_parts(feats)
         bs = pred_scores.shape[0]
         if not hasattr(self, '_stride_values'):
             self._stride_values = tuple(self.stride.detach().cpu().tolist())
@@ -178,10 +188,10 @@ class BalancedRegressionDetectionLoss(TinyAwareDetectionLoss):
         targets = self.preprocess(targets.to(self.device), bs, scale_tensor=imgsz[[1, 0, 1, 0]])
         labels, gt_boxes = targets.split((1, 4), 2)
         valid = gt_boxes.sum(2).gt(0)
-        pred_boxes = self.bbox_decode(anchors, pred_distri)
-        _, target_boxes, target_scores, fg, indices = self.assigner(
+        pred_boxes = self.decode_predictions(anchors, pred_distri)
+        _, target_boxes, target_scores, fg, indices = self.assign_predictions(
             pred_scores.detach().sigmoid(), (pred_boxes.detach() * stride).type(gt_boxes.dtype),
-            anchors * stride, labels, gt_boxes, valid.unsqueeze(-1))
+            anchors, stride, labels, gt_boxes, valid, pred_distri)
         fg, indices = fg.bool(), indices.long()
         normalizer = max(target_scores.sum(), 1)
         long_edges = (gt_boxes[..., 2:] - gt_boxes[..., :2]).amax(-1)
@@ -202,8 +212,8 @@ class BalancedRegressionDetectionLoss(TinyAwareDetectionLoss):
             legacy_edge = self.relative_edge_loss(pred_boxes, target_boxes, target_scores, fg, stride, normalizer) if self.progress < 1 else zero
             balanced_edge = self.balanced_edge_loss((pred_boxes*stride)[fg], target_boxes[fg], balanced[fg]) if self.localization_weight and self.progress else zero
             box_scores, denominator = (legacy_scores, normalizer) if self.progress == 0 else (mixed.unsqueeze(-1), 1.)
-            loss[0], loss[2] = self.bbox_loss(pred_distri, pred_boxes, anchors, target_boxes/stride,
-                                           box_scores, denominator, fg)
+            loss[0], loss[2] = self.regression_terms(pred_distri, pred_boxes, anchors, target_boxes/stride,
+                                                  box_scores, denominator, fg)
             loss[0] += self.localization_weight * ((1-self.progress)*legacy_edge + self.progress*balanced_edge)
         loss[0] *= self.hyp.box
         loss[1] *= self.hyp.cls

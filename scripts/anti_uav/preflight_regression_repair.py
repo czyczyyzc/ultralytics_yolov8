@@ -25,6 +25,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--data',type=Path,required=True);p.add_argument('--foundation',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True);p.add_argument('--device',required=True)
+    p.add_argument('--p3-nearest-offset',action='store_true')
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     SETTINGS.update(dict(sync=False,wandb=False,clearml=False,comet=False,dvc=False,hub=False,
         mlflow=False,neptune=False,raytune=False))
@@ -43,6 +44,9 @@ def main():
         audit=de_parallel(t.model).criterion.audit_summary()
         if audit['input_hw']!=[544,960] or audit['batch_size']!=64 or audit['balance_mix']!=.5:
             raise ValueError('Preflight did not exercise the intended real canvas/batch/full repair')
+        if a.p3_nearest_offset and (audit['p3_offset']['no_free_p3']
+                                   or (state['batches']>=4 and not audit['p3_offset']['reserved'])):
+            raise ValueError('Preflight did not reserve P3 points for the real unmatched tiny GTs')
         report=dict(complete=state['batches']>=4,real_augmented_batches=state['batches'],
             input_hw=audit['input_hw'],
             batch_size=64,amp=True,full_repair_enabled=True,
@@ -54,6 +58,8 @@ def main():
         (a.output/'acceptance.json').write_text(json.dumps(report,indent=2)+'\n')
         if state['batches']>=4:raise PreflightComplete()
     model=YOLO(str(a.foundation))
+    if a.p3_nearest_offset:
+        model.model.yaml['p3_nearest_offset_v1']=True
     model.add_callback('on_train_batch_start',force_full_repair)
     model.add_callback('on_train_batch_end',inspect)
     args=SimpleNamespace(batch=64,device=a.device,workers=16)

@@ -108,9 +108,9 @@ def raw_prediction(outputs, input_hw=(544, 960)):
     branches = []
     for offset in range(0, len(outputs), 3):
         position, scores, sums = (np.asarray(x) for x in outputs[offset:offset + 3])
-        if (position.ndim != 4 or position.shape[0] != 1 or position.shape[1] != 64
+        if (position.ndim != 4 or position.shape[0] != 1 or position.shape[1] not in (64, 68)
                 or scores.shape != (1, 1, *position.shape[2:]) or sums.shape != scores.shape):
-            raise ValueError("Expected batch-one NCHW bbox64/class1/score-sum1 outputs")
+            raise ValueError("Expected batch-one NCHW bbox64 or bbox68, class1, and score-sum1 outputs")
         if not all(np.issubdtype(x.dtype, np.floating) for x in (position, scores, sums)):
             raise ValueError("Simulator outputs must be dequantized before DFL/NMS")
         xyxy = decode_boxes(position, *input_hw).astype(np.float32)
@@ -278,7 +278,10 @@ def main():
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--adaptation-data", type=Path,
                         help="Optional audited new-video training-fit monitor; excluded from pooled_native")
+    parser.add_argument("--video00009-data", type=Path, help="Pin the actual Student selection data YAML")
     args = parser.parse_args()
+    if args.video00009_data:
+        SPLITS["Video00009_selection_subset"] = args.video00009_data.resolve()
     if args.adaptation_data:
         if args.shards != 1 or args.merge_shards:
             parser.error("Additional adaptation monitoring is not supported with sharding")

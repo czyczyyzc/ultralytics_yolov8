@@ -89,9 +89,14 @@ def validate_rkopt_shapes(shapes: list[list[int | str | None]]) -> dict:
             score_shape = branch[2]
             if score_shape[2:] != box_shape[2:]:
                 raise ValueError(f"Branch {branch_index} score_sum spatial shape differs: {score_shape} vs {box_shape}")
-        branches.append(
-            {"bbox": box_shape, "class": cls_shape, "score_sum": branch[2] if pair_per_branch == 3 else None}
-        )
+        channels = box_shape[1]
+        signed = channels == 68
+        if signed and (branch_count != 3 or branch_index != 0 or pair_per_branch != 3):
+            raise ValueError("Signed DFL is supported only at P3 of a three-scale, nine-output export")
+        if isinstance(channels, int) and channels not in (64, 68):
+            raise ValueError(f"Unsupported DFL channel count: {channels}")
+        branches.append({"bbox": box_shape, "class": cls_shape, "score_sum": branch[2] if pair_per_branch == 3 else None,
+                         "dfl_bins": list(range(-1 if signed else 0, 16)) if isinstance(channels, int) else None})
 
     if len(shapes) == 1 and len(shapes[0]) == 3:
         raise ValueError(f"Ultralytics single-output graph was exported instead of RK-optimized layout: {shapes[0]}")
@@ -101,6 +106,28 @@ def validate_rkopt_shapes(shapes: list[list[int | str | None]]) -> dict:
         "pair_per_branch": pair_per_branch,
         "branches": branches,
     }
+
+
+def prepare_signed_p3_export(head) -> bool:
+    """Fold the parallel -1 logit into one side-major Conv for the export graph only."""
+    if not hasattr(head, "p3_negative_bin"):
+        return False
+    import torch
+    from torch import nn
+    from ultralytics.nn.modules import Detect
+
+    if type(head) is not Detect or tuple(int(s) for s in head.stride) != (8, 16, 32) or head.reg_max != 16:
+        raise ValueError("Only a pure signed P3/P4/P5 Student can use this RKNN export")
+    nonnegative, negative = head.cv2[0][-1], head.p3_negative_bin
+    if not all(isinstance(m, nn.Conv2d) and m.kernel_size == (1, 1) and m.bias is not None
+               for m in (nonnegative, negative)) or nonnegative.in_channels != negative.in_channels:
+        raise ValueError("Incompatible signed DFL output convolution")
+    merged = nn.Conv2d(nonnegative.in_channels, 68, 1, device=nonnegative.weight.device, dtype=nonnegative.weight.dtype)
+    with torch.no_grad():
+        merged.weight.copy_(torch.cat((negative.weight[:, None], nonnegative.weight.unflatten(0, (4, 16))), 1).flatten(0, 1))
+        merged.bias.copy_(torch.cat((negative.bias[:, None], nonnegative.bias.unflatten(0, (4, 16))), 1).flatten())
+    head.p3_rkopt_box = merged.requires_grad_(False)
+    return True
 
 
 def main() -> None:
@@ -113,6 +140,7 @@ def main() -> None:
     from ultralytics import YOLO
 
     model = YOLO(str(weights))
+    signed = prepare_signed_p3_export(model.model.model[-1])
     exported = (
         Path(
             model.export(
@@ -142,12 +170,15 @@ def main() -> None:
         if not args.allow_unverified:
             raise
         validation = {"output_count": len(shapes), "pair_per_branch": None, "branches": [], "warning": "unverified"}
+    if signed and (len(shapes) != 9 or [shapes[i][1] for i in (0, 3, 6)] != [68, 64, 64]):
+        raise ValueError("Signed P3 export did not preserve the 68/64/64 output contract")
 
     metadata = {
         "source_weights": str(weights),
         "onnx": str(output_path),
         "imgsz": list(imgsz) if isinstance(imgsz, tuple) else imgsz,
         "format": "rknn_yolov8_rkopt",
+        "signed_p3_dfl": signed,
         "layout": "branch-major NCHW bbox/class/score_sum outputs; DFL and NMS run in runtime postprocess",
         "output_shapes": shapes,
         "validation": validation,

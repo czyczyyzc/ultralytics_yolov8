@@ -67,11 +67,15 @@ class Detect(nn.Module):
             return y              
 
         if self.export and self.format == 'rknn':
-            if hasattr(self, "p3_offset") or hasattr(self, "p3_negative_bin"):
-                raise RuntimeError("The modified P3 head is incompatible with the existing raw RKNN decoder")
+            if hasattr(self, "p3_offset") or (hasattr(self, "p3_negative_bin") and not hasattr(self, "p3_rkopt_box")):
+                raise RuntimeError("Use the explicit RKNN export pipeline for modified P3 heads")
             y = []
             for i in range(self.nl):
-                y.append(self.cv2[i](x[i]))
+                if i == 0 and hasattr(self, "p3_rkopt_box"):
+                    tower = self.cv2[i]
+                    y.append(self.p3_rkopt_box(tower[1](tower[0](x[i]))))
+                else:
+                    y.append(self.cv2[i](x[i]))
                 cls = torch.sigmoid(self.cv3[i](x[i]))
                 cls_sum = torch.clamp(cls.sum(1, keepdim=True), 0, 1)
                 y.append(cls)

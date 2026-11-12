@@ -70,6 +70,8 @@ def main():
     p.add_argument("--initial-run", type=Path, required=True)
     p.add_argument("--run-dir", type=Path, required=True)
     p.add_argument("--gpus", type=int, nargs="+", default=list(range(8)))
+    p.add_argument("--wait-for-foundation-complete", action="store_true",
+                   help="Wait for the entire initial schedule before starting the accepted curriculum")
     a = p.parse_args()
     initial, run = a.initial_run.resolve(), a.run_dir.resolve()
     run.mkdir(parents=True, exist_ok=True)
@@ -114,6 +116,20 @@ def main():
         if not report["passed"]:
             status("p3_gate_not_met", report=str(gate), failed_checks=[k for k,v in report["checks"].items() if not v])
             return
+        if a.wait_for_foundation_complete:
+            while True:
+                training = read(initial/"candidate/status.json")
+                coordinator = read(initial/"status.json")
+                if training["stage"] == "foundation_complete":
+                    if (training["epoch"] != initial_protocol["foundation_epochs"]
+                            or training["optimizer_updates"] != initial_protocol["optimizer_updates_scheduled"]):
+                        raise ValueError("Foundation finished without the scheduled training budget")
+                    break
+                if training["stage"] == "failed" or coordinator["stage"] == "failed":
+                    raise ValueError("Initial P3 did not complete after passing the matched gate")
+                status("p3_accepted_waiting_for_foundation_complete", report=str(gate),
+                       completed_epoch=training.get("epoch"), planned_epochs=initial_protocol["foundation_epochs"])
+                time.sleep(60)
         while True:
             usage = subprocess.check_output(["nvidia-smi","--query-gpu=index,memory.used,memory.free,utilization.gpu",
                 "--format=csv,noheader,nounits"], text=True)

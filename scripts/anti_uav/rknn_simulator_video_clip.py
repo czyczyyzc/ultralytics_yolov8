@@ -71,17 +71,21 @@ def letterbox(
 
 def dfl(position: np.ndarray) -> np.ndarray:
     batch, channels, height, width = position.shape
+    if channels not in (64, 68):
+        raise ValueError(f"Unsupported DFL channel count: {channels}")
     bins = channels // 4
     values = position.reshape(batch, 4, bins, height, width).astype(np.float32)
     values -= values.max(axis=2, keepdims=True)
     values = np.exp(values)
     values /= values.sum(axis=2, keepdims=True)
-    weights = np.arange(bins, dtype=np.float32).reshape(1, 1, bins, 1, 1)
+    weights = np.arange(16-bins, 16, dtype=np.float32).reshape(1, 1, bins, 1, 1)
     return (values * weights).sum(axis=2)
 
 
 def decode_boxes(position: np.ndarray, input_height: int, input_width: int) -> np.ndarray:
     grid_height, grid_width = position.shape[2:4]
+    if position.shape[1] == 68 and (grid_height*8, grid_width*8) != (input_height, input_width):
+        raise ValueError("Signed DFL is only valid on the stride-8 P3 grid")
     columns, rows = np.meshgrid(np.arange(grid_width), np.arange(grid_height))
     grid = np.concatenate(
         (columns.reshape(1, 1, grid_height, grid_width), rows.reshape(1, 1, grid_height, grid_width)),

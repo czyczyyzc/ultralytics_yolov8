@@ -27,6 +27,7 @@
 
 #include "rknn_api.h"
 #include "detector_based_tracker.hpp"
+#include "dfl_output_layout.hpp"
 
 namespace {
 
@@ -157,29 +158,6 @@ float tensor_value_i8(
             " size=" + std::to_string(attr.size_with_stride));
     }
     return (static_cast<int32_t>(data[index]) - attr.zp) * attr.scale;
-}
-
-float dfl_expectation(
-    const rknn_tensor_attr& attr,
-    const int8_t* data,
-    int side,
-    int y,
-    int x,
-    int logical_grid_width) {
-    float logits[16];
-    float max_logit = -1e30f;
-    for (int bin = 0; bin < 16; ++bin) {
-        logits[bin] = tensor_value_i8(attr, data, side * 16 + bin, y, x, logical_grid_width);
-        max_logit = std::max(max_logit, logits[bin]);
-    }
-    float denominator = 0.0f;
-    float numerator = 0.0f;
-    for (int bin = 0; bin < 16; ++bin) {
-        const float probability = std::exp(logits[bin] - max_logit);
-        denominator += probability;
-        numerator += probability * static_cast<float>(bin);
-    }
-    return numerator / std::max(denominator, 1e-12f);
 }
 
 float overlap_iou(const Detection& lhs, const Detection& rhs) {
@@ -359,6 +337,8 @@ public:
             const int grid_height = output_attrs_[box_index].dims[2];
             const int grid_width = output_attrs_[box_index].dims[3];
             const float stride = static_cast<float>(input_height_) / grid_height;
+            const auto layout = rk_yolo::dfl_output_layout(output_attrs_[box_index].dims[1],
+                branch_count_ == 3 && branch == 0 && grid_height * 8 == input_height_ && grid_width * 8 == input_width_);
 
             for (int y = 0; y < grid_height; ++y) {
                 for (int x = 0; x < grid_width; ++x) {
@@ -367,10 +347,11 @@ public:
                         tensor_value_i8(sum_attr, sum_data, 0, y, x, grid_width) < confidence_threshold) {
                         continue;
                     }
-                    const float left = dfl_expectation(box_attr, box_data, 0, y, x, grid_width);
-                    const float top = dfl_expectation(box_attr, box_data, 1, y, x, grid_width);
-                    const float right = dfl_expectation(box_attr, box_data, 2, y, x, grid_width);
-                    const float bottom = dfl_expectation(box_attr, box_data, 3, y, x, grid_width);
+                    const auto logit = [&](int channel) { return tensor_value_i8(box_attr, box_data, channel, y, x, grid_width); };
+                    const float left = rk_yolo::dfl_expectation(layout, 0, logit);
+                    const float top = rk_yolo::dfl_expectation(layout, 1, logit);
+                    const float right = rk_yolo::dfl_expectation(layout, 2, logit);
+                    const float bottom = rk_yolo::dfl_expectation(layout, 3, logit);
                     Detection detection{};
                     detection.x1 = ((x + 0.5f - left) * stride - letterbox.dw) / letterbox.ratio;
                     detection.y1 = ((y + 0.5f - top) * stride - letterbox.dh) / letterbox.ratio;

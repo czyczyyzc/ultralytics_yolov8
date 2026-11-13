@@ -4,6 +4,7 @@ import argparse
 from collections import Counter
 import fcntl
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess

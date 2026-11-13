@@ -100,8 +100,16 @@ class RegressionRepairAddOnTrainer(RepairMixin, TinyAwareAddOnTrainer):
     def _setup_train(self, world_size):
         super()._setup_train(world_size)
         model = de_parallel(self.model)
-        model.criterion = repaired_loss(model, self.data, model.criterion, self.repair_options,
-                                        first_level_only=True)
+        previous = model.criterion
+        loss_type = BalancedRegressionDetectionLoss
+        if hasattr(model.model[-1], "p2_negative_bin"):
+            from scripts.anti_uav.p3_signed_dfl import P2SignedDFLLoss
+
+            loss_type = P2SignedDFLLoss
+            self.ema.ema.criterion = repaired_loss(self.ema.ema, self.data, previous, self.repair_options,
+                                                   first_level_only=True, loss_type=loss_type)
+        model.criterion = repaired_loss(model, self.data, previous, self.repair_options,
+                                        first_level_only=True, loss_type=loss_type)
         self.install_repair_callbacks()
 
 

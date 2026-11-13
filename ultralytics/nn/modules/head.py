@@ -67,6 +67,8 @@ class Detect(nn.Module):
             return y              
 
         if self.export and self.format == 'rknn':
+            if hasattr(self, "p2_negative_bin"):
+                raise RuntimeError("RKNN export of the signed P2 Teacher is not supported; export the pure P3 Student")
             if hasattr(self, "p3_offset") or (hasattr(self, "p3_negative_bin") and not hasattr(self, "p3_rkopt_box")):
                 raise RuntimeError("Use the explicit RKNN export pipeline for modified P3 heads")
             y = []
@@ -94,9 +96,14 @@ class Detect(nn.Module):
 
     def _raw_level(self, x, i):
         tower = self.cv2[i]
+        negative_bin = None
         if i == getattr(self, "legacy_start_index", 0) and hasattr(self, "p3_negative_bin"):
+            negative_bin = self.p3_negative_bin
+        elif i == getattr(self, "addon_index", -1) and hasattr(self, "p2_negative_bin"):
+            negative_bin = self.p2_negative_bin
+        if negative_bin is not None:
             features = tower[1](tower[0](x))
-            reg = torch.cat((tower[2](features), self.p3_negative_bin(features)), 1)
+            reg = torch.cat((tower[2](features), negative_bin(features)), 1)
         else:
             reg = tower(x)
         if i == 0 and hasattr(self, "p3_offset"):
@@ -131,6 +138,11 @@ class Detect(nn.Module):
         """Decode predicted bounding boxes and class probabilities based on multiple-level feature maps."""
         offset = None
         x, signed = self._separate_p3_bin(x, getattr(self, "legacy_start_index", 0))
+        signed_p2 = None
+        if hasattr(self, "p2_negative_bin"):
+            n = self.reg_max * 4
+            signed_p2 = x[0][:, n:n + 4].flatten(2)
+            x = [torch.cat((x[0][:, :n], x[0][:, n + 4:]), 1), *x[1:]]
         if hasattr(self, "p3_offset"):
             n = self.reg_max * 4
             offset = x[0][:, n:n + 2].flatten(2)
@@ -149,6 +161,11 @@ class Detect(nn.Module):
             box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
 
         distances = self._project_dfl(box, signed)
+        if signed_p2 is not None:
+            points = signed_p2.shape[-1]
+            logits = signed_dfl_logits(box[:, :, :points].transpose(1, 2), signed_p2.transpose(1, 2))
+            p2 = signed_dfl_decode(logits).transpose(1, 2).to(distances.dtype)
+            distances = torch.cat((p2, distances[:, :, points:]), 2)
 
         if self.export and self.format in {"tflite", "edgetpu"}:
             # Precompute normalization factor to increase numerical stability
@@ -278,6 +295,15 @@ class FrozenP3AddOnP2Detect(Detect):
         # branch. Keep the default disabled so existing four-scale checkpoints
         # retain their original inference behavior.
         self.auxiliary_training_only = False
+
+    def enable_p2_signed_dfl(self):
+        """Add one trainable negative bin per edge on the disposable P2 branch."""
+        if tuple(int(s) for s in self.stride) != (4, 8, 16, 32):
+            raise ValueError("Signed P2 DFL requires the four-level add-on detector")
+        with torch.random.fork_rng(devices=[]):
+            self.p2_negative_bin = nn.Conv2d(self.cv2[self.addon_index][-1].in_channels, 4, 1)
+        nn.init.zeros_(self.p2_negative_bin.weight)
+        nn.init.constant_(self.p2_negative_bin.bias, -8.)
 
     def _legacy_inference(self, x):
         """Decode only P3-P5 without mutating the four-scale anchor cache."""

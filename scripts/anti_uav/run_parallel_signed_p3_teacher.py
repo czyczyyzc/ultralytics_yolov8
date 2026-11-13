@@ -35,6 +35,8 @@ def main():
         parser.add_argument(f"--{name}", type=lambda value: Path(value).resolve(), required=True)
     parser.add_argument("--checkpoint-sha256", required=True)
     parser.add_argument("--gpus", type=int, nargs="+", required=True)
+    parser.add_argument("--signed-p2", action="store_true", help="Add the negative P2 bin and off-grid fallback")
+    parser.add_argument("--p2-control-run", type=Path, help="Include the completed 64-channel P2 Teacher if available")
     args = parser.parse_args()
     run = args.run_dir
     run.mkdir(parents=True, exist_ok=True)
@@ -88,11 +90,13 @@ def main():
             stage="parallel_teacher_only", training_videos=len(videos), epochs=epochs, foundation_epoch=epoch,
             foundation=str(foundation), foundation_sha256=args.checkpoint_sha256, data=str(data),
             data_sha256=upstream["data_sha256"], batch_quotas=upstream["batch_quotas"],
-            batches_per_epoch=upstream["batches_per_epoch"], student_queued=False,
+            batches_per_epoch=upstream["batches_per_epoch"], student_queued=False, signed_p2=args.signed_p2,
+            p2_regression_channels=68 if args.signed_p2 else 64,
             source_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()))
 
         write_status(run, "initialize_teacher", foundation_epoch=epoch)
-        teacher, initialization = initialize_addon_model(foundation, DEFAULT_CFG, run / "teacher_initialized.pt")
+        teacher, initialization = initialize_addon_model(
+            foundation, DEFAULT_CFG, run / "teacher_initialized.pt", signed_p2=args.signed_p2)
         dump(audit / "teacher_initialization.json", initialization)
         trainer_class = RegressionRepairAddOnTrainer
         trainer_class.repair_options = protocol["regression_repair"]["options"]
@@ -106,6 +110,8 @@ def main():
             batches = len(trainer.train_loader)
             if trainable != expected or batches != upstream["batches_per_epoch"]:
                 raise ValueError("Trainable parameter scope or batch count changed")
+            if hasattr(model.model[-1], "p2_negative_bin") != args.signed_p2:
+                raise ValueError("Teacher P2 head does not match the requested variant")
             names = [name for name, p in model.named_parameters() if p.requires_grad]
             dump(audit / "trainable_scope.json", dict(p2_only=True, trainable_tensors=names, batches=batches))
             write_status(run, "train_teacher", epoch=0, device=args.device, batches_per_epoch=batches)
@@ -129,8 +135,19 @@ def main():
         frozen = verify_legacy_outputs(YOLO(str(foundation)).model, YOLO(str(teacher_best)).model)
         dump(audit / "teacher_frozen_p3.json", frozen)
         write_status(run, "evaluate_teacher_equal_fp", device=args.device, epoch=epochs)
-        evaluate({"p3_initial": foundation, "p2p3_teacher": teacher_best},
-                 {"Video00009": data, "Video00004": args.holdout}, args.device, run / "comparison")
+        arms = {"p3_initial": foundation, "p2p3_teacher": teacher_best}
+        if args.p2_control_run:
+            control = read(args.p2_control_run / "protocol.json")
+            current = read(run / "protocol.json")
+            keys = ("foundation_sha256", "data_sha256", "epochs", "batch_quotas", "batches_per_epoch")
+            if control.get("signed_p2") or any(control[k] != current[k] for k in keys):
+                raise ValueError("The P2 control does not match the experiment")
+            control_status = read(args.p2_control_run / "status.json")
+            if control_status["stage"] in {"teacher_complete", "evaluate_teacher_equal_fp"}:
+                control_weights = args.p2_control_run / "teacher/p2p3/weights/best.pt"
+                verify_legacy_outputs(YOLO(str(foundation)).model, YOLO(str(control_weights)).model)
+                arms["p2p3_teacher_control"] = control_weights
+        evaluate(arms, {"Video00009": data, "Video00004": args.holdout}, args.device, run / "comparison")
         write_status(run, "teacher_complete", device=args.device, epoch=epochs, teacher_best=str(teacher_best),
                      comparison=str(run / "comparison/comparison.json"), student_queued=False)
     except BaseException as error:

@@ -21,9 +21,12 @@ def add_on_parameter_ids(model: DetectionModel) -> set[int]:
     if not isinstance(detector, FrozenP3AddOnP2Detect):
         raise TypeError(f"Expected FrozenP3AddOnP2Detect, received {type(detector).__name__}")
     adapter = model.model[-2]
+    modules = [adapter, detector.cv2[detector.addon_index], detector.cv3[detector.addon_index]]
+    if hasattr(detector, "p2_negative_bin"):
+        modules.append(detector.p2_negative_bin)
     return {
         id(parameter)
-        for module in (adapter, detector.cv2[detector.addon_index], detector.cv3[detector.addon_index])
+        for module in modules
         for parameter in module.parameters()
     }
 
@@ -32,7 +35,7 @@ def is_add_on_state(name: str, model: DetectionModel) -> bool:
     adapter_index = len(model.model) - 2
     detector_index = len(model.model) - 1
     return name.startswith(f"model.{adapter_index}.") or name.startswith(
-        (f"model.{detector_index}.cv2.0.", f"model.{detector_index}.cv3.0.")
+        (f"model.{detector_index}.cv2.0.", f"model.{detector_index}.cv3.0.", f"model.{detector_index}.p2_negative_bin.")
     )
 
 

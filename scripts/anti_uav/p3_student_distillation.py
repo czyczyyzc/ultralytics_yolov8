@@ -107,6 +107,9 @@ class P3StudentDistillationLoss:
         self.reg_max = detector.reg_max
         self.nc = detector.nc
         self.signed_p3 = hasattr(detector, "p3_negative_bin")
+        self.teacher_signed_p2 = hasattr(teacher.model[-1], "p2_negative_bin")
+        if hasattr(detector, "p2_negative_bin"):
+            raise ValueError("Student auxiliary P2 must use the standard 16-bin loss")
         if self.signed_p3 != hasattr(teacher.model[-1], "p3_negative_bin"):
             raise ValueError("Teacher and Student must use the same P3 DFL bins")
         self.weights = dict(
@@ -210,7 +213,7 @@ class P3StudentDistillationLoss:
         batch,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         student_box, student_cls = self._split(student_p3, self.signed_p3)
-        teacher_box, teacher_cls = self._split(teacher_p2)
+        teacher_box, teacher_cls = self._split(teacher_p2, self.teacher_signed_p2)
         _, _, p2_height, p2_width = teacher_p2.shape
         _, _, p3_height, p3_width = student_p3.shape
         if (p2_height, p2_width) != (p3_height * 2, p3_width * 2):

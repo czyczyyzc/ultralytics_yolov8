@@ -147,13 +147,15 @@ def verify_legacy_outputs(reference: DetectionModel, addon: DetectionModel, size
     return report
 
 
-def initialize_addon_model(p3_model: Path, model_cfg: Path, output: Path) -> tuple[YOLO, dict[str, object]]:
+def initialize_addon_model(p3_model: Path, model_cfg: Path, output: Path, *, signed_p2=False) -> tuple[YOLO, dict[str, object]]:
     source = YOLO(str(p3_model))
     target = YOLO(str(model_cfg))
     source_nc = getattr(source.model, "nc", source.model.model[-1].nc)
     config = yaml_model_load(model_cfg)
     if hasattr(source.model.model[-1], "p3_negative_bin"):
         config["p3_signed_dfl_v1"] = True
+    if signed_p2:
+        config["p2_signed_dfl_v1"] = True
     target.model = DetectionModel(config, nc=source_nc, verbose=True)
     if not isinstance(target.model.model[-1], FrozenP3AddOnP2Detect):
         raise TypeError("The add-on model must end with FrozenP3AddOnP2Detect")

@@ -336,6 +336,10 @@ class DetectionModel(BaseModel):
                 m.enable_p3_reference_shift()
             if self.yaml.get("p3_signed_dfl_v1"):
                 m.enable_p3_signed_dfl()
+            if self.yaml.get("p2_signed_dfl_v1"):
+                if not isinstance(m, FrozenP3AddOnP2Detect):
+                    raise ValueError("Signed P2 DFL requires a Frozen-P3 add-on head")
+                m.enable_p2_signed_dfl()
         else:
             self.stride = torch.Tensor([32])  # default stride for i.e. RTDETR
 
@@ -390,6 +394,8 @@ class DetectionModel(BaseModel):
     def init_criterion(self):
         """Initialize the loss criterion for the DetectionModel."""
         head = self.model[-1]
+        if hasattr(head, "p2_negative_bin"):
+            raise RuntimeError("The signed P2 detector requires its custom Teacher trainer")
         if isinstance(head, FrozenP3AddOnP2Detect) and not (
             hasattr(head, "p3_negative_bin") and head.auxiliary_training_only
         ):

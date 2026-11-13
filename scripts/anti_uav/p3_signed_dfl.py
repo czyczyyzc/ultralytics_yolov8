@@ -30,6 +30,8 @@ def signed_dfl_loss(logits, targets):
 
 class P3SignedDFLLoss(BalancedRegressionDetectionLoss):
     matched_regression_budget = True
+    signed_level = "p3"
+    signed_stride = P3_STRIDE
 
     def begin_epoch(self, epoch):
         super().begin_epoch(epoch)
@@ -39,10 +41,17 @@ class P3SignedDFLLoss(BalancedRegressionDetectionLoss):
         result = super().audit_summary()
         counts = self.signed_audit.tolist() if self.signed_audit is not None else [0, 0, 0]
         result.update(classification_and_assigner_unchanged=False, normal_tal_unchanged=True,
-            regression_budget_matched_gt_only=True, p3_signed_dfl=dict(
-                no_interior_p3_gt=counts[0], lacked_positive_p3=counts[1], reserved=counts[2],
-                no_free_representable_p3=counts[1]-counts[2], bins=[MIN_BIN, MAX_BIN], fallback_score=FALLBACK_SCORE))
+            regression_budget_matched_gt_only=True)
+        level = self.signed_level
+        result[f"{level}_signed_dfl"] = {
+            f"no_interior_{level}_gt": counts[0], f"lacked_positive_{level}": counts[1], "reserved": counts[2],
+            f"no_free_representable_{level}": counts[1] - counts[2], "bins": [MIN_BIN, MAX_BIN],
+            "fallback_score": FALLBACK_SCORE,
+        }
         return result
+
+    def can_express(self, points_px, boxes_px):
+        return representable(ltrb(points_px, boxes_px) / self.signed_stride)
 
     def prediction_parts(self, feats):
         n = self.reg_max * 4
@@ -63,9 +72,9 @@ class P3SignedDFLLoss(BalancedRegressionDetectionLoss):
         legacy = (self.tal_boxes * stride).to(gt_boxes.dtype)
         assignment = super().assign_predictions(scores, legacy, anchors, stride, labels, gt_boxes, valid, pred_distri)
         points = self.negative.shape[1]
-        eligible = ~interior_grid_coverage(gt_boxes.float(), valid, (P3_STRIDE,), self.last_input_hw)
+        eligible = ~interior_grid_coverage(gt_boxes.float(), valid, (self.signed_stride,), self.last_input_hw)
         _, counts = reserve_p3_points(assignment, anchors[:points] * stride[:points], labels, gt_boxes, valid,
-                                     eligible=eligible, can_express=can_express_at_p3)
+                                     eligible=eligible, can_express=self.can_express)
         self.signed_audit = counts if self.signed_audit is None else self.signed_audit + counts
         return assignment
 
@@ -79,10 +88,12 @@ class P3SignedDFLLoss(BalancedRegressionDetectionLoss):
         p3_targets = ltrb(p3_refs, targets[:, :points][p3_fg])
         p3_logits = signed_dfl_logits(pred_distri[:, :points][p3_fg], self.negative[p3_fg])
         p3_loss = (signed_dfl_loss(p3_logits, p3_targets) * weights[:, :points][p3_fg]).sum()
-        coarse_targets = bbox2dist(anchors[points:], targets[:, points:], self.reg_max - 1)[coarse_fg]
-        coarse_logits = pred_distri[:, points:][coarse_fg].reshape(-1, self.reg_max)
-        coarse_loss = (self.bbox_loss.dfl_loss(coarse_logits, coarse_targets).squeeze(-1) *
-                       weights[:, points:][coarse_fg]).sum()
+        coarse_loss = 0.
+        if points < fg.shape[1]:
+            coarse_targets = bbox2dist(anchors[points:], targets[:, points:], self.reg_max - 1)[coarse_fg]
+            coarse_logits = pred_distri[:, points:][coarse_fg].reshape(-1, self.reg_max)
+            coarse_loss = (self.bbox_loss.dfl_loss(coarse_logits, coarse_targets).squeeze(-1) *
+                           weights[:, points:][coarse_fg]).sum()
         return iou_loss, (p3_loss + coarse_loss) / denominator
 
     def __call__(self, preds, batch):
@@ -90,3 +101,17 @@ class P3SignedDFLLoss(BalancedRegressionDetectionLoss):
             return super().__call__(preds, batch)
         finally:
             self.negative = self.tal_boxes = None
+
+
+class P2SignedDFLLoss(P3SignedDFLLoss):
+    """Train only the signed add-on P2 with its own stride-4 assignment."""
+
+    signed_level = "p2"
+    signed_stride = 4.
+
+    def __init__(self, model, source, **options):
+        options["first_level_only"] = True
+        super().__init__(model, source, **options)
+        self.stride = self.stride[:1]
+        if float(self.stride[0]) != self.signed_stride or not hasattr(model.model[-1], "p2_negative_bin"):
+            raise ValueError("Signed P2 loss requires the stride-4 signed add-on head")

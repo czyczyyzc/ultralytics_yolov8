@@ -4,7 +4,6 @@ import argparse
 from collections import Counter
 import fcntl
 import json
-import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -25,14 +24,24 @@ def read(path):
 
 def verify_not_returned(database, videos):
     """Use the frozen revisions, but do not launch with a subsequently returned clip."""
+    later_edits = []
     with sqlite3.connect(database.as_uri()+"?mode=ro", uri=True) as con:
+        con.execute("BEGIN")
         for item in videos:
             current = con.execute("SELECT status,revision,is_published FROM tasks WHERE id=?",
                                   (item["task_id"],)).fetchone()
             if (current is None or current[2] != 1 or current[0] not in {"approved","submitted"}
-                    or (item["status"] == "approved" and current[:2] != ("approved",item["revision"]))
-                    or (item["status"] == "submitted" and current[1] != item["revision"])):
-                raise ValueError(f"Frozen annotations changed before training: {item['task_id']}")
+                    or current[1] < item["revision"]
+                    or (item["status"] == "approved" and current[:2] != ("approved",item["revision"]))):
+                raise ValueError(f"Frozen task is no longer eligible: {item['task_id']}")
+            if current[:2] != (item["status"],item["revision"]):
+                rejected = con.execute("SELECT 1 FROM task_review_events WHERE task_id=? AND decision='reject' "
+                                       "AND revision>=? LIMIT 1",(item["task_id"],item["revision"])).fetchone()
+                if rejected:
+                    raise ValueError(f"Frozen provisional revision was returned: {item['task_id']}")
+                later_edits.append(dict(task_id=item["task_id"],frozen_status=item["status"],
+                    frozen_revision=item["revision"],live_status=current[0],live_revision=current[1]))
+    return later_edits
 
 
 def main():
@@ -112,7 +121,9 @@ def main():
         acceptance = read(a.run_dir/"preflight/acceptance.json")
         if not acceptance["complete"] or not acceptance["audit"]["p3_signed_dfl"]["reserved"]:
             raise ValueError("Real-batch signed P3 preflight failed")
-        verify_not_returned(a.database,snapshot)
+        dump(a.run_dir/"launch_annotation_check.json",dict(
+            frozen_at=frozen["captured_at"], frozen_snapshot_sha256=sha256(data.parent/"annotation_snapshot.json"),
+            later_provisional_revisions_not_mixed=verify_not_returned(a.database,snapshot)))
         command = training_command(recipe,data,weights,a.run_dir/"candidate",gpu,scope["training_videos"])
         status("training_p3_initial",gpu=gpu,training_videos=scope["training_videos"])
         run("training",command+["--foundation-only","--p3-signed-dfl"])

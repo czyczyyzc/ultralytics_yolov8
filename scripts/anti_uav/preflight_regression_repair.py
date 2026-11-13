@@ -25,7 +25,9 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--data',type=Path,required=True);p.add_argument('--foundation',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True);p.add_argument('--device',required=True)
-    p.add_argument('--p3-nearest-offset',action='store_true')
+    variant=p.add_mutually_exclusive_group()
+    variant.add_argument('--p3-nearest-offset',action='store_true')
+    variant.add_argument('--p3-signed-dfl',action='store_true')
     a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
     SETTINGS.update(dict(sync=False,wandb=False,clearml=False,comet=False,dvc=False,hub=False,
         mlflow=False,neptune=False,raytune=False))
@@ -47,6 +49,8 @@ def main():
         if a.p3_nearest_offset and (audit['p3_offset']['no_free_p3']
                                    or (state['batches']>=4 and not audit['p3_offset']['reserved'])):
             raise ValueError('Preflight did not reserve P3 points for the real unmatched tiny GTs')
+        if a.p3_signed_dfl and state['batches']>=4 and not audit['p3_signed_dfl']['reserved']:
+            raise ValueError('Signed DFL preflight did not reserve any representable off-grid points')
         report=dict(complete=state['batches']>=4,real_augmented_batches=state['batches'],
             input_hw=audit['input_hw'],
             batch_size=64,amp=True,full_repair_enabled=True,
@@ -60,6 +64,8 @@ def main():
     model=YOLO(str(a.foundation))
     if a.p3_nearest_offset:
         model.model.yaml['p3_nearest_offset_v1']=True
+    if a.p3_signed_dfl:
+        model.model.yaml['p3_signed_dfl_v1']=True
     model.add_callback('on_train_batch_start',force_full_repair)
     model.add_callback('on_train_batch_end',inspect)
     args=SimpleNamespace(batch=64,device=a.device,workers=16)
